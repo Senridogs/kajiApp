@@ -17,13 +17,14 @@ export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params;
   const body = (await readJsonBody<Body>(request)) ?? {};
 
-  const chore = await prisma.chore.findFirst({
-    where: { id, householdId: session.householdId, archived: false },
-    select: { id: true, title: true },
-  });
+  const [chore, user] = await Promise.all([
+    prisma.chore.findFirst({
+      where: { id, householdId: session.householdId, archived: false },
+      select: { id: true, title: true },
+    }),
+    prisma.user.findUnique({ where: { id: session.userId } }),
+  ]);
   if (!chore) return badRequest("対象の家事が見つかりません。", 404);
-
-  const user = await prisma.user.findUnique({ where: { id: session.userId } });
   if (!user) return badRequest("ユーザーが見つかりません。", 404);
 
   const performedAt = body?.performedAt ? new Date(body.performedAt) : new Date();
@@ -47,16 +48,18 @@ export async function POST(request: Request, { params }: RouteParams) {
   });
 
   if (canSendPush()) {
-    const household = await prisma.household.findUnique({
-      where: { id: session.householdId },
-      select: { notifyCompletion: true },
-    });
-
-    if (household?.notifyCompletion) {
-      const subs = await prisma.pushSubscription.findMany({
+    const [household, subs] = await Promise.all([
+      prisma.household.findUnique({
+        where: { id: session.householdId },
+        select: { notifyCompletion: true },
+      }),
+      prisma.pushSubscription.findMany({
         where: { householdId: session.householdId, enabled: true },
         select: { id: true, endpoint: true, p256dh: true, auth: true },
-      });
+      }),
+    ]);
+
+    if (household?.notifyCompletion) {
 
       const payload = buildCompletionPayload({
         choreTitle: chore.title,

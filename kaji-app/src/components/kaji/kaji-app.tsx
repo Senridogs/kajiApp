@@ -1052,7 +1052,7 @@ export function KajiApp() {
                 <SettingToggleRow
                   title="期限当日通知"
                   subtitle="朝6時・夜8時に通知"
-                  checked={notificationSettings?.notifyDueToday ?? true}
+                  checked={notificationSettings?.notifyDueToday ?? false}
                   onChange={(next) => {
                     if (!notificationSettings) return;
                     updateNotificationSettings({ ...notificationSettings, notifyDueToday: next });
@@ -1061,7 +1061,7 @@ export function KajiApp() {
 
                 <SettingToggleRow
                   title="期限超過通知"
-                  checked={notificationSettings?.remindDailyIfOverdue ?? true}
+                  checked={notificationSettings?.remindDailyIfOverdue ?? false}
                   onChange={(next) => {
                     if (!notificationSettings) return;
                     updateNotificationSettings({ ...notificationSettings, remindDailyIfOverdue: next });
@@ -1069,7 +1069,7 @@ export function KajiApp() {
                 />
                 <SettingToggleRow
                   title="完了時通知"
-                  checked={notificationSettings?.notifyCompletion ?? true}
+                  checked={notificationSettings?.notifyCompletion ?? false}
                   onChange={(next) => {
                     if (!notificationSettings) return;
                     updateNotificationSettings({ ...notificationSettings, notifyCompletion: next });

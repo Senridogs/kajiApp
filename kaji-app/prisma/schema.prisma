@@ -11,9 +11,9 @@ model Household {
   id                   String             @id @default(cuid())
   inviteCode           String             @unique
   reminderTimes        String[]           @default(["06:00", "20:00"])
-  notifyDueToday       Boolean            @default(true)
-  remindDailyIfOverdue Boolean            @default(true)
-  notifyCompletion     Boolean            @default(true)
+  notifyDueToday       Boolean            @default(false)
+  remindDailyIfOverdue Boolean            @default(false)
+  notifyCompletion     Boolean            @default(false)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   users                User[]

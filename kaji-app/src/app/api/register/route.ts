@@ -16,9 +16,9 @@ async function createHouseholdWithUniqueInviteCode(maxRetries = 5) {
         data: {
           inviteCode: generateInviteCode(),
           reminderTimes: ["06:00", "20:00"],
-          notifyDueToday: true,
-          remindDailyIfOverdue: true,
-          notifyCompletion: true,
+          notifyDueToday: false,
+          remindDailyIfOverdue: false,
+          notifyCompletion: false,
         },
       });
     } catch (error: unknown) {

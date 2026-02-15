@@ -17,10 +17,18 @@ export async function POST(request: Request) {
     if (!body) return badRequest("リクエスト形式が不正です。");
     if (!body.choreId || !body.date) return badRequest("choreId and date are required.");
 
-    const chore = await prisma.chore.findFirst({
-        where: { id: body.choreId, householdId: session.householdId, archived: false },
-        select: { id: true },
-    });
+    const [chore, user] = await Promise.all([
+        prisma.chore.findFirst({
+            where: { id: body.choreId, householdId: session.householdId, archived: false },
+            select: { id: true },
+        }),
+        body.userId
+            ? prisma.user.findFirst({
+                  where: { id: body.userId, householdId: session.householdId },
+                  select: { id: true, name: true },
+              })
+            : Promise.resolve(null),
+    ]);
     if (!chore) return badRequest("家事が見つかりません。", 404);
 
     if (!body.userId) {
@@ -30,10 +38,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, deleted: true });
     }
 
-    const user = await prisma.user.findFirst({
-        where: { id: body.userId, householdId: session.householdId },
-        select: { id: true, name: true },
-    });
     if (!user) return badRequest("ユーザーが見つかりません。", 404);
 
     const assignment = await prisma.choreAssignment.upsert({
