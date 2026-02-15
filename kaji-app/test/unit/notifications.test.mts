@@ -28,5 +28,5 @@ test("buildCompletionPayload trims memo and formats body", () => {
 
   assert.equal(payload.type, "completion");
   assert.equal(payload.title, "完了: 食器洗い");
-  assert.equal(payload.body, "せんり が済しました。 メモ: 夜ごはん後に実施");
+  assert.equal(payload.body, "せんり が完了しました。 メモ: 夜ごはん後に実施");
 });

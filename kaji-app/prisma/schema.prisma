@@ -10,7 +10,7 @@ datasource db {
 model Household {
   id                   String             @id @default(cuid())
   inviteCode           String             @unique
-  reminderTimes        String[]           @default(["06:00", "20:00"])
+  reminderTimes        String[]           @default(["08:00", "18:00"])
   notifyDueToday       Boolean            @default(false)
   remindDailyIfOverdue Boolean            @default(false)
   notifyCompletion     Boolean            @default(false)

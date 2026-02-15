@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { buildReminderPayload, canSendPush, sendWebPush } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
-import { addDays, nowJstHourMinute, startOfJstDay } from "@/lib/time";
+import { addDays, startOfJstDay } from "@/lib/time";
 
 export const runtime = "nodejs";
 
@@ -24,13 +24,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, skipped: "push-not-configured" });
   }
 
-  const slot = nowJstHourMinute(new Date());
-  const slotOnHour = `${slot.slice(0, 2)}:00`;
   const households = await prisma.household.findMany({
     where: {
-      reminderTimes: {
-        hasSome: [slot, slotOnHour],
-      },
+      OR: [{ notifyDueToday: true }, { remindDailyIfOverdue: true }],
     },
     select: { id: true, notifyDueToday: true, remindDailyIfOverdue: true },
   });
@@ -126,5 +122,5 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, slot, slotOnHour, households: households.length, sent });
+  return NextResponse.json({ ok: true, households: households.length, sent });
 }

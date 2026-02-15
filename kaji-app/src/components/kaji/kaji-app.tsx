@@ -905,9 +905,16 @@ export function KajiApp() {
                     <div className="flex flex-col gap-2">
                       {section.chores.map((chore) => {
                         const todayKey = toJstDateKey(startOfJstDay(new Date()));
-                        const sectionDateKey = section.key === "tomorrow"
-                          ? toJstDateKey(addDays(startOfJstDay(new Date()), 1))
+                        const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
+                        const bigDueDateKey = chore.dueAt
+                          ? toJstDateKey(startOfJstDay(new Date(chore.dueAt)))
                           : todayKey;
+                        const sectionDateKey =
+                          section.key === "tomorrow"
+                            ? tomorrowKey
+                            : section.key === "big"
+                              ? bigDueDateKey
+                              : todayKey;
                         const assignedEntry = assignments.find(
                           (x) => x.choreId === chore.id && x.date === sectionDateKey,
                         );
@@ -1051,7 +1058,7 @@ export function KajiApp() {
               <div className="space-y-4">
                 <SettingToggleRow
                   title="期限当日通知"
-                  subtitle="朝6時・夜8時に通知"
+                  subtitle="朝8時・夕方18時に通知"
                   checked={notificationSettings?.notifyDueToday ?? false}
                   onChange={(next) => {
                     if (!notificationSettings) return;
