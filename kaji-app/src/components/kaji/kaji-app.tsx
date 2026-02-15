@@ -28,15 +28,18 @@ import {
   urlBase64ToUint8Array,
 } from "@/components/kaji/helpers";
 import { StatsView } from "@/components/kaji/stats-view";
+import { useEdgeSwipeBack } from "@/components/kaji/use-edge-swipe-back";
+import { useSwipeTab } from "@/components/kaji/use-swipe-tab";
 import {
   FamilyCodeCard,
   HomeSectionTitle,
   HomeTaskRow,
   JoinHouseholdCard,
-  ListChoreRow,
   ScreenTitle,
   SegmentedFilter,
   SettingToggleRow,
+  SwipableListChoreRow,
+  UndoToast,
 } from "@/components/kaji/ui-parts";
 import { AnimatedList } from "@/components/ui/animated-list";
 import { BlurFade } from "@/components/ui/blur-fade";
@@ -60,9 +63,14 @@ const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
 const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
 
 type TabKey = "home" | "list" | "stats" | "settings";
+const TAB_ORDER: readonly TabKey[] = ["home", "list", "stats", "settings"] as const;
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
 const CUSTOM_ICONS_STORAGE_KEY = "kaji_custom_icons";
+type PendingSwipeDelete = {
+  chore: ChoreWithComputed;
+  removedAssignments: ChoreAssignmentEntry[];
+};
 
 function toDateInputValue(date: Date) {
   return toJstDateKey(date);
@@ -98,6 +106,60 @@ function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
     });
 
   return { todayChores, tomorrowChores, upcomingBigChores };
+}
+
+function removeChoreFromBootstrap(
+  previous: BootstrapResponse | null,
+  choreId: string,
+): BootstrapResponse | null {
+  if (!previous || previous.needsRegistration) return previous;
+
+  const nextChores = previous.chores.filter((chore) => chore.id !== choreId);
+  if (nextChores.length === previous.chores.length) return previous;
+
+  const split = splitComputedChoresForHome(nextChores);
+  return {
+    ...previous,
+    chores: nextChores,
+    todayChores: split.todayChores,
+    tomorrowChores: split.tomorrowChores,
+    upcomingBigChores: split.upcomingBigChores,
+  };
+}
+
+function restoreChoreToBootstrap(
+  previous: BootstrapResponse | null,
+  chore: ChoreWithComputed,
+): BootstrapResponse | null {
+  if (!previous || previous.needsRegistration) return previous;
+  if (previous.chores.some((item) => item.id === chore.id)) return previous;
+
+  const nextChores = [...previous.chores, chore];
+  const split = splitComputedChoresForHome(nextChores);
+  return {
+    ...previous,
+    chores: nextChores,
+    todayChores: split.todayChores,
+    tomorrowChores: split.tomorrowChores,
+    upcomingBigChores: split.upcomingBigChores,
+  };
+}
+
+function mergeAssignments(
+  previous: ChoreAssignmentEntry[],
+  additions: ChoreAssignmentEntry[],
+): ChoreAssignmentEntry[] {
+  if (additions.length === 0) return previous;
+
+  const existing = new Set(previous.map((entry) => `${entry.choreId}:${entry.userId}:${entry.date}`));
+  const merged = [...previous];
+  for (const entry of additions) {
+    const key = `${entry.choreId}:${entry.userId}:${entry.date}`;
+    if (existing.has(key)) continue;
+    existing.add(key);
+    merged.push(entry);
+  }
+  return merged;
 }
 
 export function KajiApp() {
@@ -139,6 +201,7 @@ export function KajiApp() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<ChoreWithComputed | null>(null);
   const [historyFilter, setHistoryFilter] = useState("all");
+  const [pendingSwipeDelete, setPendingSwipeDelete] = useState<PendingSwipeDelete | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [saveChoreLoading, setSaveChoreLoading] = useState(false);
   const [deleteChoreLoading, setDeleteChoreLoading] = useState(false);
@@ -150,6 +213,16 @@ export function KajiApp() {
   const [pushLoading, setPushLoading] = useState(false);
 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
+  const swipe = useSwipeTab({
+    tabs: TAB_ORDER,
+    activeTab,
+    onChangeTab: (tab) => { setAssignmentOpen(false); setActiveTab(tab); },
+    disabled: assignmentOpen,
+  });
+  const assignmentEdgeSwipe = useEdgeSwipeBack({
+    onBack: () => setAssignmentOpen(false),
+    enabled: assignmentOpen,
+  });
   const [assignmentUser, setAssignmentUser] = useState<string | null>(null);
   const [assignmentTab, setAssignmentTab] = useState<"daily" | "big">("daily");
   const [assignments, setAssignments] = useState<ChoreAssignmentEntry[]>([]);
@@ -472,6 +545,50 @@ export function KajiApp() {
     }
   };
 
+  const restorePendingSwipeDelete = useCallback((pending: PendingSwipeDelete) => {
+    setBoot((prev) => restoreChoreToBootstrap(prev, pending.chore));
+    setAssignments((prev) => mergeAssignments(prev, pending.removedAssignments));
+  }, []);
+
+  const handleSwipeDeleteChore = useCallback(
+    (chore: ChoreWithComputed) => {
+      if (pendingSwipeDelete || saveChoreLoading || deleteChoreLoading) return;
+
+      setError("");
+      const removedAssignments = assignments.filter((entry) => entry.choreId === chore.id);
+      setPendingSwipeDelete({ chore, removedAssignments });
+      setBoot((prev) => removeChoreFromBootstrap(prev, chore.id));
+      setAssignments((prev) => prev.filter((entry) => entry.choreId !== chore.id));
+    },
+    [assignments, deleteChoreLoading, pendingSwipeDelete, saveChoreLoading],
+  );
+
+  const undoSwipeDeleteChore = useCallback(() => {
+    if (!pendingSwipeDelete) return;
+    const pending = pendingSwipeDelete;
+    setPendingSwipeDelete(null);
+    restorePendingSwipeDelete(pending);
+  }, [pendingSwipeDelete, restorePendingSwipeDelete]);
+
+  const finalizeSwipeDeleteChore = useCallback(async () => {
+    if (!pendingSwipeDelete) return;
+    const pending = pendingSwipeDelete;
+    setPendingSwipeDelete(null);
+    try {
+      await apiFetch(`/api/chores/${pending.chore.id}`, { method: "DELETE" });
+      void refreshAll(statsPeriod).catch((err: unknown) => {
+        setError((err as Error).message ?? "家事一覧の更新に失敗しました。");
+      });
+    } catch (err: unknown) {
+      restorePendingSwipeDelete(pending);
+      setError((err as Error).message ?? "家事の削除に失敗しました。");
+    }
+  }, [pendingSwipeDelete, refreshAll, restorePendingSwipeDelete, statsPeriod]);
+
+  const dismissSwipeDeleteToast = useCallback(() => {
+    void finalizeSwipeDeleteChore();
+  }, [finalizeSwipeDeleteChore]);
+
   const openMemo = (chore: ChoreWithComputed) => {
     setMemoTarget(chore);
     setMemo("");
@@ -750,7 +867,19 @@ export function KajiApp() {
 
   return (
     <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-hidden bg-[#F8F9FA]">
-      <section className="flex-1 overflow-auto px-5 pb-28">
+      <section
+        className="flex-1 overflow-auto px-5 pb-28"
+        onTouchStart={(e) => {
+          swipe.onTouchStart(e);
+          assignmentEdgeSwipe.onTouchStart(e);
+        }}
+        onTouchMove={assignmentEdgeSwipe.onTouchMove}
+        onTouchEnd={(e) => {
+          swipe.onTouchEnd(e);
+          assignmentEdgeSwipe.onTouchEnd(e);
+        }}
+        onTouchCancel={assignmentEdgeSwipe.onTouchCancel}
+      >
         {error ? <div className="mb-4 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
 
         {assignmentOpen ? (
@@ -1005,12 +1134,13 @@ export function KajiApp() {
                   : `${chore.intervalDays}日ごと / 前回:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "未設定"
                   }`;
                 return (
-                  <ListChoreRow
+                  <SwipableListChoreRow
                     key={chore.id}
                     chore={chore}
                     meta={meta}
                     onOpenHistory={openHistory}
                     onEdit={openEditChore}
+                    onSwipeDelete={handleSwipeDeleteChore}
                   />
                 );
               })}
@@ -1120,6 +1250,23 @@ export function KajiApp() {
                     いま通知を送信
                   </button>
                 </div>
+
+                <div className="rounded-[14px] bg-white p-4">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await apiFetch("/api/logout", { method: "POST" });
+                        window.location.reload();
+                      } catch (err: unknown) {
+                        setError((err as Error).message ?? "ログアウトに失敗しました。");
+                      }
+                    }}
+                    className="w-full rounded-[12px] bg-[#E8E8E8] px-3 py-2 text-[14.4px] font-bold text-[#5F6368]"
+                  >
+                    ログアウト
+                  </button>
+                </div>
               </div>
             </div>
           ) : null
@@ -1130,6 +1277,14 @@ export function KajiApp() {
         aria-hidden
         className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
       />
+
+      {pendingSwipeDelete ? (
+        <UndoToast
+          message={`「${pendingSwipeDelete.chore.title}」を削除しました`}
+          onUndo={undoSwipeDeleteChore}
+          onDismiss={dismissSwipeDeleteToast}
+        />
+      ) : null}
 
       <nav className="fixed bottom-4 left-0 right-0 z-30 mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">

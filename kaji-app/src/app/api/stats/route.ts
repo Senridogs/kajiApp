@@ -58,7 +58,7 @@ export async function GET(request: Request) {
       }),
       prisma.chore.findMany({
         where: { householdId: session.householdId, archived: false },
-        select: { id: true, title: true },
+        select: { id: true, title: true, isBigTask: true },
         orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
       }),
       prisma.user.findMany({
@@ -80,6 +80,7 @@ export async function GET(request: Request) {
     return {
       choreId: c.id,
       title: c.title,
+      isBigTask: c.isBigTask,
       count,
       userCounts: users.map((u) => {
         const userCount = choreUserCountMap.get(`${c.id}:${u.id}`) ?? 0;

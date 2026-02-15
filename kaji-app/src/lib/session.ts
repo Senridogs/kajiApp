@@ -22,6 +22,12 @@ export async function getSession(): Promise<Session | null> {
   return { userId, householdId };
 }
 
+export async function clearSession() {
+  const store = await cookies();
+  store.delete(SESSION_USER_COOKIE);
+  store.delete(SESSION_HOUSEHOLD_COOKIE);
+}
+
 export async function setSession(session: Session, options?: SetSessionOptions) {
   const store = await cookies();
   const baseCookie = {

@@ -60,12 +60,20 @@ export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()
   const priorityChoreIds = new Set(
     [...todayChores, ...tomorrowChores].map((chore) => chore.id),
   );
-  const nowTime = now.getTime();
+  const bigTaskWindowEnd = addDays(startOfJstDay(now), 30).getTime();
   const upcomingBigChores = chores
-    .filter((c) => c.isBigTask && !priorityChoreIds.has(c.id))
+    .filter((c) => {
+      if (!c.isBigTask || priorityChoreIds.has(c.id) || !c.dueAt) return false;
+      const dueDayTime = startOfJstDay(new Date(c.dueAt)).getTime();
+      return dueDayTime <= bigTaskWindowEnd;
+    })
     .sort((a, b) => {
-      const aTime = a.dueAt ? new Date(a.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
-      const bTime = b.dueAt ? new Date(b.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
+      const aTime = a.dueAt
+        ? startOfJstDay(new Date(a.dueAt)).getTime()
+        : Number.MAX_SAFE_INTEGER;
+      const bTime = b.dueAt
+        ? startOfJstDay(new Date(b.dueAt)).getTime()
+        : Number.MAX_SAFE_INTEGER;
       return aTime - bTime;
     });
 

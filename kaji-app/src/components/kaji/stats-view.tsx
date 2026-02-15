@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { maxCount } from "@/components/kaji/helpers";
+import { useSwipeTab } from "@/components/kaji/use-swipe-tab";
 import { StatsPeriodKey, StatsResponse, StatsUserCount } from "@/lib/types";
 
 const JA_COLLATOR = new Intl.Collator("ja");
@@ -21,10 +22,12 @@ const USER_COLORS = ["#4285F4", "#EA4335", "#33C28A", "#FBBC05", "#A142F4", "#00
 
 const BALANCE_TABS = [
   { key: "all", label: "全タスク" },
+  { key: "normal", label: "通常のみ" },
   { key: "big", label: "大仕事のみ" },
 ] as const;
 
 type BalanceTabKey = (typeof BALANCE_TABS)[number]["key"];
+const BALANCE_TAB_KEYS: readonly BalanceTabKey[] = BALANCE_TABS.map((tab) => tab.key);
 
 type CustomDateRange = {
   from: string;
@@ -76,6 +79,11 @@ export function StatsView({
 
   const users = stats?.userCounts ?? [];
   const bigTaskUsers = stats?.bigTaskUserCounts ?? [];
+  const bigTaskCountMap = new Map(bigTaskUsers.map((user) => [user.userId, user.count]));
+  const normalTaskUsers = users.map((user) => ({
+    ...user,
+    count: Math.max(0, user.count - (bigTaskCountMap.get(user.userId) ?? 0)),
+  }));
   const choreCounts = [...(stats?.choreCounts ?? [])].sort((a, b) =>
     JA_COLLATOR.compare(a.title, b.title),
   );
@@ -85,10 +93,16 @@ export function StatsView({
     userColorMap.set(user.userId, USER_COLORS[idx % USER_COLORS.length]);
   });
 
-  const balanceUsers = balanceTab === "big" ? bigTaskUsers : users;
+  const balanceUsers =
+    balanceTab === "big" ? bigTaskUsers : balanceTab === "normal" ? normalTaskUsers : users;
   const balanceTotal = balanceUsers.reduce((sum, user) => sum + user.count, 0);
   const balancePie = buildPieData(balanceUsers, userColorMap);
   const choreMax = maxCount(choreCounts);
+  const balanceSwipe = useSwipeTab<BalanceTabKey>({
+    tabs: BALANCE_TAB_KEYS,
+    activeTab: balanceTab,
+    onChangeTab: setBalanceTab,
+  });
 
   return (
     <div className="space-y-4">
@@ -164,7 +178,17 @@ export function StatsView({
         </p>
       ) : null}
 
-      <div className="rounded-2xl bg-white p-4">
+      <div
+        className="rounded-2xl bg-white p-4"
+        onTouchStart={(e) => {
+          e.stopPropagation();
+          balanceSwipe.onTouchStart(e);
+        }}
+        onTouchEnd={(e) => {
+          e.stopPropagation();
+          balanceSwipe.onTouchEnd(e);
+        }}
+      >
         <h3 className="text-[19px] font-bold text-[#202124]">分担バランス</h3>
         <div className="mt-2 flex gap-1">
           {BALANCE_TABS.map((tab) => (
@@ -220,6 +244,7 @@ export function StatsView({
 
       <div className="space-y-3 rounded-2xl bg-white p-4">
         <h3 className="text-[19px] font-bold text-[#202124]">各タスクごと詳細</h3>
+        <p className="text-[12px] font-semibold text-[#EA4335]">※ 赤い※マークは大仕事です</p>
         <div className="flex flex-wrap gap-3">
           {users.map((user, idx) => {
             const color = userColorMap.get(user.userId) ?? USER_COLORS[idx % USER_COLORS.length];
@@ -239,7 +264,14 @@ export function StatsView({
               <div key={item.choreId} className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <div className="w-24">
-                    <p className="truncate text-[15px] font-semibold text-[#5F6368]">{item.title}</p>
+                    <div className="flex items-center gap-1">
+                      {item.isBigTask ? (
+                        <span className="text-[14px] font-bold leading-none text-[#EA4335]" aria-label="大仕事">
+                          ※
+                        </span>
+                      ) : null}
+                      <p className="truncate text-[15px] font-semibold text-[#5F6368]">{item.title}</p>
+                    </div>
                   </div>
                   <div className="relative h-3 flex-1 overflow-hidden rounded-md bg-[#F1F3F4]">
                     {barWidth > 0 ? (

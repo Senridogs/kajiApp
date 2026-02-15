@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
-import { Check, Copy, KeyRound, Loader2, Pencil, Ticket, Users } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Copy, KeyRound, Loader2, Pencil, Ticket, Trash2, Undo2, Users } from "lucide-react";
 
 import { iconByName } from "@/components/kaji/helpers";
+import { useSwipeDelete } from "@/components/kaji/use-swipe-delete";
 import { ChoreWithComputed } from "@/lib/types";
 
 export function IconBadge({
@@ -352,6 +353,128 @@ export function JoinHouseholdCard({
         >
           参加
         </button>
+      </div>
+    </div>
+  );
+}
+
+export function SwipableListChoreRow({
+  chore,
+  meta,
+  onOpenHistory,
+  onEdit,
+  onSwipeDelete,
+}: {
+  chore: ChoreWithComputed;
+  meta: string;
+  onOpenHistory: (chore: ChoreWithComputed) => void;
+  onEdit: (chore: ChoreWithComputed) => void;
+  onSwipeDelete: (chore: ChoreWithComputed) => void;
+}) {
+  const handleDelete = useCallback(() => {
+    onSwipeDelete(chore);
+  }, [chore, onSwipeDelete]);
+
+  const { offsetX, swiping, handlers } = useSwipeDelete({
+    threshold: 100,
+    onDelete: handleDelete,
+  });
+
+  const showDeleteHint = offsetX < -40;
+  const pastThreshold = offsetX < -100;
+
+  return (
+    <div className="relative overflow-hidden rounded-[14px]">
+      <div
+        className={`absolute inset-0 flex items-center justify-end rounded-[14px] px-5 ${
+          pastThreshold ? "bg-[#D45858]" : "bg-[#E88585]"
+        }`}
+      >
+        <div
+          className={`flex items-center gap-1.5 text-white transition-opacity ${
+            showDeleteHint ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <Trash2 size={18} />
+          <span className="text-[13px] font-bold">削除</span>
+        </div>
+      </div>
+      <div
+        {...handlers}
+        style={{
+          transform: `translateX(${offsetX}px)`,
+          transition: swiping ? "none" : "transform 300ms ease-out",
+        }}
+      >
+        <ListChoreRow
+          chore={chore}
+          meta={meta}
+          onOpenHistory={onOpenHistory}
+          onEdit={onEdit}
+        />
+      </div>
+    </div>
+  );
+}
+
+const UNDO_TOAST_DURATION = 5000;
+
+export function UndoToast({
+  message,
+  onUndo,
+  onDismiss,
+}: {
+  message: string;
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [progress, setProgress] = useState(100);
+
+  useEffect(() => {
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, 100 - (elapsed / UNDO_TOAST_DURATION) * 100);
+      setProgress(remaining);
+    }, 50);
+
+    timerRef.current = setTimeout(() => {
+      clearInterval(interval);
+      onDismiss();
+    }, UNDO_TOAST_DURATION);
+
+    return () => {
+      clearInterval(interval);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [onDismiss]);
+
+  const handleUndo = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    onUndo();
+  };
+
+  return (
+    <div className="fixed left-0 right-0 top-0 z-[9999] mx-auto max-w-[430px] px-4 pt-[env(safe-area-inset-top,12px)]">
+      <div className="animate-[slideDown_300ms_ease-out] overflow-hidden rounded-2xl bg-[#323232] shadow-lg">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <p className="flex-1 text-[14px] font-medium text-white">{message}</p>
+          <button
+            type="button"
+            onClick={handleUndo}
+            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-[14px] font-bold text-[#4FC3F7] active:bg-white/10"
+          >
+            <Undo2 size={14} />
+            取り消す
+          </button>
+        </div>
+        <div className="h-[3px] w-full bg-white/10">
+          <div
+            className="h-full bg-[#4FC3F7] transition-[width] duration-100 ease-linear"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
       </div>
     </div>
   );

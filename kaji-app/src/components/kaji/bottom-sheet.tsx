@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, type TouchEvent as ReactTouchEvent } from "react";
 import { AnimatePresence, motion, type PanInfo, useDragControls } from "motion/react";
 import { X } from "lucide-react";
 
@@ -23,9 +24,45 @@ export function BottomSheet({
   scrollable = true,
 }: BottomSheetProps) {
   const dragControls = useDragControls();
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const touchStartRef = useRef<{
+    x: number;
+    y: number;
+    startedAtMs: number;
+    scrollTop: number;
+  } | null>(null);
 
   const handleDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     if (info.offset.y > 120 || info.velocity.y > 700) {
+      onClose();
+    }
+  };
+
+  const handleTouchStart = (event: ReactTouchEvent<HTMLElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      startedAtMs: performance.now(),
+      scrollTop: sectionRef.current?.scrollTop ?? 0,
+    };
+  };
+
+  const handleTouchEnd = (event: ReactTouchEvent<HTMLElement>) => {
+    const start = touchStartRef.current;
+    const touch = event.changedTouches[0];
+    touchStartRef.current = null;
+    if (!start || !touch) return;
+
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    const elapsedMs = Math.max(1, performance.now() - start.startedAtMs);
+    const velocityY = (deltaY / elapsedMs) * 1000;
+    const isMostlyVertical = Math.abs(deltaY) > Math.abs(deltaX) * 1.2;
+    const canDismissBySwipe = !scrollable || start.scrollTop <= 0;
+
+    if (canDismissBySwipe && isMostlyVertical && (deltaY > 120 || velocityY > 700)) {
       onClose();
     }
   };
@@ -44,6 +81,7 @@ export function BottomSheet({
             aria-label="閉じる"
           />
           <motion.section
+            ref={sectionRef}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -54,6 +92,8 @@ export function BottomSheet({
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={0.35}
             onDragEnd={handleDragEnd}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
             className={`fixed bottom-0 left-0 right-0 z-50 mx-auto w-full max-w-[430px] rounded-t-[22px] bg-[#F8F9FA] shadow-xl ${containerClassName} ${maxHeightClassName} ${scrollable ? "overflow-auto" : "overflow-hidden"}`}
           >
             <button

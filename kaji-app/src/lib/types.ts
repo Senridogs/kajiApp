@@ -55,6 +55,7 @@ export type StatsChoreUserBreakdown = StatsUserCount & {
 export type StatsChoreCount = {
   choreId: string;
   title: string;
+  isBigTask: boolean;
   count: number;
   userCounts: StatsChoreUserBreakdown[];
 };
