@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { badRequest, parseJsonBody, requireSession } from "@/lib/api";
+import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { buildCompletionPayload, canSendPush, sendWebPush } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
@@ -15,7 +15,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   const { session, response } = await requireSession();
   if (!session) return response;
   const { id } = await params;
-  const body = parseJsonBody<Body>(await request.json());
+  const body = (await readJsonBody<Body>(request)) ?? {};
 
   const chore = await prisma.chore.findFirst({
     where: { id, householdId: session.householdId, archived: false },
@@ -31,12 +31,17 @@ export async function POST(request: Request, { params }: RouteParams) {
     return badRequest("実施日時の形式が不正です。");
   }
 
+  const memo = body?.memo?.trim() || null;
+  if (memo && memo.length > 500) {
+    return badRequest("メモは500文字以内で入力してください。");
+  }
+
   const record = await prisma.choreRecord.create({
     data: {
       householdId: session.householdId,
       choreId: chore.id,
       userId: user.id,
-      memo: body?.memo?.trim() || null,
+      memo,
       performedAt,
     },
   });

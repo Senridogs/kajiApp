@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Calendar, Minus, Plus } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
 
 import {
   BG_COLOR_PALETTE,
@@ -104,29 +104,22 @@ export function ChoreEditor({
       </div>
 
       <div>
-        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">
-          {mode === "create" ? "前回実施日時（任意）" : "前回実施日時"}
-        </p>
-        <div className="relative">
-          <Calendar
-            size={16}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#A28775]"
-          />
-          <input
-            type="date"
-            value={lastPerformedDate}
-            onChange={(e) => {
-              const next = toIsoFromJstDateInput(e.target.value);
-              onChange({ ...value, lastPerformedAt: next });
-            }}
-            onKeyDown={(e) => e.preventDefault()}
-            onPaste={(e) => e.preventDefault()}
-            inputMode="none"
-            max={maxDate}
-            aria-label="last-performed-date"
-            className="w-full rounded-[14px] border border-[#DADCE0] bg-white py-3 pl-10 pr-3 text-[16.8px] font-semibold text-[#202124] outline-none"
-          />
-        </div>
+        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">前回実施日時 *</p>
+        <input
+          type="date"
+          value={lastPerformedDate}
+          onChange={(e) => {
+            const next = toIsoFromJstDateInput(e.target.value);
+            onChange({ ...value, lastPerformedAt: next });
+          }}
+          onKeyDown={(e) => e.preventDefault()}
+          onPaste={(e) => e.preventDefault()}
+          inputMode="none"
+          max={maxDate}
+          required
+          aria-label="last-performed-date"
+          className="w-full rounded-[14px] border border-[#DADCE0] bg-white py-3 pl-3 pr-3 text-[16.8px] font-semibold text-[#202124] outline-none"
+        />
       </div>
 
       <div>

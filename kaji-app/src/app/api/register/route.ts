@@ -1,11 +1,38 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 
-import { badRequest, parseJsonBody } from "@/lib/api";
+import { badRequest, readJsonBody } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { setSession } from "@/lib/session";
 
 function generateInviteCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+async function createHouseholdWithUniqueInviteCode(maxRetries = 5) {
+  for (let i = 0; i < maxRetries; i += 1) {
+    try {
+      return await prisma.household.create({
+        data: {
+          inviteCode: generateInviteCode(),
+          reminderTimes: ["06:00", "20:00"],
+          notifyDueToday: true,
+          remindDailyIfOverdue: true,
+          notifyCompletion: true,
+        },
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error("招待コードの発行に失敗しました。");
 }
 
 function isHttpsRequest(request: Request) {
@@ -17,24 +44,25 @@ function isHttpsRequest(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = parseJsonBody<{ name?: string; inviteCode?: string }>(await request.json());
+  const body = await readJsonBody<{ name?: string; inviteCode?: string }>(request);
+  if (!body) return badRequest("リクエスト形式が不正です。");
   const name = body?.name?.trim();
   const inviteCodeInput = body?.inviteCode?.trim().toUpperCase();
 
   if (!name) return badRequest("ユーザー名を入力してください。");
   if (name.length > 24) return badRequest("ユーザー名は24文字以内で入力してください。");
 
-  const household = inviteCodeInput
+  let household = inviteCodeInput
     ? await prisma.household.findUnique({ where: { inviteCode: inviteCodeInput } })
-    : await prisma.household.create({
-        data: {
-          inviteCode: generateInviteCode(),
-          reminderTimes: ["06:00", "20:00"],
-          notifyDueToday: true,
-          remindDailyIfOverdue: true,
-          notifyCompletion: true,
-        },
-      });
+    : null;
+
+  if (!inviteCodeInput) {
+    try {
+      household = await createHouseholdWithUniqueInviteCode();
+    } catch {
+      return badRequest("世帯情報の作成に失敗しました。", 500);
+    }
+  }
 
   if (!household) {
     return badRequest("招待コードが見つかりません。");

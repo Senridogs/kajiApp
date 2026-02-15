@@ -1,7 +1,7 @@
-import { Chore, ChoreRecord, User } from "@prisma/client";
+import type { Chore, ChoreRecord, User } from "@prisma/client";
 
 import { addDays, diffDaysFloor, startOfJstDay } from "@/lib/time";
-import { ChoreWithComputed, StatsPeriodKey } from "@/lib/types";
+import type { ChoreWithComputed, StatsPeriodKey } from "@/lib/types";
 
 type ChoreWithLatest = Chore & {
   records: (ChoreRecord & { user: Pick<User, "id" | "name"> })[];
@@ -46,16 +46,16 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
 }
 
 export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()) {
-  const todayStart = startOfJstDay(now);
-  const nextWeek = addDays(todayStart, 7);
-
   const todayChores = chores.filter((c) => c.isDueToday || c.isOverdue || c.doneToday);
-  const tomorrowChores = chores.filter((c) => c.isDueTomorrow);
-  const upcomingBigChores = chores.filter((c) => {
-    if (!c.isBigTask || !c.dueAt) return false;
-    const due = new Date(c.dueAt);
-    return due >= todayStart && due <= nextWeek;
-  });
+  const tomorrowChores = chores.filter((c) => c.isDueTomorrow && !c.doneToday);
+  const nowTime = now.getTime();
+  const upcomingBigChores = chores
+    .filter((c) => c.isBigTask)
+    .sort((a, b) => {
+      const aTime = a.dueAt ? new Date(a.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
+      const bTime = b.dueAt ? new Date(b.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
+      return aTime - bTime;
+    });
 
   return { todayChores, tomorrowChores, upcomingBigChores };
 }
@@ -72,10 +72,15 @@ export function getStatsRange(
     return { start: undefined, end, label: "全期間" };
   }
 
-  if (period === "custom" && customFrom && customTo) {
-    const start = new Date(customFrom);
-    const to = new Date(customTo);
-    return { start, end: to, label: `${customFrom} - ${customTo}` };
+  if (period === "custom") {
+    if (!customFrom || !customTo) return null;
+
+    const from = new Date(`${customFrom}T00:00:00+09:00`);
+    const to = new Date(`${customTo}T23:59:59.999+09:00`);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
+    if (from > to) return null;
+
+    return { start: from, end: to, label: `${customFrom} - ${customTo}` };
   }
 
   const daysMap: Record<Exclude<StatsPeriodKey, "all" | "custom">, number> = {

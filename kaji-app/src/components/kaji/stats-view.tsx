@@ -14,14 +14,25 @@ const PERIOD_ITEMS: Array<{ key: StatsPeriodKey; label: string; accent?: boolean
 
 const CHORE_COLORS = ["#EA4335", "#4285F4", "#33C28A", "#FBBC05"];
 
+type CustomDateRange = {
+  from: string;
+  to: string;
+};
+
 export function StatsView({
   stats,
   activePeriod,
+  customDateRange,
   onChangePeriod,
+  onChangeCustomDateRange,
+  onApplyCustomDateRange,
 }: {
   stats: StatsResponse | null;
   activePeriod: StatsPeriodKey;
+  customDateRange: CustomDateRange;
   onChangePeriod: (period: StatsPeriodKey) => void;
+  onChangeCustomDateRange: (range: CustomDateRange) => void;
+  onApplyCustomDateRange: (range: CustomDateRange) => void | Promise<void>;
 }) {
   const pie = (() => {
     if (!stats?.userCounts?.length) return [];
@@ -60,6 +71,50 @@ export function StatsView({
           </button>
         ))}
       </div>
+
+      {activePeriod === "custom" ? (
+        <div className="space-y-2 rounded-2xl border border-[#DADCE0] bg-white p-4">
+          <p className="text-[14px] font-bold text-[#202124]">カスタム期間</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-center">
+            <input
+              type="date"
+              value={customDateRange.from}
+              max={customDateRange.to}
+              onChange={(e) =>
+                onChangeCustomDateRange({
+                  ...customDateRange,
+                  from: e.target.value,
+                })
+              }
+              className="rounded-[12px] border border-[#DADCE0] bg-white px-3 py-2 text-[14px] font-semibold text-[#202124]"
+            />
+            <p className="text-center text-[14px] font-bold text-[#5F6368]">〜</p>
+            <input
+              type="date"
+              value={customDateRange.to}
+              min={customDateRange.from}
+              onChange={(e) =>
+                onChangeCustomDateRange({
+                  ...customDateRange,
+                  to: e.target.value,
+                })
+              }
+              className="rounded-[12px] border border-[#DADCE0] bg-white px-3 py-2 text-[14px] font-semibold text-[#202124]"
+            />
+            <button
+              type="button"
+              onClick={() => onApplyCustomDateRange(customDateRange)}
+              className="rounded-[12px] bg-[#1A9BE8] px-3 py-2 text-[14px] font-bold text-white"
+            >
+              反映
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {stats?.rangeLabel ? (
+        <p className="text-[13px] font-medium text-[#5F6368]">集計範囲: {stats.rangeLabel}</p>
+      ) : null}
 
       <div className="space-y-3 rounded-2xl bg-white p-4">
         {(stats?.choreCounts ?? []).slice(0, 4).map((item, idx) => {

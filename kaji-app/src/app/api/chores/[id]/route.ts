@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { badRequest, parseJsonBody, requireSession } from "@/lib/api";
+import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { computeChore } from "@/lib/dashboard";
 import { prisma } from "@/lib/prisma";
 
@@ -19,7 +19,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const { session, response } = await requireSession();
   if (!session) return response;
   const { id } = await params;
-  const body = parseJsonBody<UpdateChoreBody>(await request.json());
+  const body = await readJsonBody<UpdateChoreBody>(request);
+  if (!body) return badRequest("リクエスト形式が不正です。");
 
   const data: Record<string, unknown> = {};
   if (typeof body?.title === "string") {
@@ -28,7 +29,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     data.title = title;
   }
   if (typeof body?.intervalDays === "number") {
-    if (body.intervalDays <= 0 || body.intervalDays > 365) {
+    if (!Number.isInteger(body.intervalDays) || body.intervalDays <= 0 || body.intervalDays > 365) {
       return badRequest("リマインド間隔は1〜365日で設定してください。");
     }
     data.intervalDays = body.intervalDays;
@@ -37,6 +38,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (typeof body?.icon === "string") data.icon = body.icon;
   if (typeof body?.iconColor === "string") data.iconColor = body.iconColor;
   if (typeof body?.bgColor === "string") data.bgColor = body.bgColor;
+  if (!Object.keys(data).length) return badRequest("更新する項目がありません。");
 
   const chore = await prisma.chore.findFirst({
     where: { id, householdId: session.householdId, archived: false },

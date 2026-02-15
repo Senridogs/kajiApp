@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { badRequest, parseJsonBody, requireSession } from "@/lib/api";
+import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 
 type SubscriptionBody = {
@@ -15,7 +15,8 @@ export async function POST(request: Request) {
   const { session, response } = await requireSession();
   if (!session) return response;
 
-  const body = parseJsonBody<SubscriptionBody>(await request.json());
+  const body = await readJsonBody<SubscriptionBody>(request);
+  if (!body) return badRequest("リクエスト形式が不正です。");
   const endpoint = body?.endpoint?.trim();
   const p256dh = body?.keys?.p256dh?.trim();
   const auth = body?.keys?.auth?.trim();
@@ -51,7 +52,8 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const { session, response } = await requireSession();
   if (!session) return response;
-  const body = parseJsonBody<{ endpoint?: string }>(await request.json());
+  const body = await readJsonBody<{ endpoint?: string }>(request);
+  if (!body) return badRequest("リクエスト形式が不正です。");
   const endpoint = body?.endpoint?.trim();
   if (!endpoint) return badRequest("endpoint が必要です。");
 
@@ -65,4 +67,3 @@ export async function DELETE(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
-

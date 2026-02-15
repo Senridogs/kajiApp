@@ -7,6 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node --experimental-loader ./test/support/alias-loader.mjs --experimental-strip-types --test \"test/unit/**/*.test.mts\"",
+    "test:integration": "powershell -ExecutionPolicy Bypass -File ./test/integration/run-api-flow.ps1",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push"

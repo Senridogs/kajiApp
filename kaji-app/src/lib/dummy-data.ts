@@ -1,4 +1,4 @@
-import { Prisma, User } from "@prisma/client";
+import type { Prisma, User } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { addDays, startOfJstDay } from "@/lib/time";

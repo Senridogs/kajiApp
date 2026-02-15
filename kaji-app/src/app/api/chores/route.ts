@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { badRequest, parseJsonBody, requireSession } from "@/lib/api";
+import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { computeChore } from "@/lib/dashboard";
 import { prisma } from "@/lib/prisma";
 
@@ -31,7 +31,7 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    chores: chores.map((c) => computeChore(c)),
+    chores: chores.map((chore) => computeChore(chore)),
   });
 }
 
@@ -39,14 +39,16 @@ export async function POST(request: Request) {
   const { session, response } = await requireSession();
   if (!session) return response;
 
-  const body = parseJsonBody<CreateChoreBody>(await request.json());
-  const title = body?.title?.trim();
-  const intervalDays = Number(body?.intervalDays ?? 0);
-  const lastPerformedAt = body?.lastPerformedAt;
+  const body = await readJsonBody<CreateChoreBody>(request);
+  if (!body) return badRequest("Invalid request body.");
+
+  const title = body.title?.trim();
+  const intervalDays = Number(body.intervalDays ?? 0);
+  const lastPerformedAt = body.lastPerformedAt;
 
   if (!title) return badRequest("Please provide a chore title.");
-  if (!Number.isFinite(intervalDays) || intervalDays <= 0 || intervalDays > 365) {
-    return badRequest("intervalDays must be between 1 and 365.");
+  if (!Number.isInteger(intervalDays) || intervalDays <= 0 || intervalDays > 365) {
+    return badRequest("intervalDays must be an integer between 1 and 365.");
   }
   if (!lastPerformedAt) {
     return badRequest("lastPerformedAt is required.");
@@ -63,10 +65,10 @@ export async function POST(request: Request) {
         householdId: session.householdId,
         title,
         intervalDays,
-        isBigTask: Boolean(body?.isBigTask),
-        icon: body?.icon || "sparkles",
-        iconColor: body?.iconColor || "#202124",
-        bgColor: body?.bgColor || "#EAF5FF",
+        isBigTask: Boolean(body.isBigTask),
+        icon: body.icon || "sparkles",
+        iconColor: body.iconColor || "#202124",
+        bgColor: body.bgColor || "#EAF5FF",
       },
     });
 

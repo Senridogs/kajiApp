@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { badRequest, parseJsonBody, requireSession } from "@/lib/api";
+import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 
 type Body = {
@@ -43,7 +43,8 @@ export async function PATCH(request: Request) {
   const { session, response } = await requireSession();
   if (!session) return response;
 
-  const body = parseJsonBody<Body>(await request.json());
+  const body = await readJsonBody<Body>(request);
+  if (!body) return badRequest("リクエスト形式が不正です。");
   const data: Record<string, unknown> = {};
 
   if (Array.isArray(body?.reminderTimes)) {

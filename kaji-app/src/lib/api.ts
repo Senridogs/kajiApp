@@ -18,6 +18,17 @@ export async function requireSession() {
 }
 
 export function parseJsonBody<T = unknown>(input: unknown): T | null {
-  if (!input || typeof input !== "object") return null;
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   return input as T;
+}
+
+export async function readJsonBody<T = unknown>(request: Request): Promise<T | null> {
+  const raw = await request.text().catch(() => "");
+  if (!raw.trim()) return null;
+
+  try {
+    return parseJsonBody<T>(JSON.parse(raw));
+  } catch {
+    return null;
+  }
 }

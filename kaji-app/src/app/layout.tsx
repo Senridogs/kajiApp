@@ -1,18 +1,5 @@
 import type { Metadata } from "next";
-import { M_PLUS_Rounded_1c, Nunito } from "next/font/google";
 import "./globals.css";
-
-const rounded = M_PLUS_Rounded_1c({
-  variable: "--font-rounded",
-  subsets: ["latin"],
-  weight: ["400", "500", "700", "800"],
-});
-
-const nunito = Nunito({
-  variable: "--font-nunito",
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
-});
 
 export const metadata: Metadata = {
   title: "Kaji App",
@@ -31,11 +18,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body
-        className={`${rounded.variable} ${nunito.variable} antialiased`}
-      >
-        {children}
-      </body>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

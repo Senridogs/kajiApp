@@ -51,11 +51,11 @@ export function ColorDot({
 }
 
 export function ScreenTitle({ title }: { title: string }) {
-  return <h1 className="text-[34px] font-bold leading-none text-[#202124]">{title}</h1>;
+  return <h1 className="text-[26px] font-bold leading-none text-[#202124]">{title}</h1>;
 }
 
 export function HomeSectionTitle({ title }: { title: string }) {
-  return <h2 className="text-[32px] font-bold leading-none text-[#202124]">{title}</h2>;
+  return <h2 className="text-[22px] font-bold leading-none text-[#202124]">{title}</h2>;
 }
 
 export function HomeTaskRow({

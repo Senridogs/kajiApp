@@ -25,8 +25,13 @@ export async function GET(request: Request) {
   }
 
   const slot = nowJstHourMinute(new Date());
+  const slotOnHour = `${slot.slice(0, 2)}:00`;
   const households = await prisma.household.findMany({
-    where: { reminderTimes: { has: slot } },
+    where: {
+      reminderTimes: {
+        hasSome: [slot, slotOnHour],
+      },
+    },
     select: { id: true, notifyDueToday: true, remindDailyIfOverdue: true },
   });
 
@@ -100,5 +105,5 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, slot, households: households.length, sent });
+  return NextResponse.json({ ok: true, slot, slotOnHour, households: households.length, sent });
 }

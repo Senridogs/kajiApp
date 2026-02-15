@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, type PanInfo, useDragControls } from "motion/react";
 import { X } from "lucide-react";
 
 type BottomSheetProps = {
@@ -18,6 +18,14 @@ export function BottomSheet({
   children,
   maxHeightClassName = "max-h-[85vh]",
 }: BottomSheetProps) {
+  const dragControls = useDragControls();
+
+  const handleDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    if (info.offset.y > 120 || info.velocity.y > 700) {
+      onClose();
+    }
+  };
+
   return (
     <AnimatePresence>
       {open ? (
@@ -36,9 +44,22 @@ export function BottomSheet({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 32, stiffness: 320 }}
+            drag="y"
+            dragListener={false}
+            dragControls={dragControls}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={0.35}
+            onDragEnd={handleDragEnd}
             className={`fixed bottom-0 left-0 right-0 z-50 mx-auto w-full max-w-[430px] rounded-t-3xl bg-[#F8F9FA] p-4 shadow-xl ${maxHeightClassName} overflow-auto`}
           >
-            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-[#DADCE0]" />
+            <button
+              type="button"
+              onPointerDown={(event) => dragControls.start(event)}
+              className="mx-auto mb-3 flex h-6 w-16 cursor-grab touch-none items-center justify-center active:cursor-grabbing"
+              aria-label="シートを移動"
+            >
+              <span className="h-1.5 w-12 rounded-full bg-[#DADCE0]" />
+            </button>
             {(title ?? "") !== "" ? (
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-base font-bold text-[#202124]">{title}</h2>
@@ -58,4 +79,3 @@ export function BottomSheet({
     </AnimatePresence>
   );
 }
-

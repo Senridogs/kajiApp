@@ -48,12 +48,29 @@ import {
 } from "@/lib/types";
 
 type TabKey = "home" | "list" | "stats" | "settings";
+type StatsQueryOptions = { from: string; to: string };
+type CustomDateRange = { from: string; to: string };
 const CUSTOM_ICONS_STORAGE_KEY = "kaji_custom_icons";
+
+function toDateInputValue(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function defaultCustomDateRange(now = new Date()): CustomDateRange {
+  const to = toDateInputValue(now);
+  const fromDate = new Date(now);
+  fromDate.setDate(fromDate.getDate() - 30);
+  const from = toDateInputValue(fromDate);
+  return { from, to };
+}
 
 export function KajiApp() {
   const [boot, setBoot] = useState<BootstrapResponse | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriodKey>("week");
+  const [customDateRange, setCustomDateRange] = useState<CustomDateRange>(() =>
+    defaultCustomDateRange(),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("home");
@@ -99,11 +116,20 @@ export function KajiApp() {
     return data;
   }, []);
 
-  const loadStats = useCallback(async (period: StatsPeriodKey) => {
-    const data = await apiFetch<StatsResponse>(`/api/stats?period=${period}`, { cache: "no-store" });
+  const loadStats = useCallback(async (period: StatsPeriodKey, options?: StatsQueryOptions) => {
+    const params = new URLSearchParams({ period });
+    if (period === "custom") {
+      const from = options?.from ?? customDateRange.from;
+      const to = options?.to ?? customDateRange.to;
+      params.set("from", from);
+      params.set("to", to);
+      setCustomDateRange({ from, to });
+    }
+
+    const data = await apiFetch<StatsResponse>(`/api/stats?${params.toString()}`, { cache: "no-store" });
     setStats(data);
     setStatsPeriod(period);
-  }, []);
+  }, [customDateRange.from, customDateRange.to]);
 
   const loadHistory = useCallback(async () => {
     const data = await apiFetch<{
@@ -218,15 +244,13 @@ export function KajiApp() {
   const saveChore = async () => {
     if (!editingChore) return;
     setError("");
-    if (!editingChore.id) {
-      if (!editingChore.lastPerformedAt) {
-        setError("前回実施日時を選択してください。");
-        return;
-      }
-      if (Number.isNaN(new Date(editingChore.lastPerformedAt).getTime())) {
-        setError("前回実施日時が不正です。");
-        return;
-      }
+    if (!editingChore.lastPerformedAt) {
+      setError("前回実施日時は必須です。");
+      return;
+    }
+    if (Number.isNaN(new Date(editingChore.lastPerformedAt).getTime())) {
+      setError("前回実施日時が不正です。");
+      return;
     }
 
     const payload = {
@@ -283,6 +307,10 @@ export function KajiApp() {
   };
 
   const updateNotificationSettings = async (next: NotificationSettings) => {
+    const previous = notificationSettings;
+    if (!previous) return;
+
+    setError("");
     setNotificationSettings(next);
     try {
       const updated = await apiFetch<NotificationSettings>("/api/notification-settings", {
@@ -291,15 +319,20 @@ export function KajiApp() {
       });
       setNotificationSettings(updated);
     } catch (err: unknown) {
+      setNotificationSettings(previous);
       setError((err as Error).message ?? "通知設定の保存に失敗しました。");
     }
   };
 
   const subscribePush = async () => {
     const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (!key) return setError("VAPID公開鍵が未設定です。");
-    if (!("serviceWorker" in navigator)) return;
+    if (!key) {
+      setError("VAPID公開鍵が未設定です。");
+      return false;
+    }
+    if (!("serviceWorker" in navigator)) return false;
     setPushLoading(true);
+    setError("");
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") throw new Error("通知の許可が必要です。");
@@ -312,16 +345,43 @@ export function KajiApp() {
       });
       await apiFetch("/api/subscriptions", { method: "POST", body: JSON.stringify(sub) });
       setPushEnabled(true);
+      return true;
     } catch (err: unknown) {
       setError((err as Error).message ?? "通知を有効にできませんでした。");
+      return false;
     } finally {
       setPushLoading(false);
     }
   };
 
   const handleTestNotification = async () => {
-    if (!pushEnabled) await subscribePush();
-    await apiFetch("/api/notifications/test", { method: "POST", body: "{}" });
+    const ready = pushEnabled || (await subscribePush());
+    if (!ready) return;
+
+    try {
+      setError("");
+      await apiFetch("/api/notifications/test", { method: "POST", body: "{}" });
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "テスト通知の送信に失敗しました。");
+    }
+  };
+
+  const applyCustomDateRange = async (range: CustomDateRange) => {
+    if (!range.from || !range.to) {
+      setError("カスタム期間の開始日と終了日を入力してください。");
+      return;
+    }
+    if (range.from > range.to) {
+      setError("カスタム期間は開始日が終了日より前になるように設定してください。");
+      return;
+    }
+
+    try {
+      setError("");
+      await loadStats("custom", range);
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "統計の読み込みに失敗しました。");
+    }
   };
 
   const historyUsers = useMemo(() => boot?.users ?? [], [boot?.users]);
@@ -477,7 +537,25 @@ export function KajiApp() {
         {activeTab === "stats" ? (
           <BlurFade className="space-y-5">
             <ScreenTitle title="統計" />
-            <StatsView stats={stats} activePeriod={statsPeriod} onChangePeriod={loadStats} />
+            <StatsView
+              stats={stats}
+              activePeriod={statsPeriod}
+              customDateRange={customDateRange}
+              onChangePeriod={async (period) => {
+                try {
+                  setError("");
+                  if (period === "custom") {
+                    await applyCustomDateRange(customDateRange);
+                    return;
+                  }
+                  await loadStats(period);
+                } catch (err: unknown) {
+                  setError((err as Error).message ?? "統計の読み込みに失敗しました。");
+                }
+              }}
+              onChangeCustomDateRange={setCustomDateRange}
+              onApplyCustomDateRange={applyCustomDateRange}
+            />
           </BlurFade>
         ) : null}
 
@@ -504,6 +582,11 @@ export function KajiApp() {
                       type="button"
                       onClick={() => {
                         if (!notificationSettings) return;
+                        if (notificationSettings.reminderTimes.length <= 1) {
+                          setError("通知時刻は1件以上必要です。");
+                          return;
+                        }
+
                         const next = notificationSettings.reminderTimes.filter((x) => x !== time);
                         updateNotificationSettings({ ...notificationSettings, reminderTimes: next });
                       }}
@@ -607,7 +690,7 @@ export function KajiApp() {
         </Dock>
       </nav>
 
-      <BottomSheet open={choreEditorOpen} onClose={() => setChoreEditorOpen(false)} title="">
+      <BottomSheet open={choreEditorOpen && !customIconOpen} onClose={() => setChoreEditorOpen(false)} title="">
         <div className="space-y-3">
           <p className="text-center text-[24px] font-bold text-[#202124]">
             {editingChore?.id ? "編集" : "登録"}

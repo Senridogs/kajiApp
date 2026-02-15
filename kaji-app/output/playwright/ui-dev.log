@@ -1,0 +1,12 @@
+
+> kaji-app@0.1.0 dev
+> next dev --hostname 127.0.0.1 --port 4320
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://127.0.0.1:4320
+- Network:       http://127.0.0.1:4320
+- Environments: .env
+
+✓ Starting...
+  Suggestion: If you intended to restart next dev, terminate the other process, and then try again.
+[?25h

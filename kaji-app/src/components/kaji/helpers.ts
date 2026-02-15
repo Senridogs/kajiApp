@@ -1,7 +1,7 @@
 import { icons, type LucideIcon } from "lucide-react";
 
 import { startOfJstDay } from "@/lib/time";
-import { ChoreWithComputed } from "@/lib/types";
+import type { ChoreWithComputed } from "@/lib/types";
 
 export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
