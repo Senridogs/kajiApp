@@ -78,6 +78,8 @@ export function HomeTaskRow({
   const done = chore.doneToday;
   const title = chore.title;
   const disableRecordAction = isUpdating || (!done && recordDisabled);
+  const actorName = done ? (chore.lastPerformerName ?? assigneeName ?? null) : assigneeName;
+  const actorLabel = done ? "実施者" : "担当者";
 
   return (
     <div
@@ -89,8 +91,8 @@ export function HomeTaskRow({
         <p className={`truncate text-[15.2px] font-bold leading-tight ${done ? "text-[#2C6E49]" : "text-[#202124]"}`}>
           {title}
         </p>
-        <p className={`truncate text-[11px] font-semibold ${assigneeName ? "text-[#1A9BE8]" : "text-[#BDC1C6]"}`}>
-          👤 {assigneeName || "未設定"}
+        <p className={`truncate text-[11px] font-semibold ${actorName ? "text-[#1A9BE8]" : "text-[#BDC1C6]"}`}>
+          {actorLabel}: {actorName || "未設定"}
         </p>
         {meta ? <p className="truncate text-[10.4px] font-medium text-[#5F6368]">{meta}</p> : null}
       </div>
