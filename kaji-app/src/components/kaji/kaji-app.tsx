@@ -61,6 +61,7 @@ const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
 ];
 
 const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 type TabKey = "home" | "list" | "stats" | "settings";
 const TAB_ORDER: readonly TabKey[] = ["home", "list", "stats", "settings"] as const;
@@ -96,12 +97,20 @@ function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
       !(c.isBigTask && c.doneToday),
   );
   const priorityChoreIds = new Set([...todayChores, ...tomorrowChores].map((chore) => chore.id));
-  const nowTime = Date.now();
+  const bigTaskWindowEnd = addDays(startOfJstDay(new Date()), 40).getTime();
   const upcomingBigChores = chores
-    .filter((c) => c.isBigTask && !priorityChoreIds.has(c.id))
+    .filter((c) => {
+      if (!c.isBigTask || priorityChoreIds.has(c.id) || !c.dueAt) return false;
+      const dueDayTime = startOfJstDay(new Date(c.dueAt)).getTime();
+      return dueDayTime <= bigTaskWindowEnd;
+    })
     .sort((a, b) => {
-      const aTime = a.dueAt ? new Date(a.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
-      const bTime = b.dueAt ? new Date(b.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
+      const aTime = a.dueAt
+        ? startOfJstDay(new Date(a.dueAt)).getTime()
+        : Number.MAX_SAFE_INTEGER;
+      const bTime = b.dueAt
+        ? startOfJstDay(new Date(b.dueAt)).getTime()
+        : Number.MAX_SAFE_INTEGER;
       return aTime - bTime;
     });
 
@@ -275,7 +284,12 @@ export function KajiApp() {
       .map(({ date, key: dateKey }) => {
         const dayChores = allFiltered.filter((c) => {
           if (!c.dueAt) return false;
-          return toJstDateKey(startOfJstDay(new Date(c.dueAt))) <= dateKey;
+          const dueStart = startOfJstDay(new Date(c.dueAt));
+          if (Number.isNaN(dueStart.getTime())) return false;
+          const diffDays = Math.floor((date.getTime() - dueStart.getTime()) / DAY_IN_MS);
+          if (diffDays < 0) return false;
+          const intervalDays = Math.max(1, c.intervalDays);
+          return diffDays % intervalDays === 0;
         });
         if (dayChores.length === 0) return null;
         return { date, dateKey, dayChores };
@@ -860,7 +874,7 @@ export function KajiApp() {
     {
       key: "big" as const,
       title: "大仕事",
-      chores: [...boot.upcomingBigChores].sort((a, b) => JA_COLLATOR.compare(a.title, b.title)),
+      chores: [...boot.upcomingBigChores],
     },
   ].filter((section) => section.chores.length > 0);
   const hasAnyUpcomingChores = homeSections.length > 0;

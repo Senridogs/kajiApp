@@ -400,7 +400,19 @@ export function SwipableListChoreRow({
         </div>
       </div>
       <div
-        {...handlers}
+        onTouchStart={(event) => {
+          event.stopPropagation();
+          handlers.onTouchStart(event);
+        }}
+        onTouchMove={(event) => {
+          event.stopPropagation();
+          handlers.onTouchMove(event);
+        }}
+        onTouchEnd={(event) => {
+          event.stopPropagation();
+          handlers.onTouchEnd();
+        }}
+        onClickCapture={handlers.onClickCapture}
         style={{
           transform: `translateX(${offsetX}px)`,
           transition: swiping ? "none" : "transform 300ms ease-out",

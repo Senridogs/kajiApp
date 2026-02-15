@@ -299,11 +299,11 @@ test("splitChoresForHome keeps doneToday non-daily chore in both today and tomor
   assert.equal(split.tomorrowChores[0]?.id, "weekly-done");
 });
 
-test("splitChoresForHome includes big tasks even if due is after a week", () => {
+test("splitChoresForHome keeps big tasks only within 40 days", () => {
   const now = new Date("2026-02-15T03:00:00.000Z");
-  const bigFuture = {
-    id: "big-future",
-    title: "big-future",
+  const bigWithinWindow = {
+    id: "big-within-window",
+    title: "big-within-window",
     icon: "",
     iconColor: "",
     bgColor: "",
@@ -315,7 +315,19 @@ test("splitChoresForHome includes big tasks even if due is after a week", () => 
     lastPerformedAt: null,
     lastPerformerName: null,
     lastRecordId: null,
-    dueAt: "2026-03-20T00:00:00.000Z",
+    dueAt: "2026-03-27T00:00:00.000Z",
+    isDueToday: false,
+    isDueTomorrow: false,
+    isOverdue: false,
+    overdueDays: 0,
+    daysSinceLast: null,
+    doneToday: false,
+  };
+  const bigOutsideWindow = {
+    ...bigWithinWindow,
+    id: "big-outside-window",
+    title: "big-outside-window",
+    dueAt: "2026-03-28T00:00:00.000Z",
     isDueToday: false,
     isDueTomorrow: false,
     isOverdue: false,
@@ -324,9 +336,44 @@ test("splitChoresForHome includes big tasks even if due is after a week", () => 
     doneToday: false,
   };
 
-  const split = splitChoresForHome([bigFuture], now);
+  const split = splitChoresForHome([bigWithinWindow, bigOutsideWindow], now);
   assert.equal(split.upcomingBigChores.length, 1);
-  assert.equal(split.upcomingBigChores[0]?.id, "big-future");
+  assert.equal(split.upcomingBigChores[0]?.id, "big-within-window");
+});
+
+test("splitChoresForHome sorts upcoming big chores by nearest due date", () => {
+  const now = new Date("2026-02-15T03:00:00.000Z");
+  const bigLater = {
+    id: "big-later",
+    title: "big-later",
+    icon: "",
+    iconColor: "",
+    bgColor: "",
+    intervalDays: 30,
+    isBigTask: true,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
+    archived: false,
+    lastPerformedAt: null,
+    lastPerformerName: null,
+    lastRecordId: null,
+    dueAt: "2026-02-25T00:00:00.000Z",
+    isDueToday: false,
+    isDueTomorrow: false,
+    isOverdue: false,
+    overdueDays: 0,
+    daysSinceLast: null,
+    doneToday: false,
+  };
+  const bigSooner = {
+    ...bigLater,
+    id: "big-sooner",
+    title: "big-sooner",
+    dueAt: "2026-02-20T00:00:00.000Z",
+  };
+
+  const split = splitChoresForHome([bigLater, bigSooner], now);
+  assert.deepEqual(split.upcomingBigChores.map((c) => c.id), ["big-sooner", "big-later"]);
 });
 
 test("splitChoresForHome keeps doneToday big chore in big section until due date", () => {

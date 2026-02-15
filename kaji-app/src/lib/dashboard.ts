@@ -60,7 +60,7 @@ export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()
   const priorityChoreIds = new Set(
     [...todayChores, ...tomorrowChores].map((chore) => chore.id),
   );
-  const bigTaskWindowEnd = addDays(startOfJstDay(now), 30).getTime();
+  const bigTaskWindowEnd = addDays(startOfJstDay(now), 40).getTime();
   const upcomingBigChores = chores
     .filter((c) => {
       if (!c.isBigTask || priorityChoreIds.has(c.id) || !c.dueAt) return false;

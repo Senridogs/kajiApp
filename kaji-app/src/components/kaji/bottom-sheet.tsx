@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type TouchEvent as ReactTouchEvent } from "react";
+import { useEffect, useRef, type TouchEvent as ReactTouchEvent } from "react";
 import { AnimatePresence, motion, type PanInfo, useDragControls } from "motion/react";
 import { X } from "lucide-react";
 
@@ -38,6 +38,26 @@ export function BottomSheet({
     }
   };
 
+  useEffect(() => {
+    if (!open) return;
+
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtmlOverscrollY = html.style.overscrollBehaviorY;
+    const previousBodyOverscrollY = body.style.overscrollBehaviorY;
+    const previousBodyOverflow = body.style.overflow;
+
+    html.style.overscrollBehaviorY = "none";
+    body.style.overscrollBehaviorY = "none";
+    body.style.overflow = "hidden";
+
+    return () => {
+      html.style.overscrollBehaviorY = previousHtmlOverscrollY;
+      body.style.overscrollBehaviorY = previousBodyOverscrollY;
+      body.style.overflow = previousBodyOverflow;
+    };
+  }, [open]);
+
   const handleTouchStart = (event: ReactTouchEvent<HTMLElement>) => {
     const touch = event.touches[0];
     if (!touch) return;
@@ -67,6 +87,22 @@ export function BottomSheet({
     }
   };
 
+  const handleTouchMove = (event: ReactTouchEvent<HTMLElement>) => {
+    const start = touchStartRef.current;
+    const touch = event.touches[0];
+    if (!start || !touch) return;
+
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    const isMostlyVertical = Math.abs(deltaY) > Math.abs(deltaX) * 1.2;
+    const currentScrollTop = sectionRef.current?.scrollTop ?? 0;
+    const canDismissBySwipe = !scrollable || (start.scrollTop <= 0 && currentScrollTop <= 0);
+
+    if (deltaY > 0 && isMostlyVertical && canDismissBySwipe) {
+      event.preventDefault();
+    }
+  };
+
   return (
     <AnimatePresence>
       {open ? (
@@ -93,8 +129,10 @@ export function BottomSheet({
             dragElastic={0.35}
             onDragEnd={handleDragEnd}
             onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             className={`fixed bottom-0 left-0 right-0 z-50 mx-auto w-full max-w-[430px] rounded-t-[22px] bg-[#F8F9FA] shadow-xl ${containerClassName} ${maxHeightClassName} ${scrollable ? "overflow-auto" : "overflow-hidden"}`}
+            style={{ overscrollBehaviorY: "contain" }}
           >
             <button
               type="button"
