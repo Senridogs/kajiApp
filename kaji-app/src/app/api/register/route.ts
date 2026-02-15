@@ -43,63 +43,89 @@ function isHttpsRequest(request: Request) {
   return new URL(request.url).protocol === "https:";
 }
 
+function registerErrorResponse(error: unknown) {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    (error.code === "P2021" || error.code === "P2022")
+  ) {
+    return badRequest(
+      "データベースの初期化が未完了です。Vercel の DATABASE_URL を確認し、`npx prisma db push` または `prisma migrate deploy` を実行してください。",
+      500,
+    );
+  }
+
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    return badRequest(
+      "データベース接続に失敗しました。Vercel の DATABASE_URL を確認してください。",
+      500,
+    );
+  }
+
+  return badRequest("登録処理に失敗しました。時間をおいて再試行してください。", 500);
+}
+
 export async function POST(request: Request) {
-  const body = await readJsonBody<{ name?: string; inviteCode?: string }>(request);
-  if (!body) return badRequest("リクエスト形式が不正です。");
-  const name = body?.name?.trim();
-  const inviteCodeInput = body?.inviteCode?.trim().toUpperCase();
+  try {
+    const body = await readJsonBody<{ name?: string; inviteCode?: string }>(request);
+    if (!body) return badRequest("リクエスト形式が不正です。");
+    const name = body?.name?.trim();
+    const inviteCodeInput = body?.inviteCode?.trim().toUpperCase();
 
-  if (!name) return badRequest("ユーザー名を入力してください。");
-  if (name.length > 24) return badRequest("ユーザー名は24文字以内で入力してください。");
+    if (!name) return badRequest("ユーザー名を入力してください。");
+    if (name.length > 24) return badRequest("ユーザー名は24文字以内で入力してください。");
 
-  const existingUser = await prisma.user.findFirst({
-    where: { name },
-    include: { household: { select: { inviteCode: true } } },
-    orderBy: { createdAt: "asc" },
-  });
+    const existingUser = await prisma.user.findFirst({
+      where: { name },
+      include: { household: { select: { inviteCode: true } } },
+      orderBy: { createdAt: "asc" },
+    });
 
-  if (existingUser) {
+    if (existingUser) {
+      await setSession(
+        { userId: existingUser.id, householdId: existingUser.householdId },
+        { secure: isHttpsRequest(request) },
+      );
+
+      return NextResponse.json({
+        user: { id: existingUser.id, name: existingUser.name },
+        householdInviteCode: existingUser.household.inviteCode,
+      });
+    }
+
+    let household = inviteCodeInput
+      ? await prisma.household.findUnique({ where: { inviteCode: inviteCodeInput } })
+      : null;
+
+    if (!inviteCodeInput) {
+      try {
+        household = await createHouseholdWithUniqueInviteCode();
+      } catch {
+        return badRequest("世帯情報の作成に失敗しました。", 500);
+      }
+    }
+
+    if (!household) {
+      return badRequest("招待コードが見つかりません。");
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        name,
+        householdId: household.id,
+      },
+    });
+
     await setSession(
-      { userId: existingUser.id, householdId: existingUser.householdId },
+      { userId: user.id, householdId: household.id },
       { secure: isHttpsRequest(request) },
     );
 
     return NextResponse.json({
-      user: { id: existingUser.id, name: existingUser.name },
-      householdInviteCode: existingUser.household.inviteCode,
+      user: { id: user.id, name: user.name },
+      householdInviteCode: household.inviteCode,
     });
+  } catch (error: unknown) {
+    console.error("[api/register] failed", error);
+    return registerErrorResponse(error);
   }
-
-  let household = inviteCodeInput
-    ? await prisma.household.findUnique({ where: { inviteCode: inviteCodeInput } })
-    : null;
-
-  if (!inviteCodeInput) {
-    try {
-      household = await createHouseholdWithUniqueInviteCode();
-    } catch {
-      return badRequest("世帯情報の作成に失敗しました。", 500);
-    }
-  }
-
-  if (!household) {
-    return badRequest("招待コードが見つかりません。");
-  }
-
-  const user = await prisma.user.create({
-    data: {
-      name,
-      householdId: household.id,
-    },
-  });
-
-  await setSession(
-    { userId: user.id, householdId: household.id },
-    { secure: isHttpsRequest(request) },
-  );
-
-  return NextResponse.json({
-    user: { id: user.id, name: user.name },
-    householdInviteCode: household.inviteCode,
-  });
 }

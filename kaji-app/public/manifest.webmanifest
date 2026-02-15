@@ -1,20 +1,19 @@
-{
+﻿{
   "name": "Kaji App",
   "short_name": "Kaji",
-  "description": "夫婦向け家事管理アプリ",
+  "description": "家事分担を手軽に管理できるアプリ",
   "lang": "ja",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#F8F9FA",
-  "theme_color": "#1A9BE8",
+  "background_color": "#FFFFFF",
+  "theme_color": "#4285F4",
   "icons": [
     {
       "src": "/app-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ]
 }
-

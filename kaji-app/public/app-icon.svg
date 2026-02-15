@@ -1,21 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
-      <stop offset="0%" stop-color="#6CC7FF"/>
-      <stop offset="100%" stop-color="#1A9BE8"/>
+    <linearGradient id="surface" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F1F3F4"/>
     </linearGradient>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#202124" flood-opacity="0.14"/>
+    </filter>
   </defs>
-  <rect width="512" height="512" rx="120" fill="url(#bg)"/>
-  <circle cx="256" cy="256" r="162" fill="#EAF5FF"/>
-  <g fill="none" stroke="#1A9BE8" stroke-linecap="round" stroke-linejoin="round" stroke-width="28">
-    <path d="M256 158v58"/>
-    <path d="M256 296v58"/>
-    <path d="M158 256h58"/>
-    <path d="M296 256h58"/>
-    <path d="m190 190 42 42"/>
-    <path d="m280 280 42 42"/>
-    <path d="m322 190-42 42"/>
-    <path d="m232 280-42 42"/>
-  </g>
-</svg>
 
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#surface)" filter="url(#cardShadow)"/>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="72">
+    <path d="M328 520L512 344" stroke="#4285F4"/>
+    <path d="M512 344L696 520" stroke="#EA4335"/>
+    <path d="M376 520V712" stroke="#34A853"/>
+    <path d="M648 520V712" stroke="#FBBC05"/>
+    <path d="M376 712H648" stroke="#4285F4"/>
+  </g>
+
+  <path
+    d="M430 606L500 674L618 556"
+    fill="none"
+    stroke="#5F6368"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="62"
+  />
+</svg>

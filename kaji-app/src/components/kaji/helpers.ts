@@ -13,8 +13,19 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "通信に失敗しました。" }));
-    throw new Error(err.error ?? "通信に失敗しました。");
+    const fallback = `通信に失敗しました。(HTTP ${res.status})`;
+    const contentType = res.headers.get("content-type") ?? "";
+
+    if (!contentType.includes("application/json")) {
+      throw new Error(fallback);
+    }
+
+    const err = await res.json().catch(() => ({ error: fallback }));
+    const message =
+      typeof err?.error === "string" && err.error.trim().length > 0
+        ? err.error
+        : fallback;
+    throw new Error(message.includes("HTTP") ? message : `${message} (HTTP ${res.status})`);
   }
 
   return res.json() as Promise<T>;

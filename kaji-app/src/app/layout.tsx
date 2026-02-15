@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Kaji App",
-  description: "夫婦向け家事管理アプリ",
+  description: "家事分担を手軽に管理できるアプリ",
+  themeColor: "#4285F4",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/app-icon.svg",
