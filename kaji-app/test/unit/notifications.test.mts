@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCompletionPayload, buildReminderPayload } from "../../src/lib/notifications.ts";
+import { buildCompletionPayload, buildReminderPayload } from "../../src/lib/notifications.js";
 
 test("buildReminderPayload formats top chores and suffix", () => {
   const payload = buildReminderPayload({
@@ -28,5 +28,5 @@ test("buildCompletionPayload trims memo and formats body", () => {
 
   assert.equal(payload.type, "completion");
   assert.equal(payload.title, "完了: 食器洗い");
-  assert.equal(payload.body, "せんり が記録しました。 メモ: 夜ごはん後に実施");
+  assert.equal(payload.body, "せんり が済しました。 メモ: 夜ごはん後に実施");
 });

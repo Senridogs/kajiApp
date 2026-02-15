@@ -23,30 +23,49 @@ model Household {
 }
 
 model User {
-  id            String             @id @default(cuid())
-  householdId   String
-  name          String
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  household     Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  records       ChoreRecord[]
-  subscriptions PushSubscription[]
+  id                 String             @id @default(cuid())
+  householdId        String
+  name               String
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  household          Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  records            ChoreRecord[]
+  subscriptions      PushSubscription[]
+  defaultForChores   Chore[]            @relation("DefaultAssignee")
+  choreAssignments   ChoreAssignment[]
 }
 
 model Chore {
-  id           String       @id @default(cuid())
-  householdId  String
-  title        String
-  icon         String       @default("sparkles")
-  iconColor    String       @default("#202124")
-  bgColor      String       @default("#EAF5FF")
-  intervalDays Int
-  isBigTask    Boolean      @default(false)
-  archived     Boolean      @default(false)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  household    Household    @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  records      ChoreRecord[]
+  id                String            @id @default(cuid())
+  householdId       String
+  title             String
+  icon              String            @default("sparkles")
+  iconColor         String            @default("#202124")
+  bgColor           String            @default("#EAF5FF")
+  intervalDays      Int
+  isBigTask         Boolean           @default(false)
+  defaultAssigneeId String?
+  archived          Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  household         Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  defaultAssignee   User?             @relation("DefaultAssignee", fields: [defaultAssigneeId], references: [id], onDelete: SetNull)
+  records           ChoreRecord[]
+  assignments       ChoreAssignment[]
+}
+
+model ChoreAssignment {
+  id        String   @id @default(cuid())
+  choreId   String
+  userId    String
+  date      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  chore     Chore    @relation(fields: [choreId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([choreId, date])
+  @@index([choreId, date])
 }
 
 model ChoreRecord {

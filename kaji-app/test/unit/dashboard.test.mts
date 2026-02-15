@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { computeChore, getStatsRange, splitChoresForHome } from "../../src/lib/dashboard.ts";
+import { computeChore, getStatsRange, splitChoresForHome } from "../../src/lib/dashboard.js";
 
 test("computeChore marks due today and doneToday correctly", () => {
   const now = new Date("2026-02-15T03:00:00.000Z"); // JST: 12:00
@@ -15,6 +15,8 @@ test("computeChore marks due today and doneToday correctly", () => {
     bgColor: "#000",
     intervalDays: 1,
     isBigTask: false,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
     archived: false,
     createdAt: new Date("2026-02-01T00:00:00.000Z"),
     updatedAt: new Date("2026-02-01T00:00:00.000Z"),
@@ -53,6 +55,8 @@ test("computeChore marks overdue items", () => {
     bgColor: "#000",
     intervalDays: 2,
     isBigTask: true,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
     archived: false,
     createdAt: new Date("2026-02-01T00:00:00.000Z"),
     updatedAt: new Date("2026-02-01T00:00:00.000Z"),
@@ -88,6 +92,8 @@ test("splitChoresForHome splits today/tomorrow/big sections", () => {
       intervalDays: 1,
       isBigTask: false,
       archived: false,
+      defaultAssigneeId: null,
+      defaultAssigneeName: null,
       lastPerformedAt: null,
       lastPerformerName: null,
       lastRecordId: null,
@@ -108,6 +114,8 @@ test("splitChoresForHome splits today/tomorrow/big sections", () => {
       intervalDays: 1,
       isBigTask: false,
       archived: false,
+      defaultAssigneeId: null,
+      defaultAssigneeName: null,
       lastPerformedAt: null,
       lastPerformerName: null,
       lastRecordId: null,
@@ -128,6 +136,8 @@ test("splitChoresForHome splits today/tomorrow/big sections", () => {
       intervalDays: 30,
       isBigTask: true,
       archived: false,
+      defaultAssigneeId: null,
+      defaultAssigneeName: null,
       lastPerformedAt: null,
       lastPerformerName: null,
       lastRecordId: null,
@@ -148,7 +158,7 @@ test("splitChoresForHome splits today/tomorrow/big sections", () => {
   assert.equal(split.upcomingBigChores.length, 1);
 });
 
-test("splitChoresForHome shows daily chore in both today and tomorrow when doneToday", () => {
+test("splitChoresForHome keeps doneToday daily chore in both today and tomorrow", () => {
   const now = new Date("2026-02-15T03:00:00.000Z");
   const doneTodayAndDueTomorrow = {
     id: "done",
@@ -158,6 +168,8 @@ test("splitChoresForHome shows daily chore in both today and tomorrow when doneT
     bgColor: "",
     intervalDays: 1,
     isBigTask: false,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
     archived: false,
     lastPerformedAt: "2026-02-14T15:30:00.000Z",
     lastPerformerName: "A",
@@ -174,12 +186,88 @@ test("splitChoresForHome shows daily chore in both today and tomorrow when doneT
   const split = splitChoresForHome([doneTodayAndDueTomorrow], now);
   assert.equal(split.todayChores.length, 1);
   assert.equal(split.todayChores[0]?.id, "done");
-  // Daily chore (intervalDays=1) should also appear in tomorrow
   assert.equal(split.tomorrowChores.length, 1);
   assert.equal(split.tomorrowChores[0]?.id, "done");
 });
 
-test("splitChoresForHome does not duplicate doneToday non-daily chores into tomorrow", () => {
+test("splitChoresForHome excludes big chores already shown in today or tomorrow", () => {
+  const now = new Date("2026-02-15T03:00:00.000Z");
+  const chores = [
+    {
+      id: "big-today",
+      title: "big-today",
+      icon: "",
+      iconColor: "",
+      bgColor: "",
+      intervalDays: 30,
+      isBigTask: true,
+      archived: false,
+      defaultAssigneeId: null,
+      defaultAssigneeName: null,
+      lastPerformedAt: null,
+      lastPerformerName: null,
+      lastRecordId: null,
+      dueAt: "2026-02-15T06:00:00.000Z",
+      isDueToday: true,
+      isDueTomorrow: false,
+      isOverdue: false,
+      overdueDays: 0,
+      daysSinceLast: null,
+      doneToday: false,
+    },
+    {
+      id: "big-tomorrow",
+      title: "big-tomorrow",
+      icon: "",
+      iconColor: "",
+      bgColor: "",
+      intervalDays: 30,
+      isBigTask: true,
+      archived: false,
+      defaultAssigneeId: null,
+      defaultAssigneeName: null,
+      lastPerformedAt: null,
+      lastPerformerName: null,
+      lastRecordId: null,
+      dueAt: "2026-02-16T06:00:00.000Z",
+      isDueToday: false,
+      isDueTomorrow: true,
+      isOverdue: false,
+      overdueDays: 0,
+      daysSinceLast: null,
+      doneToday: false,
+    },
+    {
+      id: "big-future",
+      title: "big-future",
+      icon: "",
+      iconColor: "",
+      bgColor: "",
+      intervalDays: 30,
+      isBigTask: true,
+      archived: false,
+      defaultAssigneeId: null,
+      defaultAssigneeName: null,
+      lastPerformedAt: null,
+      lastPerformerName: null,
+      lastRecordId: null,
+      dueAt: "2026-02-20T06:00:00.000Z",
+      isDueToday: false,
+      isDueTomorrow: false,
+      isOverdue: false,
+      overdueDays: 0,
+      daysSinceLast: null,
+      doneToday: false,
+    },
+  ];
+
+  const split = splitChoresForHome(chores, now);
+  assert.deepEqual(split.todayChores.map((c) => c.id), ["big-today"]);
+  assert.deepEqual(split.tomorrowChores.map((c) => c.id), ["big-tomorrow"]);
+  assert.deepEqual(split.upcomingBigChores.map((c) => c.id), ["big-future"]);
+});
+
+test("splitChoresForHome keeps doneToday non-daily chore in both today and tomorrow", () => {
   const now = new Date("2026-02-15T03:00:00.000Z");
   const doneTodayWeekly = {
     id: "weekly-done",
@@ -189,6 +277,8 @@ test("splitChoresForHome does not duplicate doneToday non-daily chores into tomo
     bgColor: "",
     intervalDays: 7,
     isBigTask: false,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
     archived: false,
     lastPerformedAt: "2026-02-14T15:30:00.000Z",
     lastPerformerName: "A",
@@ -204,8 +294,9 @@ test("splitChoresForHome does not duplicate doneToday non-daily chores into tomo
 
   const split = splitChoresForHome([doneTodayWeekly], now);
   assert.equal(split.todayChores.length, 1);
-  // Non-daily chore: isDueTomorrow=true so it still shows in tomorrow
+  assert.equal(split.todayChores[0]?.id, "weekly-done");
   assert.equal(split.tomorrowChores.length, 1);
+  assert.equal(split.tomorrowChores[0]?.id, "weekly-done");
 });
 
 test("splitChoresForHome includes big tasks even if due is after a week", () => {
@@ -218,6 +309,8 @@ test("splitChoresForHome includes big tasks even if due is after a week", () => 
     bgColor: "",
     intervalDays: 30,
     isBigTask: true,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
     archived: false,
     lastPerformedAt: null,
     lastPerformerName: null,
@@ -234,6 +327,38 @@ test("splitChoresForHome includes big tasks even if due is after a week", () => 
   const split = splitChoresForHome([bigFuture], now);
   assert.equal(split.upcomingBigChores.length, 1);
   assert.equal(split.upcomingBigChores[0]?.id, "big-future");
+});
+
+test("splitChoresForHome keeps doneToday big chore in big section until due date", () => {
+  const now = new Date("2026-02-15T03:00:00.000Z");
+  const doneBigFuture = {
+    id: "big-done-future",
+    title: "big-done-future",
+    icon: "",
+    iconColor: "",
+    bgColor: "",
+    intervalDays: 30,
+    isBigTask: true,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
+    archived: false,
+    lastPerformedAt: "2026-02-15T02:30:00.000Z",
+    lastPerformerName: "A",
+    lastRecordId: "r-big",
+    dueAt: "2026-02-20T00:00:00.000Z",
+    isDueToday: false,
+    isDueTomorrow: false,
+    isOverdue: false,
+    overdueDays: 0,
+    daysSinceLast: 0,
+    doneToday: true,
+  };
+
+  const split = splitChoresForHome([doneBigFuture], now);
+  assert.equal(split.todayChores.length, 0);
+  assert.equal(split.tomorrowChores.length, 0);
+  assert.equal(split.upcomingBigChores.length, 1);
+  assert.equal(split.upcomingBigChores[0]?.id, "big-done-future");
 });
 
 test("getStatsRange validates custom range and returns end-of-day", () => {

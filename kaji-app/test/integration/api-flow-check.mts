@@ -55,6 +55,20 @@ async function main() {
   const registerBody = await registerRes.json();
   assert.ok(registerBody.user?.id);
   assert.ok(registerBody.householdInviteCode);
+  const initialUserId: string = registerBody.user.id;
+  const initialInviteCode: string = registerBody.householdInviteCode;
+  assert.ok(cookieJar.has("kaji_user_id"));
+  assert.ok(cookieJar.has("kaji_household_id"));
+
+  cookieJar.clear();
+  const reloginRes = await request("/api/register", {
+    method: "POST",
+    body: JSON.stringify({ name: uniqueName }),
+  });
+  assert.equal(reloginRes.status, 200);
+  const reloginBody = await reloginRes.json();
+  assert.equal(reloginBody.user?.id, initialUserId);
+  assert.equal(reloginBody.householdInviteCode, initialInviteCode);
   assert.ok(cookieJar.has("kaji_user_id"));
   assert.ok(cookieJar.has("kaji_household_id"));
 

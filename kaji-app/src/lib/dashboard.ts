@@ -5,6 +5,7 @@ import type { ChoreWithComputed, StatsPeriodKey } from "@/lib/types";
 
 type ChoreWithLatest = Chore & {
   records: (ChoreRecord & { user: Pick<User, "id" | "name"> })[];
+  defaultAssignee?: Pick<User, "id" | "name"> | null;
 };
 
 export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWithComputed {
@@ -32,6 +33,8 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
     intervalDays: chore.intervalDays,
     isBigTask: chore.isBigTask,
     archived: chore.archived,
+    defaultAssigneeId: chore.defaultAssigneeId ?? null,
+    defaultAssigneeName: chore.defaultAssignee?.name ?? null,
     lastPerformedAt: lastPerformedAt ? lastPerformedAt.toISOString() : null,
     lastPerformerName: latest?.user.name ?? null,
     lastRecordId: latest?.id ?? null,
@@ -46,13 +49,20 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
 }
 
 export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()) {
-  const todayChores = chores.filter((c) => c.isDueToday || c.isOverdue || c.doneToday);
+  const todayChores = chores.filter(
+    (c) => c.isDueToday || c.isOverdue || c.doneToday,
+  );
   const tomorrowChores = chores.filter(
-    (c) => c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue)),
+    (c) =>
+      (c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue))) &&
+      !(c.isBigTask && c.doneToday),
+  );
+  const priorityChoreIds = new Set(
+    [...todayChores, ...tomorrowChores].map((chore) => chore.id),
   );
   const nowTime = now.getTime();
   const upcomingBigChores = chores
-    .filter((c) => c.isBigTask && !c.doneToday)
+    .filter((c) => c.isBigTask && !priorityChoreIds.has(c.id))
     .sort((a, b) => {
       const aTime = a.dueAt ? new Date(a.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
       const bTime = b.dueAt ? new Date(b.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
@@ -68,7 +78,7 @@ export function getStatsRange(
   customFrom?: string,
   customTo?: string,
 ) {
-  const end = now;
+  const end = new Date(addDays(startOfJstDay(now), 1).getTime() - 1);
 
   if (period === "all") {
     return { start: undefined, end, label: "全期間" };
@@ -92,7 +102,8 @@ export function getStatsRange(
     year: 365,
   };
   const days = daysMap[period as keyof typeof daysMap] ?? 7;
-  const start = addDays(end, -days);
+  // Relative periods are evaluated by completed calendar days in JST.
+  const start = addDays(startOfJstDay(now), -(days - 1));
   const labelMap: Record<Exclude<StatsPeriodKey, "custom">, string> = {
     week: "直近1週間",
     month: "直近1か月",

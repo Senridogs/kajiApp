@@ -62,65 +62,72 @@ export function HomeTaskRow({
   chore,
   onRecord,
   onUndo,
-  onOpenHistory,
   meta,
+  assigneeName,
+  recordDisabled = false,
 }: {
   chore: ChoreWithComputed;
   onRecord: (chore: ChoreWithComputed) => void;
   onUndo?: (chore: ChoreWithComputed) => void;
-  onOpenHistory?: (chore: ChoreWithComputed) => void;
   meta?: string;
+  assigneeName?: string | null;
+  recordDisabled?: boolean;
 }) {
   const done = chore.doneToday;
-  const title = done ? `${chore.title}（実施済み）` : chore.title;
+  const title = chore.title;
+  const disableRecordAction = !done && recordDisabled;
 
   return (
     <div
-      onClick={() => onOpenHistory?.(chore)}
       className={`flex w-full items-center gap-[15px] rounded-xl border px-[10px] py-[8px] text-left ${done ? "border-[#CFEAD8] bg-[#F2FAF5]" : "border-[#E5EAF0] bg-white"
         }`}
     >
-      {done ? (
-        <div className="flex h-[42px] w-[42px] items-center justify-center rounded-full bg-[#33C28A]">
-          <Check size={21} className="text-white" />
-        </div>
-      ) : (
-        <IconBadge icon={chore.icon} iconColor={chore.iconColor} bgColor={chore.bgColor} size={42} iconSize={21} />
-      )}
-      <div className="min-w-0 flex-1">
-        <p className={`truncate text-[15.2px] font-bold ${done ? "text-[#2C6E49]" : "text-[#202124]"}`}>
+      <IconBadge icon={chore.icon} iconColor={chore.iconColor} bgColor={chore.bgColor} size={42} iconSize={21} />
+      <div className="min-w-0 flex-1 space-y-[2px]">
+        <p className={`truncate text-[15.2px] font-bold leading-tight ${done ? "text-[#2C6E49]" : "text-[#202124]"}`}>
           {title}
         </p>
-        {chore.lastPerformerName ? (
-          <p className="truncate text-[11px] font-medium text-[#9AA0A6]">
-            前回: {chore.lastPerformerName}
-          </p>
-        ) : null}
+        <p className={`truncate text-[11px] font-semibold ${assigneeName ? "text-[#1A9BE8]" : "text-[#BDC1C6]"}`}>
+          👤 {assigneeName || "未設定"}
+        </p>
         {meta ? <p className="truncate text-[10.4px] font-medium text-[#5F6368]">{meta}</p> : null}
       </div>
-      {done ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
+      <button
+        type="button"
+        disabled={disableRecordAction}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (done) {
             onUndo?.(chore);
-          }}
-          className="rounded-[15px] border border-[#A7DCC0] bg-white px-[13px] py-[9px] text-[13.6px] font-bold text-[#2C6E49]"
+            return;
+          }
+          if (disableRecordAction) return;
+          onRecord(chore);
+        }}
+        aria-label={
+          done
+            ? `${chore.title}の完了を取り消す`
+            : disableRecordAction
+              ? `${chore.title}は明日チェックできません`
+              : `${chore.title}を完了にする`
+        }
+        aria-pressed={done}
+        className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${done
+          ? "border-[#33C28A] bg-[#33C28A]"
+          : disableRecordAction
+            ? "border-[#DADCE0] bg-[#F1F3F4]"
+            : "border-[#C0C6CC] bg-white hover:border-[#1A9BE8]"
+          }`}
+      >
+        <span
+          className={`flex items-center justify-center transition-opacity ${done
+            ? "opacity-100 motion-safe:animate-[checkPop_220ms_ease-out_both]"
+            : "opacity-0"
+            }`}
         >
-          取消
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRecord(chore);
-          }}
-          className="rounded-[15px] bg-[#1A9BE8] px-[13px] py-[9px] text-[13.6px] font-bold text-white"
-        >
-          記録
-        </button>
-      )}
+          <Check size={15} strokeWidth={3} className="text-white" />
+        </span>
+      </button>
     </div>
   );
 }
@@ -128,16 +135,24 @@ export function HomeTaskRow({
 export function ListChoreRow({
   chore,
   meta,
+  onOpenHistory,
   onEdit,
 }: {
   chore: ChoreWithComputed;
   meta: string;
+  onOpenHistory: (chore: ChoreWithComputed) => void;
   onEdit: (chore: ChoreWithComputed) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onEdit(chore)}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenHistory(chore)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onOpenHistory(chore);
+      }}
       className="flex w-full items-center gap-[10px] rounded-[14px] bg-white p-3 text-left"
     >
       <IconBadge icon={chore.icon} iconColor={chore.iconColor} bgColor={chore.bgColor} size={26} iconSize={13} />
@@ -145,8 +160,18 @@ export function ListChoreRow({
         <p className="truncate text-[16.8px] font-bold text-[#202124]">{chore.title}</p>
         <p className="truncate text-[13.2px] font-medium text-[#5F6368]">{meta}</p>
       </div>
-      <Pencil size={16} className="text-[#A28775]" />
-    </button>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onEdit(chore);
+        }}
+        aria-label={`${chore.title}を編集`}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-[#A28775] hover:bg-[#F1F3F4]"
+      >
+        <Pencil size={16} />
+      </button>
+    </div>
   );
 }
 

@@ -23,6 +23,8 @@ test("Main app keeps mobile-first max width shell and fixed bottom navigation", 
   assert.match(app, /toJstDateKey\(date\)/);
   assert.doesNotMatch(app, /toISOString\(\)\.slice\(0,\s*10\)/);
   assert.match(app, /BottomSheet open=\{choreEditorOpen && !customIconOpen\}/);
+  assert.match(app, /type ListSortKey = "kana" \| "status" \| "due"/);
+  assert.match(app, /const LIST_SORT_ITEMS:/);
 });
 
 test("Stats custom range keeps responsive layout classes", () => {

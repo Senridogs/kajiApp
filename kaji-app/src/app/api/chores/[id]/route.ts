@@ -11,6 +11,7 @@ type UpdateChoreBody = {
   icon?: string;
   iconColor?: string;
   bgColor?: string;
+  defaultAssigneeId?: string | null;
 };
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -38,6 +39,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (typeof body?.icon === "string") data.icon = body.icon;
   if (typeof body?.iconColor === "string") data.iconColor = body.iconColor;
   if (typeof body?.bgColor === "string") data.bgColor = body.bgColor;
+  if (body?.defaultAssigneeId !== undefined) data.defaultAssigneeId = body.defaultAssigneeId || null;
   if (!Object.keys(data).length) return badRequest("更新する項目がありません。");
 
   const chore = await prisma.chore.findFirst({
@@ -49,6 +51,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     where: { id },
     data,
     include: {
+      defaultAssignee: { select: { id: true, name: true } },
       records: {
         take: 1,
         orderBy: { performedAt: "desc" },

@@ -1,7 +1,11 @@
 "use client";
 
+import { useState } from "react";
+
 import { maxCount } from "@/components/kaji/helpers";
-import { StatsPeriodKey, StatsResponse } from "@/lib/types";
+import { StatsPeriodKey, StatsResponse, StatsUserCount } from "@/lib/types";
+
+const JA_COLLATOR = new Intl.Collator("ja");
 
 const PERIOD_ITEMS: Array<{ key: StatsPeriodKey; label: string; accent?: boolean }> = [
   { key: "week", label: "1週間" },
@@ -12,12 +16,42 @@ const PERIOD_ITEMS: Array<{ key: StatsPeriodKey; label: string; accent?: boolean
   { key: "custom", label: "カスタム", accent: true },
 ];
 
-const CHORE_COLORS = ["#EA4335", "#4285F4", "#33C28A", "#FBBC05"];
+const USER_COLORS = ["#4285F4", "#EA4335", "#33C28A", "#FBBC05", "#A142F4", "#00ACC1"];
+
+const BALANCE_TABS = [
+  { key: "all", label: "全タスク" },
+  { key: "big", label: "大仕事のみ" },
+] as const;
+
+type BalanceTabKey = (typeof BALANCE_TABS)[number]["key"];
 
 type CustomDateRange = {
   from: string;
   to: string;
 };
+
+type PieSlice = StatsUserCount & {
+  ratio: number;
+  start: number;
+  color: string;
+};
+
+function buildPieData(users: StatsUserCount[], userColorMap: Map<string, string>): PieSlice[] {
+  const total = users.reduce((sum, user) => sum + user.count, 0);
+  let acc = 0;
+
+  return users.map((user, idx) => {
+    const ratio = total > 0 ? user.count / total : 0;
+    const item = {
+      ...user,
+      ratio,
+      start: acc,
+      color: userColorMap.get(user.userId) ?? USER_COLORS[idx % USER_COLORS.length],
+    };
+    acc += ratio;
+    return item;
+  });
+}
 
 export function StatsView({
   stats,
@@ -34,22 +68,24 @@ export function StatsView({
   onChangeCustomDateRange: (range: CustomDateRange) => void;
   onApplyCustomDateRange: (range: CustomDateRange) => void | Promise<void>;
 }) {
-  const pie = (() => {
-    if (!stats?.userCounts?.length) return [];
-    const total = stats.userCounts.reduce((sum, x) => sum + x.count, 0) || 1;
-    let acc = 0;
-    return stats.userCounts.map((u, idx) => {
-      const ratio = u.count / total;
-      const item = {
-        ...u,
-        ratio,
-        start: acc,
-        color: idx === 0 ? "#4285F4" : "#EA4335",
-      };
-      acc += ratio;
-      return item;
-    });
-  })();
+  const [customEditorOpen, setCustomEditorOpen] = useState(false);
+  const [balanceTab, setBalanceTab] = useState<BalanceTabKey>("all");
+
+  const users = stats?.userCounts ?? [];
+  const bigTaskUsers = stats?.bigTaskUserCounts ?? [];
+  const choreCounts = [...(stats?.choreCounts ?? [])].sort((a, b) =>
+    JA_COLLATOR.compare(a.title, b.title),
+  );
+
+  const userColorMap = new Map<string, string>();
+  users.forEach((user, idx) => {
+    userColorMap.set(user.userId, USER_COLORS[idx % USER_COLORS.length]);
+  });
+
+  const balanceUsers = balanceTab === "big" ? bigTaskUsers : users;
+  const balanceTotal = balanceUsers.reduce((sum, user) => sum + user.count, 0);
+  const balancePie = buildPieData(balanceUsers, userColorMap);
+  const choreMax = maxCount(choreCounts);
 
   return (
     <div className="space-y-4">
@@ -58,7 +94,10 @@ export function StatsView({
           <button
             key={item.key}
             type="button"
-            onClick={() => onChangePeriod(item.key)}
+            onClick={() => {
+              onChangePeriod(item.key);
+              setCustomEditorOpen(item.key === "custom");
+            }}
             className={`rounded-[11px] px-2 py-1.5 text-[13.2px] font-bold ${
               activePeriod === item.key
                 ? "bg-[#1A9BE8] text-white"
@@ -72,7 +111,7 @@ export function StatsView({
         ))}
       </div>
 
-      {activePeriod === "custom" ? (
+      {activePeriod === "custom" && customEditorOpen ? (
         <div className="space-y-2 rounded-2xl border border-[#DADCE0] bg-white p-4">
           <p className="text-[14px] font-bold text-[#202124]">カスタム期間</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-center">
@@ -103,10 +142,13 @@ export function StatsView({
             />
             <button
               type="button"
-              onClick={() => onApplyCustomDateRange(customDateRange)}
-              className="rounded-[12px] bg-[#1A9BE8] px-3 py-2 text-[14px] font-bold text-white"
+              onClick={async () => {
+                await onApplyCustomDateRange(customDateRange);
+                setCustomEditorOpen(false);
+              }}
+              className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-[10px] bg-[#1A9BE8] px-2.5 text-[13px] font-bold leading-none text-white [writing-mode:horizontal-tb]"
             >
-              反映
+              適用
             </button>
           </div>
         </div>
@@ -116,74 +158,109 @@ export function StatsView({
         <p className="text-[13px] font-medium text-[#5F6368]">集計範囲: {stats.rangeLabel}</p>
       ) : null}
 
-      <div className="space-y-3 rounded-2xl bg-white p-4">
-        {(stats?.choreCounts ?? []).slice(0, 4).map((item, idx) => {
-          const max = maxCount(stats?.choreCounts ?? []);
-          const width = Math.max((item.count / max) * 100, 4);
-          const color = CHORE_COLORS[idx % CHORE_COLORS.length];
-          return (
-            <div key={item.choreId} className="flex items-center gap-2">
-              <div className="w-24">
-                <p className="truncate text-[15px] font-semibold text-[#5F6368]">{item.title}</p>
-              </div>
-              <div className="relative h-3 flex-1 rounded-md bg-[#F1F3F4]">
-                <div className="h-3 rounded-md" style={{ width: `${width}%`, backgroundColor: color }} />
-              </div>
-              <p className="w-6 text-right text-[15px] font-bold text-[#202124]">{item.count}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="space-y-2.5 rounded-2xl bg-white p-4">
-        {(stats?.userCounts ?? []).map((item, idx) => {
-          const max = maxCount(stats?.userCounts ?? []);
-          const width = Math.max((item.count / max) * 100, 4);
-          const color = idx === 0 ? "#EA4335" : "#4285F4";
-          return (
-            <div key={item.userId} className="flex items-center gap-2">
-              <div className="w-24">
-                <p className="truncate text-[15px] font-bold text-[#5F6368]">{item.name}</p>
-              </div>
-              <div className="relative h-3 flex-1 rounded-md bg-[#F1F3F4]">
-                <div className="h-3 rounded-md" style={{ width: `${width}%`, backgroundColor: color }} />
-              </div>
-              <p className="w-6 text-right text-[15px] font-bold text-[#202124]">{item.count}</p>
-            </div>
-          );
-        })}
-      </div>
-
       <div className="rounded-2xl bg-white p-4">
         <h3 className="text-[19px] font-bold text-[#202124]">分担バランス</h3>
+        <div className="mt-2 flex gap-1">
+          {BALANCE_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setBalanceTab(tab.key)}
+              className={`rounded-[10px] px-3 py-1.5 text-[12px] font-bold ${
+                balanceTab === tab.key
+                  ? "bg-[#1A9BE8] text-white"
+                  : "bg-[#F1F3F4] text-[#5F6368]"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
         <div className="mt-3 flex items-center gap-3">
           <svg viewBox="0 0 42 42" className="h-[120px] w-[120px] -rotate-90">
             <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E8EAED" strokeWidth="10" />
-            {pie.map((d) => (
+            {balancePie.map((slice) => (
               <circle
-                key={d.userId}
+                key={`${balanceTab}-${slice.userId}`}
                 cx="21"
                 cy="21"
                 r="15.915"
                 fill="none"
-                stroke={d.color}
+                stroke={slice.color}
                 strokeWidth="10"
-                strokeDasharray={`${d.ratio * 100} ${100 - d.ratio * 100}`}
-                strokeDashoffset={`${-d.start * 100}`}
+                strokeDasharray={`${slice.ratio * 100} ${100 - slice.ratio * 100}`}
+                strokeDashoffset={`${-slice.start * 100}`}
               />
             ))}
           </svg>
           <div className="w-full space-y-2">
-            {pie.map((d) => (
-              <div key={d.userId} className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: d.color }} />
-                  <p className="text-base font-bold text-[#202124]">{d.name}</p>
+            {balancePie.map((slice) => {
+              const percent = balanceTotal > 0 ? Math.round((slice.count / balanceTotal) * 100) : 0;
+              return (
+                <div key={`${balanceTab}-row-${slice.userId}`} className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
+                    <p className="text-base font-bold text-[#202124]">{slice.name}</p>
+                  </div>
+                  <p className="text-[16px] font-bold text-[#202124]">
+                    {percent}% ({slice.count}回)
+                  </p>
                 </div>
-                <p className="text-[20px] font-bold text-[#202124]">{Math.round(d.ratio * 100)}%</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-2xl bg-white p-4">
+        <h3 className="text-[19px] font-bold text-[#202124]">各タスクごと詳細</h3>
+        <div className="flex flex-wrap gap-3">
+          {users.map((user, idx) => {
+            const color = userColorMap.get(user.userId) ?? USER_COLORS[idx % USER_COLORS.length];
+            return (
+              <div key={user.userId} className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+                <p className="text-[13px] font-semibold text-[#5F6368]">{user.name}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="space-y-3">
+          {choreCounts.map((item) => {
+            const barWidth = item.count > 0 ? Math.max((item.count / choreMax) * 100, 8) : 0;
+            return (
+              <div key={item.choreId} className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-24">
+                    <p className="truncate text-[15px] font-semibold text-[#5F6368]">{item.title}</p>
+                  </div>
+                  <div className="relative h-3 flex-1 overflow-hidden rounded-md bg-[#F1F3F4]">
+                    {barWidth > 0 ? (
+                      <div className="flex h-3 overflow-hidden rounded-md" style={{ width: `${barWidth}%` }}>
+                        {item.userCounts.map((userCount, idx) => {
+                          if (userCount.count === 0) return null;
+                          const color =
+                            userColorMap.get(userCount.userId) ?? USER_COLORS[idx % USER_COLORS.length];
+                          return (
+                            <div
+                              key={`${item.choreId}-${userCount.userId}`}
+                              className="h-full"
+                              style={{
+                                flexGrow: userCount.count,
+                                backgroundColor: color,
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                  <p className="w-8 text-right text-[15px] font-bold text-[#202124]">{item.count}</p>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

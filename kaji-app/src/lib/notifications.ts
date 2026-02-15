@@ -77,7 +77,7 @@ export function buildCompletionPayload(params: {
   return {
     type: "completion",
     title: `完了: ${params.choreTitle}`,
-    body: `${params.userName} が記録しました。${memoPart}`.trim(),
+    body: `${params.userName} が済しました。${memoPart}`.trim(),
     url: "/",
   };
 }

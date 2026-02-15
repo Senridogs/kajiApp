@@ -22,6 +22,7 @@ export type ChoreForm = {
   iconColor: string;
   bgColor: string;
   lastPerformedAt?: string | null;
+  defaultAssigneeId?: string | null;
 };
 
 export type CustomIconOption = {
@@ -33,6 +34,17 @@ export type CustomIconOption = {
 };
 
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const MIN_INTERVAL_DAYS = 1;
+const MAX_INTERVAL_DAYS = 365;
+const ICON_PRESETS_PER_PAGE = 6;
+
+type SelectableIconOption = {
+  id: string;
+  label: string;
+  icon: string;
+  iconColor: string;
+  bgColor: string;
+};
 
 function toDateInputValueInJst(value: string | null | undefined): string {
   if (!value) return "";
@@ -54,6 +66,7 @@ export function ChoreEditor({
   mode,
   value,
   customIcons,
+  users,
   onChange,
   onSave,
   onDelete,
@@ -62,6 +75,7 @@ export function ChoreEditor({
   mode: "create" | "edit";
   value: ChoreForm;
   customIcons: CustomIconOption[];
+  users: Array<{ id: string; name: string }>;
   onChange: (next: ChoreForm) => void;
   onSave: () => void;
   onDelete: () => void;
@@ -69,9 +83,52 @@ export function ChoreEditor({
 }) {
   const lastPerformedDate = toDateInputValueInJst(value.lastPerformedAt);
   const maxDate = toDateInputValueInJst(new Date().toISOString());
+  const isCustomIconSelected = customIcons.some(
+    (custom) =>
+      value.icon === custom.icon &&
+      value.iconColor === custom.iconColor &&
+      value.bgColor === custom.bgColor,
+  );
+  const iconViewportRef = useRef<HTMLDivElement | null>(null);
+  const [activeIconPage, setActiveIconPage] = useState(0);
+  const selectableIcons = useMemo<SelectableIconOption[]>(
+    () => [
+      ...customIcons.slice().reverse().map((custom) => ({
+        id: custom.id,
+        label: custom.label,
+        icon: custom.icon,
+        iconColor: custom.iconColor,
+        bgColor: custom.bgColor,
+      })),
+      ...QUICK_ICON_PRESETS.map((preset, idx) => ({
+        id: `preset-${preset.icon}-${idx}`,
+        label: preset.label,
+        icon: preset.icon,
+        iconColor: preset.iconColor,
+        bgColor: preset.bgColor,
+      })),
+    ],
+    [customIcons],
+  );
+  const iconPages = useMemo(() => {
+    const pages: SelectableIconOption[][] = [];
+    for (let i = 0; i < selectableIcons.length; i += ICON_PRESETS_PER_PAGE) {
+      pages.push(selectableIcons.slice(i, i + ICON_PRESETS_PER_PAGE));
+    }
+    return pages;
+  }, [selectableIcons]);
+  const displayActiveIconPage = Math.max(0, Math.min(activeIconPage, iconPages.length - 1));
+
+  const updateIntervalDays = (delta: number) => {
+    const next = Math.min(
+      MAX_INTERVAL_DAYS,
+      Math.max(MIN_INTERVAL_DAYS, value.intervalDays + delta),
+    );
+    onChange({ ...value, intervalDays: next });
+  };
 
   return (
-    <div className="space-y-3 pb-2">
+    <div className="space-y-[10px] pb-0">
       <div>
         <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">家事名</p>
         <input
@@ -85,21 +142,39 @@ export function ChoreEditor({
       <div>
         <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">リマインド間隔</p>
         <div className="flex items-center justify-between rounded-[14px] border border-[#DADCE0] bg-white px-3 py-2.5">
-          <button
-            type="button"
-            onClick={() => onChange({ ...value, intervalDays: Math.max(1, value.intervalDays - 1) })}
-            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#F1F3F4]"
-          >
-            <Minus size={16} className="text-[#6F5A4B]" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => updateIntervalDays(-30)}
+              className="rounded-full bg-[#F1F3F4] px-3 py-[5px] text-[12px] font-bold text-[#5F6368]"
+            >
+              -30
+            </button>
+            <button
+              type="button"
+              onClick={() => updateIntervalDays(-1)}
+              className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#F1F3F4]"
+            >
+              <Minus size={16} className="text-[#6F5A4B]" />
+            </button>
+          </div>
           <p className="text-[16.8px] font-bold text-[#202124]">{value.intervalDays}日ごと</p>
-          <button
-            type="button"
-            onClick={() => onChange({ ...value, intervalDays: Math.min(365, value.intervalDays + 1) })}
-            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#1A9BE8]"
-          >
-            <Plus size={16} className="text-white" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => updateIntervalDays(1)}
+              className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#1A9BE8]"
+            >
+              <Plus size={16} className="text-white" />
+            </button>
+            <button
+              type="button"
+              onClick={() => updateIntervalDays(30)}
+              className="rounded-full bg-[#1A9BE8] px-3 py-[5px] text-[12px] font-bold text-white"
+            >
+              +30
+            </button>
+          </div>
         </div>
       </div>
 
@@ -125,82 +200,84 @@ export function ChoreEditor({
       <div>
         <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">アイコン</p>
         <div className="space-y-2">
-          <div className="grid grid-cols-3 gap-2">
-            {QUICK_ICON_PRESETS.map((preset) => {
-              const selected = value.icon === preset.icon;
-              const Icon = iconByName(preset.icon);
-              return (
-                <button
-                  key={`preset-${preset.icon}`}
-                  type="button"
-                  onClick={() =>
-                    onChange({
-                      ...value,
-                      icon: preset.icon,
-                      iconColor: preset.iconColor,
-                      bgColor: preset.bgColor,
-                    })
-                  }
-                  className={`flex items-center justify-center gap-1.5 rounded-xl px-[10px] py-[9px] ${
-                    selected ? "bg-[#FFF6E3]" : "bg-[#F5F5F5]"
-                  }`}
-                >
-                  <Icon size={14} color={preset.iconColor} />
-                  <span className="text-[13.2px] font-bold" style={{ color: preset.iconColor }}>
-                    {preset.label}
-                  </span>
-                </button>
-              );
-            })}
-
-            {customIcons.map((custom) => {
-              const selected =
-                value.icon === custom.icon &&
-                value.iconColor === custom.iconColor &&
-                value.bgColor === custom.bgColor;
-              const Icon = iconByName(custom.icon);
-              return (
-                <button
-                  key={custom.id}
-                  type="button"
-                  onClick={() =>
-                    onChange({
-                      ...value,
-                      icon: custom.icon,
-                      iconColor: custom.iconColor,
-                      bgColor: custom.bgColor,
-                    })
-                  }
-                  className={`flex items-center justify-center gap-1.5 rounded-xl px-[10px] py-[9px] ${
-                    selected ? "bg-[#EEF3FF]" : "bg-[#F5F5F5]"
-                  }`}
-                >
-                  <Icon size={14} color={custom.iconColor} />
-                  <span className="truncate text-[13.2px] font-bold" style={{ color: custom.iconColor }}>
-                    {custom.label}
-                  </span>
-                </button>
-              );
-            })}
+          <div
+            ref={iconViewportRef}
+            onScroll={(e) => {
+              const node = e.currentTarget;
+              const next = Math.round(node.scrollLeft / node.clientWidth);
+              setActiveIconPage(Math.max(0, Math.min(iconPages.length - 1, next)));
+            }}
+            className="snap-x snap-mandatory overflow-x-auto"
+          >
+            <div className="flex gap-3">
+              {iconPages.map((page, pageIndex) => (
+                <div key={`icon-page-${pageIndex}`} className="w-full shrink-0 snap-start">
+                  <div className="grid grid-cols-3 gap-2">
+                    {page.map((option) => {
+                      const Icon = iconByName(option.icon);
+                      const selected =
+                        value.icon === option.icon &&
+                        value.iconColor === option.iconColor &&
+                        value.bgColor === option.bgColor;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() =>
+                            onChange({
+                              ...value,
+                              icon: option.icon,
+                              iconColor: option.iconColor,
+                              bgColor: option.bgColor,
+                            })
+                          }
+                          className={`flex items-center justify-center gap-1.5 rounded-xl border px-[10px] py-[9px] ${
+                            selected
+                              ? "border-[#BFD6FF] bg-[#EEF3FF]"
+                              : "border-[#DADCE0] bg-[#F8F9FA]"
+                          }`}
+                        >
+                          <Icon size={14} color={option.iconColor} />
+                          <span className="truncate text-[13.2px] font-bold" style={{ color: option.iconColor }}>
+                            {option.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {Array.from({ length: Math.max(0, ICON_PRESETS_PER_PAGE - page.length) }).map((_, idx) => (
+                      <div key={`icon-empty-${pageIndex}-${idx}`} className="h-[40px]" />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
+          {iconPages.length > 1 ? (
+            <div className="flex justify-center gap-1.5">
+              {iconPages.map((_, idx) => (
+                <div
+                  key={`icon-page-dot-${idx}`}
+                  className={`h-1.5 w-1.5 rounded-full ${idx === displayActiveIconPage ? "bg-[#1A9BE8]" : "bg-[#DADCE0]"}`}
+                />
+              ))}
+            </div>
+          ) : null}
 
           <button
             type="button"
             onClick={onOpenCustomIcon}
-            className="w-full rounded-xl border border-[#DADCE0] bg-white px-3 py-[10px] text-[13.2px] font-bold text-[#5F6368]"
+            className={`w-full rounded-xl border px-3 py-[10px] text-[13.2px] font-bold ${
+              isCustomIconSelected
+                ? "border-[#BFD6FF] bg-[#EEF3FF] text-[#1A9BE8]"
+                : "border-[#DADCE0] bg-white text-[#5F6368]"
+            }`}
           >
             ＋ カスタムアイコン
           </button>
-          {customIcons.length > 0 ? (
-            <p className="text-center text-[12px] font-medium text-[#5F6368]">
-              追加済み: {customIcons.length} 件
-            </p>
-          ) : null}
         </div>
       </div>
 
       <div>
-        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">大仕事フラグ</p>
         <button
           type="button"
           onClick={() => onChange({ ...value, isBigTask: !value.isBigTask })}
@@ -208,9 +285,6 @@ export function ChoreEditor({
         >
           <div>
             <p className="text-[13px] font-bold text-[#202124]">大仕事として扱う</p>
-            {mode === "edit" ? (
-              <p className="text-[11.5px] font-medium text-[#5F6368]">ONだとHomeの大仕事に表示</p>
-            ) : null}
           </div>
           <div
             className={`relative h-6 w-[42px] rounded-xl ${
@@ -226,11 +300,49 @@ export function ChoreEditor({
         </button>
       </div>
 
-      <div className="space-y-2 pt-1">
+      {users.length > 0 ? (
+        <div>
+          <p className="mb-1.5 text-[14px] font-bold text-[#202124]">デフォルト担当者</p>
+          <div className="flex gap-2">
+            {users.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() =>
+                  onChange({
+                    ...value,
+                    defaultAssigneeId: value.defaultAssigneeId === u.id ? null : u.id,
+                  })
+                }
+                className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${
+                  value.defaultAssigneeId === u.id
+                    ? "bg-[#1A9BE8] text-white"
+                    : "border border-[#DADCE0] bg-white text-[#5F6368]"
+                }`}
+              >
+                {u.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => onChange({ ...value, defaultAssigneeId: null })}
+              className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${
+                !value.defaultAssigneeId
+                  ? "bg-[#F1F3F4] text-[#202124]"
+                  : "border border-[#DADCE0] bg-white text-[#5F6368]"
+              }`}
+            >
+              なし
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className={mode === "edit" ? "grid grid-cols-2 gap-2" : ""}>
         <button
           type="button"
           onClick={onSave}
-          className="w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[15.6px] font-bold text-white"
+          className="w-full rounded-[14px] bg-[#1A9BE8] px-[14px] py-[12px] text-[15.6px] font-bold text-white"
         >
           {mode === "create" ? "家事を追加" : "変更を保存"}
         </button>
@@ -238,7 +350,7 @@ export function ChoreEditor({
           <button
             type="button"
             onClick={onDelete}
-            className="w-full rounded-[14px] border border-[#F2C9C9] bg-white px-4 py-3 text-[15.6px] font-bold text-[#D45858]"
+            className="w-full rounded-[14px] border border-[#F2C9C9] bg-white px-[14px] py-[12px] text-[15.6px] font-bold text-[#D45858]"
           >
             家事を削除
           </button>

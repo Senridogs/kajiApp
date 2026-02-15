@@ -9,6 +9,8 @@ type BottomSheetProps = {
   title?: string;
   children: React.ReactNode;
   maxHeightClassName?: string;
+  containerClassName?: string;
+  scrollable?: boolean;
 };
 
 export function BottomSheet({
@@ -17,6 +19,8 @@ export function BottomSheet({
   title,
   children,
   maxHeightClassName = "max-h-[85vh]",
+  containerClassName = "p-4",
+  scrollable = true,
 }: BottomSheetProps) {
   const dragControls = useDragControls();
 
@@ -50,7 +54,7 @@ export function BottomSheet({
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={0.35}
             onDragEnd={handleDragEnd}
-            className={`fixed bottom-0 left-0 right-0 z-50 mx-auto w-full max-w-[430px] rounded-t-3xl bg-[#F8F9FA] p-4 shadow-xl ${maxHeightClassName} overflow-auto`}
+            className={`fixed bottom-0 left-0 right-0 z-50 mx-auto w-full max-w-[430px] rounded-t-[22px] bg-[#F8F9FA] shadow-xl ${containerClassName} ${maxHeightClassName} ${scrollable ? "overflow-auto" : "overflow-hidden"}`}
           >
             <button
               type="button"

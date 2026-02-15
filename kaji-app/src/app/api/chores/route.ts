@@ -12,6 +12,7 @@ type CreateChoreBody = {
   iconColor?: string;
   bgColor?: string;
   lastPerformedAt?: string;
+  defaultAssigneeId?: string | null;
 };
 
 export async function GET() {
@@ -22,6 +23,7 @@ export async function GET() {
     where: { householdId: session.householdId, archived: false },
     orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
     include: {
+      defaultAssignee: { select: { id: true, name: true } },
       records: {
         take: 1,
         orderBy: { performedAt: "desc" },
@@ -69,6 +71,7 @@ export async function POST(request: Request) {
         icon: body.icon || "sparkles",
         iconColor: body.iconColor || "#202124",
         bgColor: body.bgColor || "#EAF5FF",
+        defaultAssigneeId: body.defaultAssigneeId || null,
       },
     });
 
@@ -85,6 +88,7 @@ export async function POST(request: Request) {
     return tx.chore.findUnique({
       where: { id: created.id },
       include: {
+        defaultAssignee: { select: { id: true, name: true } },
         records: {
           take: 1,
           orderBy: { performedAt: "desc" },

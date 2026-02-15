@@ -52,6 +52,24 @@ export async function POST(request: Request) {
   if (!name) return badRequest("ユーザー名を入力してください。");
   if (name.length > 24) return badRequest("ユーザー名は24文字以内で入力してください。");
 
+  const existingUser = await prisma.user.findFirst({
+    where: { name },
+    include: { household: { select: { inviteCode: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (existingUser) {
+    await setSession(
+      { userId: existingUser.id, householdId: existingUser.householdId },
+      { secure: isHttpsRequest(request) },
+    );
+
+    return NextResponse.json({
+      user: { id: existingUser.id, name: existingUser.name },
+      householdInviteCode: existingUser.household.inviteCode,
+    });
+  }
+
   let household = inviteCodeInput
     ? await prisma.household.findUnique({ where: { inviteCode: inviteCodeInput } })
     : null;

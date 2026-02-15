@@ -21,7 +21,10 @@ export async function GET() {
     });
   }
 
-  await ensureDemoDataForHousehold(session.householdId, session.userId);
+  const enableDemoData = process.env.KAJI_ENABLE_DEMO_DATA === "true";
+  if (enableDemoData) {
+    await ensureDemoDataForHousehold(session.householdId, session.userId);
+  }
 
   const [household, sessionUser] = await Promise.all([
     prisma.household.findUnique({
@@ -51,20 +54,30 @@ export async function GET() {
     });
   }
 
-  const chores = await prisma.chore.findMany({
-    where: {
-      householdId: household.id,
-      archived: false,
-    },
-    orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
-    include: {
-      records: {
-        take: 1,
-        orderBy: { performedAt: "desc" },
-        include: { user: { select: { id: true, name: true } } },
+  const [chores, assignments] = await Promise.all([
+    prisma.chore.findMany({
+      where: {
+        householdId: household.id,
+        archived: false,
       },
-    },
-  });
+      orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
+      include: {
+        defaultAssignee: { select: { id: true, name: true } },
+        records: {
+          take: 1,
+          orderBy: { performedAt: "desc" },
+          include: { user: { select: { id: true, name: true } } },
+        },
+      },
+    }),
+    prisma.choreAssignment.findMany({
+      where: {
+        chore: { householdId: household.id, archived: false },
+      },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { date: "asc" },
+    }),
+  ]);
 
   const computed = chores.map((c) => computeChore(c));
   const homeSplit = splitChoresForHome(computed);
@@ -77,6 +90,12 @@ export async function GET() {
     todayChores: homeSplit.todayChores,
     tomorrowChores: homeSplit.tomorrowChores,
     upcomingBigChores: homeSplit.upcomingBigChores,
+    assignments: assignments.map((a) => ({
+      choreId: a.choreId,
+      userId: a.userId,
+      userName: a.user.name,
+      date: a.date,
+    })),
     householdInviteCode: household.inviteCode,
     notificationSettings: {
       reminderTimes: household.reminderTimes,

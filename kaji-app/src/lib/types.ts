@@ -12,6 +12,8 @@ export type ChoreWithComputed = {
   intervalDays: number;
   isBigTask: boolean;
   archived: boolean;
+  defaultAssigneeId: string | null;
+  defaultAssigneeName: string | null;
   lastPerformedAt: string | null;
   lastPerformerName: string | null;
   lastRecordId: string | null;
@@ -24,6 +26,13 @@ export type ChoreWithComputed = {
   doneToday: boolean;
 };
 
+export type ChoreAssignmentEntry = {
+  choreId: string;
+  userId: string;
+  userName: string;
+  date: string;
+};
+
 export type NotificationSettings = {
   reminderTimes: string[];
   notifyDueToday: boolean;
@@ -33,10 +42,28 @@ export type NotificationSettings = {
 
 export type StatsPeriodKey = "week" | "month" | "half" | "year" | "all" | "custom";
 
+export type StatsUserCount = {
+  userId: string;
+  name: string;
+  count: number;
+};
+
+export type StatsChoreUserBreakdown = StatsUserCount & {
+  ratio: number;
+};
+
+export type StatsChoreCount = {
+  choreId: string;
+  title: string;
+  count: number;
+  userCounts: StatsChoreUserBreakdown[];
+};
+
 export type StatsResponse = {
   rangeLabel: string;
-  choreCounts: Array<{ choreId: string; title: string; count: number }>;
-  userCounts: Array<{ userId: string; name: string; count: number }>;
+  choreCounts: StatsChoreCount[];
+  userCounts: StatsUserCount[];
+  bigTaskUserCounts: StatsUserCount[];
 };
 
 export type BootstrapResponse = {
@@ -47,6 +74,7 @@ export type BootstrapResponse = {
   todayChores: ChoreWithComputed[];
   tomorrowChores: ChoreWithComputed[];
   upcomingBigChores: ChoreWithComputed[];
+  assignments: ChoreAssignmentEntry[];
   notificationSettings: NotificationSettings | null;
   needsRegistration: boolean;
 };

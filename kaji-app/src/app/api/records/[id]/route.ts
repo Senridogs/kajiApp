@@ -15,11 +15,11 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     where: { id, householdId: session.householdId },
     select: { id: true, performedAt: true },
   });
-  if (!record) return badRequest("記録が見つかりません。", 404);
+  if (!record) return badRequest("済が見つかりません。", 404);
 
   const todayStart = startOfJstDay(new Date());
   if (record.performedAt < todayStart) {
-    return badRequest("当日記録のみ取消できます。");
+    return badRequest("当日済のみ取消できます。");
   }
 
   await prisma.choreRecord.delete({ where: { id } });

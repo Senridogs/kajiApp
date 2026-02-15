@@ -7,7 +7,7 @@ import {
   nowJstHourMinute,
   startOfJstDay,
   toJstDateKey,
-} from "../../src/lib/time.ts";
+} from "../../src/lib/time.js";
 
 test("toJstDateKey converts UTC date to JST date key", () => {
   const date = new Date("2026-02-15T16:30:00.000Z");

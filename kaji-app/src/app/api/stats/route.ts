@@ -31,37 +31,67 @@ export async function GET(request: Request) {
           },
         };
 
-  const [choreCountsRaw, userCountsRaw, chores, users] = await Promise.all([
-    prisma.choreRecord.groupBy({
-      by: ["choreId"],
-      where,
-      _count: { _all: true },
-    }),
-    prisma.choreRecord.groupBy({
-      by: ["userId"],
-      where,
-      _count: { _all: true },
-    }),
-    prisma.chore.findMany({
-      where: { householdId: session.householdId, archived: false },
-      select: { id: true, title: true },
-      orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
-    }),
-    prisma.user.findMany({
-      where: { householdId: session.householdId },
-      select: { id: true, name: true },
-      orderBy: { createdAt: "asc" },
-    }),
-  ]);
+  const [choreCountsRaw, userCountsRaw, bigTaskUserCountsRaw, choreUserCountsRaw, chores, users] =
+    await Promise.all([
+      prisma.choreRecord.groupBy({
+        by: ["choreId"],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.choreRecord.groupBy({
+        by: ["userId"],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.choreRecord.groupBy({
+        by: ["userId"],
+        where: {
+          ...where,
+          chore: { isBigTask: true },
+        },
+        _count: { _all: true },
+      }),
+      prisma.choreRecord.groupBy({
+        by: ["choreId", "userId"],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.chore.findMany({
+        where: { householdId: session.householdId, archived: false },
+        select: { id: true, title: true },
+        orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
+      }),
+      prisma.user.findMany({
+        where: { householdId: session.householdId },
+        select: { id: true, name: true },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
 
   const choreCountMap = new Map(choreCountsRaw.map((r) => [r.choreId, r._count._all]));
   const userCountMap = new Map(userCountsRaw.map((r) => [r.userId, r._count._all]));
+  const bigTaskUserCountMap = new Map(bigTaskUserCountsRaw.map((r) => [r.userId, r._count._all]));
+  const choreUserCountMap = new Map(
+    choreUserCountsRaw.map((r) => [`${r.choreId}:${r.userId}`, r._count._all]),
+  );
 
-  const choreCounts = chores.map((c) => ({
-    choreId: c.id,
-    title: c.title,
-    count: choreCountMap.get(c.id) ?? 0,
-  }));
+  const choreCounts = chores.map((c) => {
+    const count = choreCountMap.get(c.id) ?? 0;
+    return {
+      choreId: c.id,
+      title: c.title,
+      count,
+      userCounts: users.map((u) => {
+        const userCount = choreUserCountMap.get(`${c.id}:${u.id}`) ?? 0;
+        return {
+          userId: u.id,
+          name: u.name,
+          count: userCount,
+          ratio: count > 0 ? userCount / count : 0,
+        };
+      }),
+    };
+  });
 
   const userCounts = users.map((u) => ({
     userId: u.id,
@@ -69,9 +99,16 @@ export async function GET(request: Request) {
     count: userCountMap.get(u.id) ?? 0,
   }));
 
+  const bigTaskUserCounts = users.map((u) => ({
+    userId: u.id,
+    name: u.name,
+    count: bigTaskUserCountMap.get(u.id) ?? 0,
+  }));
+
   return NextResponse.json({
     rangeLabel: range.label,
     choreCounts,
     userCounts,
+    bigTaskUserCounts,
   });
 }
