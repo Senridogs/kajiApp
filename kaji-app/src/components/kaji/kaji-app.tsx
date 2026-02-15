@@ -80,14 +80,36 @@ function defaultLastPerformedAt(now = new Date()) {
   return previousDay.toISOString();
 }
 
+function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
+  const todayChores = chores.filter((c) => c.isDueToday || c.isOverdue || c.doneToday);
+  const tomorrowChores = chores.filter(
+    (c) =>
+      (c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue))) &&
+      !(c.isBigTask && c.doneToday),
+  );
+  const priorityChoreIds = new Set([...todayChores, ...tomorrowChores].map((chore) => chore.id));
+  const nowTime = Date.now();
+  const upcomingBigChores = chores
+    .filter((c) => c.isBigTask && !priorityChoreIds.has(c.id))
+    .sort((a, b) => {
+      const aTime = a.dueAt ? new Date(a.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
+      const bTime = b.dueAt ? new Date(b.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
+      return aTime - bTime;
+    });
+
+  return { todayChores, tomorrowChores, upcomingBigChores };
+}
+
 export function KajiApp() {
   const [boot, setBoot] = useState<BootstrapResponse | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriodKey>("week");
+  const [statsLoading, setStatsLoading] = useState(false);
   const [customDateRange, setCustomDateRange] = useState<CustomDateRange>(() =>
     defaultCustomDateRange(),
   );
   const customDateRangeRef = useRef<CustomDateRange>(customDateRange);
+  const statsRequestIdRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("home");
@@ -112,10 +134,13 @@ export function KajiApp() {
   const [memoTarget, setMemoTarget] = useState<ChoreWithComputed | null>(null);
   const [memo, setMemo] = useState("");
   const [memoOpen, setMemoOpen] = useState(false);
+  const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<ChoreWithComputed | null>(null);
   const [historyFilter, setHistoryFilter] = useState("all");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [saveChoreLoading, setSaveChoreLoading] = useState(false);
+  const [deleteChoreLoading, setDeleteChoreLoading] = useState(false);
 
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(
     null,
@@ -191,11 +216,16 @@ export function KajiApp() {
   const loadBootstrap = useCallback(async () => {
     const data = await apiFetch<BootstrapResponse>("/api/bootstrap", { cache: "no-store" });
     setBoot(data);
+    setAssignments(data.assignments ?? []);
     setNotificationSettings(data.notificationSettings);
     return data;
   }, []);
 
   const loadStats = useCallback(async (period: StatsPeriodKey, options?: StatsQueryOptions) => {
+    const requestId = ++statsRequestIdRef.current;
+    setStatsPeriod(period);
+    setStatsLoading(true);
+
     const params = new URLSearchParams({ period });
     if (period === "custom") {
       const from = options?.from ?? customDateRangeRef.current.from;
@@ -207,9 +237,15 @@ export function KajiApp() {
       setCustomDateRange(nextRange);
     }
 
-    const data = await apiFetch<StatsResponse>(`/api/stats?${params.toString()}`, { cache: "no-store" });
-    setStats(data);
-    setStatsPeriod(period);
+    try {
+      const data = await apiFetch<StatsResponse>(`/api/stats?${params.toString()}`, { cache: "no-store" });
+      if (requestId !== statsRequestIdRef.current) return;
+      setStats(data);
+    } finally {
+      if (requestId === statsRequestIdRef.current) {
+        setStatsLoading(false);
+      }
+    }
   }, []);
 
   const loadHistory = useCallback(async () => {
@@ -230,6 +266,7 @@ export function KajiApp() {
       const data = await loadBootstrap();
       if (data.needsRegistration || !data.sessionUser) {
         setStats(null);
+        setStatsLoading(false);
         setRecords([]);
         return data;
       }
@@ -299,6 +336,33 @@ export function KajiApp() {
     return () => observer.disconnect();
   }, [activeTab, boot?.users.length]);
 
+  const setRecordUpdating = useCallback((choreId: string, isUpdating: boolean) => {
+    setRecordUpdatingIds((prev) => {
+      if (isUpdating) {
+        return prev.includes(choreId) ? prev : [...prev, choreId];
+      }
+      return prev.filter((id) => id !== choreId);
+    });
+  }, []);
+
+  const updateBootChoreOptimistically = useCallback(
+    (choreId: string, updater: (chore: ChoreWithComputed) => ChoreWithComputed) => {
+      setBoot((prev) => {
+        if (!prev || prev.needsRegistration) return prev;
+        const nextChores = prev.chores.map((chore) => (chore.id === choreId ? updater(chore) : chore));
+        const split = splitComputedChoresForHome(nextChores);
+        return {
+          ...prev,
+          chores: nextChores,
+          todayChores: split.todayChores,
+          tomorrowChores: split.tomorrowChores,
+          upcomingBigChores: split.upcomingBigChores,
+        };
+      });
+    },
+    [],
+  );
+
   const registerUser = async (e: FormEvent) => {
     e.preventDefault();
     try {
@@ -345,7 +409,7 @@ export function KajiApp() {
   };
 
   const saveChore = async () => {
-    if (!editingChore) return;
+    if (!editingChore || saveChoreLoading || deleteChoreLoading) return;
     setError("");
     if (!editingChore.lastPerformedAt) {
       setError("前回実施日時は必須です。");
@@ -366,26 +430,41 @@ export function KajiApp() {
       lastPerformedAt: editingChore.lastPerformedAt ?? undefined,
       defaultAssigneeId: editingChore.defaultAssigneeId ?? undefined,
     };
-    if (editingChore.id) {
-      await apiFetch(`/api/chores/${editingChore.id}`, { method: "PATCH", body: JSON.stringify(payload) });
-    } else {
-      await apiFetch("/api/chores", { method: "POST", body: JSON.stringify(payload) });
+    try {
+      setSaveChoreLoading(true);
+      if (editingChore.id) {
+        await apiFetch(`/api/chores/${editingChore.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      } else {
+        await apiFetch("/api/chores", { method: "POST", body: JSON.stringify(payload) });
+      }
+      await refreshAll(statsPeriod);
+      setDeleteConfirmOpen(false);
+      setChoreEditorOpen(false);
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "家事の保存に失敗しました。");
+    } finally {
+      setSaveChoreLoading(false);
     }
-    setChoreEditorOpen(false);
-    await refreshAll(statsPeriod);
   };
 
   const requestDeleteChore = () => {
-    if (!editingChore?.id) return;
+    if (!editingChore?.id || saveChoreLoading || deleteChoreLoading) return;
     setDeleteConfirmOpen(true);
   };
 
   const confirmDeleteChore = async () => {
-    if (!editingChore?.id) return;
-    setDeleteConfirmOpen(false);
-    await apiFetch(`/api/chores/${editingChore.id}`, { method: "DELETE" });
-    setChoreEditorOpen(false);
-    await refreshAll(statsPeriod);
+    if (!editingChore?.id || deleteChoreLoading || saveChoreLoading) return;
+    try {
+      setDeleteChoreLoading(true);
+      await apiFetch(`/api/chores/${editingChore.id}`, { method: "DELETE" });
+      await refreshAll(statsPeriod);
+      setDeleteConfirmOpen(false);
+      setChoreEditorOpen(false);
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "家事の削除に失敗しました。");
+    } finally {
+      setDeleteChoreLoading(false);
+    }
   };
 
   const openMemo = (chore: ChoreWithComputed) => {
@@ -396,18 +475,70 @@ export function KajiApp() {
 
   const submitRecord = async () => {
     if (!memoTarget) return;
-    await apiFetch(`/api/chores/${memoTarget.id}/record`, {
-      method: "POST",
-      body: JSON.stringify({ memo }),
-    });
+    const targetId = memoTarget.id;
+    const previousBoot = boot;
+    const now = new Date();
+    const nowIso = now.toISOString();
+
     setMemoOpen(false);
-    await refreshAll(statsPeriod);
+    setRecordUpdating(targetId, true);
+
+    if (sessionUser) {
+      updateBootChoreOptimistically(targetId, (chore) => ({
+        ...chore,
+        doneToday: true,
+        lastPerformedAt: nowIso,
+        lastPerformerName: sessionUser.name,
+        lastRecordId: chore.lastRecordId ?? `optimistic-${now.getTime()}`,
+        dueAt: addDays(now, chore.intervalDays).toISOString(),
+        isDueToday: false,
+        isDueTomorrow: chore.intervalDays === 1,
+        isOverdue: false,
+        overdueDays: 0,
+        daysSinceLast: 0,
+      }));
+    }
+
+    try {
+      await apiFetch(`/api/chores/${targetId}/record`, {
+        method: "POST",
+        body: JSON.stringify({ memo }),
+      });
+      void refreshAll(statsPeriod);
+    } catch (err: unknown) {
+      if (previousBoot) {
+        setBoot(previousBoot);
+      }
+      setError((err as Error).message ?? "Failed to save record.");
+    } finally {
+      setRecordUpdating(targetId, false);
+    }
   };
 
   const undoRecord = async (chore: ChoreWithComputed) => {
     if (!chore.lastRecordId) return;
-    await apiFetch(`/api/records/${chore.lastRecordId}`, { method: "DELETE", body: "{}" });
-    await refreshAll(statsPeriod);
+    const previousBoot = boot;
+    setRecordUpdating(chore.id, true);
+
+    updateBootChoreOptimistically(chore.id, (current) => ({
+      ...current,
+      doneToday: false,
+      lastRecordId: null,
+      isDueToday: true,
+      isDueTomorrow: false,
+    }));
+
+    try {
+      await apiFetch(`/api/records/${chore.lastRecordId}`, { method: "DELETE", body: "{}" });
+      void refreshAll(statsPeriod);
+    } catch (err: unknown) {
+      if (previousBoot) {
+        setBoot(previousBoot);
+      }
+      setError((err as Error).message ?? "Failed to undo record.");
+    } finally {
+      setRecordUpdating(chore.id, false);
+    }
   };
 
   const openHistory = (chore: ChoreWithComputed) => {
@@ -543,7 +674,7 @@ export function KajiApp() {
           <p className="text-[26px] font-bold text-[#202124]">さあ、始めましょう</p>
           <div className="w-full space-y-3 rounded-[20px] border border-[#DADCE0] bg-white px-[18px] py-4">
             <div className="flex items-center gap-2">
-              <span className="text-[22px] text-[#1A9BE8]">🪪</span>
+              <span className="text-[22px] text-[#1A9BE8]">ｪｪ</span>
               <p className="text-[24px] font-bold text-[#202124]">あなたの名前は？</p>
             </div>
             <input
@@ -775,8 +906,8 @@ export function KajiApp() {
                           (x) => x.choreId === chore.id && x.date === sectionDateKey,
                         );
                         const assigneeName = assignedEntry?.userName ?? null;
-                        const disableTomorrowEveryOtherDayCheck =
-                          section.key === "tomorrow" && chore.intervalDays === 2;
+                        const disableTomorrowDailyCheck =
+                          section.key === "tomorrow" && chore.intervalDays === 1;
                         return (
                           <HomeTaskRow
                             key={chore.id}
@@ -787,7 +918,8 @@ export function KajiApp() {
                             }
                             onRecord={openMemo}
                             onUndo={undoRecord}
-                            recordDisabled={disableTomorrowEveryOtherDayCheck}
+                            isUpdating={recordUpdatingIds.includes(chore.id)}
+                            recordDisabled={disableTomorrowDailyCheck}
                             assigneeName={assigneeName}
                             meta={
                               section.key === "big"
@@ -857,7 +989,7 @@ export function KajiApp() {
                 const meta = chore.isBigTask
                   ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
                   } / ${dueInDaysLabel(chore)}`
-                  : `${chore.intervalDays}譌･縺斐→ / 蜑榊屓:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "譛ｪ險ｭ螳・
+                  : `${chore.intervalDays}日ごと / 前回:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "未設定"
                   }`;
                 return (
                   <ListChoreRow
@@ -883,6 +1015,7 @@ export function KajiApp() {
               <StatsView
                 stats={stats}
                 activePeriod={statsPeriod}
+                isLoading={statsLoading}
                 customDateRange={customDateRange}
                 onChangePeriod={async (period) => {
                   try {
@@ -1005,7 +1138,17 @@ export function KajiApp() {
         </div>
       </nav>
 
-      <BottomSheet open={choreEditorOpen && !customIconOpen} onClose={() => setChoreEditorOpen(false)} title="" maxHeightClassName="max-h-[92vh]" containerClassName="px-0 pb-4 pt-[10px]" scrollable={false}>
+      <BottomSheet
+        open={choreEditorOpen && !customIconOpen}
+        onClose={() => {
+          if (saveChoreLoading || deleteChoreLoading) return;
+          setChoreEditorOpen(false);
+        }}
+        title=""
+        maxHeightClassName="max-h-[92vh]"
+        containerClassName="px-0 pb-4 pt-[10px]"
+        scrollable={false}
+      >
         <div className="space-y-[14px] px-5 pb-1">
           <p className="text-center text-[24px] font-bold text-[#202124]">
             {editingChore?.id ? "編集" : "登録"}
@@ -1016,6 +1159,8 @@ export function KajiApp() {
               value={editingChore}
               customIcons={customIcons}
               users={boot?.users ?? []}
+              isSaving={saveChoreLoading}
+              isDeleting={deleteChoreLoading}
               onChange={setEditingChore}
               onSave={saveChore}
               onDelete={requestDeleteChore}
@@ -1047,8 +1192,12 @@ export function KajiApp() {
           />
         ) : null}
       </BottomSheet>
-
-      <BottomSheet open={memoOpen} onClose={() => setMemoOpen(false)} title="">
+      <BottomSheet
+        open={memoOpen}
+        onClose={() => setMemoOpen(false)}
+        title=""
+        maxHeightClassName="min-h-[62vh] max-h-[88vh]"
+      >
         <div className="space-y-3 pb-2">
           <p className="text-[14.4px] font-bold text-[#5F6368]">メモ（任意）</p>
           <textarea
@@ -1115,16 +1264,19 @@ export function KajiApp() {
               <button
                 type="button"
                 onClick={() => setDeleteConfirmOpen(false)}
-                className="rounded-[14px] border border-[#DADCE0] bg-white px-4 py-[11px] text-[15px] font-bold text-[#5F6368]"
+                disabled={deleteChoreLoading}
+                className="rounded-[14px] border border-[#DADCE0] bg-white px-4 py-[11px] text-[15px] font-bold text-[#5F6368] disabled:opacity-60"
               >
                 キャンセル
               </button>
               <button
                 type="button"
                 onClick={confirmDeleteChore}
-                className="rounded-[14px] bg-[#D45858] px-4 py-[11px] text-[15px] font-bold text-white"
+                disabled={deleteChoreLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-[14px] bg-[#D45858] px-4 py-[11px] text-[15px] font-bold text-white disabled:opacity-60"
               >
-                削除する
+                {deleteChoreLoading ? <Loader2 size={16} className="animate-spin" /> : null}
+                {deleteChoreLoading ? "削除中..." : "削除する"}
               </button>
             </div>
           </div>
@@ -1133,3 +1285,4 @@ export function KajiApp() {
     </main >
   );
 }
+

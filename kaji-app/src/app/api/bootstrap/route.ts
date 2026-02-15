@@ -16,6 +16,7 @@ export async function GET() {
       todayChores: [],
       tomorrowChores: [],
       upcomingBigChores: [],
+      assignments: [],
       householdInviteCode: null,
       notificationSettings: null,
     });
@@ -49,6 +50,7 @@ export async function GET() {
       todayChores: [],
       tomorrowChores: [],
       upcomingBigChores: [],
+      assignments: [],
       householdInviteCode: null,
       notificationSettings: null,
     });

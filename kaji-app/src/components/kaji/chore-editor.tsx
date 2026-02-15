@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Minus, Plus } from "lucide-react";
+import { Loader2, Minus, Plus } from "lucide-react";
 
 import {
   BG_COLOR_PALETTE,
@@ -67,6 +67,8 @@ export function ChoreEditor({
   value,
   customIcons,
   users,
+  isSaving = false,
+  isDeleting = false,
   onChange,
   onSave,
   onDelete,
@@ -76,6 +78,8 @@ export function ChoreEditor({
   value: ChoreForm;
   customIcons: CustomIconOption[];
   users: Array<{ id: string; name: string }>;
+  isSaving?: boolean;
+  isDeleting?: boolean;
   onChange: (next: ChoreForm) => void;
   onSave: () => void;
   onDelete: () => void;
@@ -118,6 +122,7 @@ export function ChoreEditor({
     return pages;
   }, [selectableIcons]);
   const displayActiveIconPage = Math.max(0, Math.min(activeIconPage, iconPages.length - 1));
+  const canSave = value.title.trim().length > 0 && Boolean(lastPerformedDate) && !isSaving && !isDeleting;
 
   const updateIntervalDays = (delta: number) => {
     const next = Math.min(
@@ -342,15 +347,28 @@ export function ChoreEditor({
         <button
           type="button"
           onClick={onSave}
-          className="w-full rounded-[14px] bg-[#1A9BE8] px-[14px] py-[12px] text-[15.6px] font-bold text-white"
+          disabled={!canSave}
+          className={`w-full rounded-[14px] px-[14px] py-[12px] text-[15.6px] font-bold text-white ${
+            canSave ? "bg-[#1A9BE8]" : "cursor-not-allowed bg-[#B6C8D6]"
+          }`}
         >
-          {mode === "create" ? "家事を追加" : "変更を保存"}
+          {isSaving ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 size={16} className="animate-spin" />
+              保存中...
+            </span>
+          ) : mode === "create" ? (
+            "家事を追加"
+          ) : (
+            "変更を保存"
+          )}
         </button>
         {mode === "edit" ? (
           <button
             type="button"
             onClick={onDelete}
-            className="w-full rounded-[14px] border border-[#F2C9C9] bg-white px-[14px] py-[12px] text-[15.6px] font-bold text-[#D45858]"
+            disabled={isSaving || isDeleting}
+            className="w-full rounded-[14px] border border-[#F2C9C9] bg-white px-[14px] py-[12px] text-[15.6px] font-bold text-[#D45858] disabled:opacity-60"
           >
             家事を削除
           </button>

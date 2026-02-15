@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
 import { maxCount } from "@/components/kaji/helpers";
 import { StatsPeriodKey, StatsResponse, StatsUserCount } from "@/lib/types";
@@ -56,6 +57,7 @@ function buildPieData(users: StatsUserCount[], userColorMap: Map<string, string>
 export function StatsView({
   stats,
   activePeriod,
+  isLoading = false,
   customDateRange,
   onChangePeriod,
   onChangeCustomDateRange,
@@ -63,6 +65,7 @@ export function StatsView({
 }: {
   stats: StatsResponse | null;
   activePeriod: StatsPeriodKey;
+  isLoading?: boolean;
   customDateRange: CustomDateRange;
   onChangePeriod: (period: StatsPeriodKey) => void;
   onChangeCustomDateRange: (range: CustomDateRange) => void;
@@ -98,7 +101,7 @@ export function StatsView({
               onChangePeriod(item.key);
               setCustomEditorOpen(item.key === "custom");
             }}
-            className={`rounded-[11px] px-2 py-1.5 text-[13.2px] font-bold ${
+            className={`inline-flex items-center gap-1 rounded-[11px] px-2 py-1.5 text-[13.2px] font-bold ${
               activePeriod === item.key
                 ? "bg-[#1A9BE8] text-white"
                 : item.accent
@@ -106,10 +109,16 @@ export function StatsView({
                   : "bg-[#F1F3F4] text-[#5F6368]"
             }`}
           >
+            {isLoading && activePeriod === item.key ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : null}
             {item.label}
           </button>
         ))}
       </div>
+      {isLoading ? (
+        <p className="text-[12px] font-medium text-[#5F6368]">Loading latest stats...</p>
+      ) : null}
 
       {activePeriod === "custom" && customEditorOpen ? (
         <div className="space-y-2 rounded-2xl border border-[#DADCE0] bg-white p-4">

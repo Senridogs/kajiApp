@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Check, Copy, KeyRound, Pencil, Ticket, Users } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Pencil, Ticket, Users } from "lucide-react";
 
 import { iconByName } from "@/components/kaji/helpers";
 import { ChoreWithComputed } from "@/lib/types";
@@ -65,6 +65,7 @@ export function HomeTaskRow({
   meta,
   assigneeName,
   recordDisabled = false,
+  isUpdating = false,
 }: {
   chore: ChoreWithComputed;
   onRecord: (chore: ChoreWithComputed) => void;
@@ -72,10 +73,11 @@ export function HomeTaskRow({
   meta?: string;
   assigneeName?: string | null;
   recordDisabled?: boolean;
+  isUpdating?: boolean;
 }) {
   const done = chore.doneToday;
   const title = chore.title;
-  const disableRecordAction = !done && recordDisabled;
+  const disableRecordAction = isUpdating || (!done && recordDisabled);
 
   return (
     <div
@@ -119,14 +121,18 @@ export function HomeTaskRow({
             : "border-[#C0C6CC] bg-white hover:border-[#1A9BE8]"
           }`}
       >
-        <span
-          className={`flex items-center justify-center transition-opacity ${done
-            ? "opacity-100 motion-safe:animate-[checkPop_220ms_ease-out_both]"
-            : "opacity-0"
-            }`}
-        >
-          <Check size={15} strokeWidth={3} className="text-white" />
-        </span>
+        {isUpdating ? (
+          <Loader2 size={14} className="animate-spin text-[#5F6368]" />
+        ) : (
+          <span
+            className={`flex items-center justify-center transition-opacity ${done
+              ? "opacity-100 motion-safe:animate-[checkPop_220ms_ease-out_both]"
+              : "opacity-0"
+              }`}
+          >
+            <Check size={15} strokeWidth={3} className="text-white" />
+          </span>
+        )}
       </button>
     </div>
   );
