@@ -61,6 +61,7 @@ const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
 ];
 
 const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
+const ASSIGNMENT_SHEET_SLIDE_MS = 240;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 type TabKey = "home" | "list" | "stats" | "settings";
@@ -243,11 +244,46 @@ export function KajiApp() {
   const [pushLoading, setPushLoading] = useState(false);
 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
+  const [assignmentMounted, setAssignmentMounted] = useState(false);
+  const [assignmentSlideIn, setAssignmentSlideIn] = useState(false);
+  const assignmentCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [listDeleteSwipeActive, setListDeleteSwipeActive] = useState(false);
+  const clearAssignmentCloseTimer = useCallback(() => {
+    if (!assignmentCloseTimerRef.current) return;
+    clearTimeout(assignmentCloseTimerRef.current);
+    assignmentCloseTimerRef.current = null;
+  }, []);
+  useEffect(
+    () => () => {
+      clearAssignmentCloseTimer();
+    },
+    [clearAssignmentCloseTimer],
+  );
+  const openAssignment = useCallback(() => {
+    clearAssignmentCloseTimer();
+    setAssignmentOpen(true);
+    setAssignmentMounted(true);
+    setAssignmentSlideIn(false);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setAssignmentSlideIn(true);
+      });
+    });
+  }, [clearAssignmentCloseTimer]);
+  const closeAssignment = useCallback(() => {
+    if (!assignmentOpen && !assignmentMounted) return;
+    clearAssignmentCloseTimer();
+    setAssignmentSlideIn(false);
+    assignmentCloseTimerRef.current = setTimeout(() => {
+      assignmentCloseTimerRef.current = null;
+      setAssignmentMounted(false);
+      setAssignmentOpen(false);
+    }, ASSIGNMENT_SHEET_SLIDE_MS);
+  }, [assignmentMounted, assignmentOpen, clearAssignmentCloseTimer]);
   const swipe = useSwipeTab({
     tabs: TAB_ORDER,
     activeTab,
-    onChangeTab: (tab) => { setAssignmentOpen(false); setActiveTab(tab); },
+    onChangeTab: (tab) => { closeAssignment(); setActiveTab(tab); },
     disabled: assignmentOpen || listDeleteSwipeActive,
     threshold: 78,
     dominanceRatio: 1.4,
@@ -265,7 +301,7 @@ export function KajiApp() {
     }
   }, [swipe]);
   const assignmentEdgeSwipe = useEdgeSwipeBack({
-    onBack: () => setAssignmentOpen(false),
+    onBack: closeAssignment,
     enabled: assignmentOpen,
     edgeWidth: Number.POSITIVE_INFINITY,
     threshold: 80,
@@ -932,7 +968,7 @@ export function KajiApp() {
                 <button
                   type="button"
                   onClick={() => {
-                    setAssignmentOpen(true);
+                    openAssignment();
                     if (!assignmentUser && boot.users.length > 0) {
                       setAssignmentUser(boot.users[0].id);
                     }
@@ -1202,7 +1238,7 @@ export function KajiApp() {
   return (
     <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-hidden bg-[#F8F9FA]">
       <section
-        className="flex-1 overflow-auto px-5 pb-28"
+        className="relative flex-1 overflow-hidden"
         onTouchStart={(e) => {
           swipe.onTouchStart(e);
           assignmentEdgeSwipe.onTouchStart(e);
@@ -1220,143 +1256,151 @@ export function KajiApp() {
           assignmentEdgeSwipe.onTouchCancel();
         }}
       >
-        {error ? <div className="mb-4 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
-
-        {assignmentOpen ? (
-          <div className="space-y-4 pt-5">
-            <div className="sticky top-0 z-30 -mx-5 space-y-3 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setAssignmentOpen(false)}
-                  className="flex items-center gap-1 text-[14px] font-bold text-[#1A9BE8]"
-                >
-                  <ChevronLeft size={18} /> 戻る
-                </button>
-                <p className="text-[18px] font-bold text-[#202124]">担当設定</p>
-                <div className="w-[50px]" />
-              </div>
-
-              <div className="flex gap-2">
-                {(boot?.users ?? []).map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => setAssignmentUser(assignmentUser === u.id ? null : u.id)}
-                    className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${assignmentUser === u.id
-                      ? "bg-[#1A9BE8] text-white"
-                      : "border border-[#DADCE0] bg-white text-[#5F6368]"
-                      }`}
-                  >
-                    {u.name}
-                  </button>
+        <div className="relative h-full overflow-hidden">
+          <div className="h-full overflow-auto px-5 pb-28">
+            {error ? <div className="mb-4 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
+            <div className="relative min-h-full overflow-x-hidden">
+              <div
+                className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
+                style={{
+                  transform: `translate3d(${swipeTrackTranslatePercent}%, 0, 0)`,
+                  transition: swipeTrackTransitionStyle,
+                }}
+              >
+                {TAB_ORDER.map((tab) => (
+                  <div key={tab} className="w-full shrink-0 overflow-x-hidden">
+                    {renderMainTabContent(tab)}
+                  </div>
                 ))}
               </div>
-
-              <div className="flex gap-1 rounded-xl bg-[#F1F3F4] p-1">
-                <button
-                  type="button"
-                  onClick={() => setAssignmentTab("daily")}
-                  className={`flex-1 rounded-lg py-1.5 text-[13px] font-bold ${assignmentTab === "daily" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
-                >
-                  日々のタスク
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAssignmentTab("big")}
-                  className={`flex-1 rounded-lg py-1.5 text-[13px] font-bold ${assignmentTab === "big" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
-                >
-                  大仕事
-                </button>
-              </div>
             </div>
+          </div>
 
-            <div className="space-y-3">
-              {assignmentDays.slice(0, visibleAssignDays).map(({ date, dateKey, dayChores }) => (
-                <div key={dateKey} className="space-y-1">
-                  <p className="text-[13px] font-bold text-[#5F6368]">
-                    {formatMonthDay(date.toISOString())}
-                  </p>
-                  <div className="rounded-[14px] bg-white">
-                    {dayChores.map((chore, idx) => {
-                      const entry = assignments.find(
-                        (x) => x.choreId === chore.id && x.date === dateKey,
-                      );
-                      const isAssigned = assignmentUser
-                        ? entry?.userId === assignmentUser
-                        : false;
-                      const currentAssigneeName = entry?.userName ?? null;
-                      return (
-                        <button
-                          key={chore.id}
-                          type="button"
-                          onClick={() => {
-                            if (!assignmentUser) return;
-                            const newUserId = isAssigned ? null : assignmentUser;
-                            startTransition(() => {
-                              setAssignments((prev) => {
-                                const filtered = prev.filter((x) => !(x.choreId === chore.id && x.date === dateKey));
-                                if (newUserId) {
-                                  const userName = boot?.users.find((u) => u.id === newUserId)?.name ?? "";
-                                  filtered.push({ choreId: chore.id, userId: newUserId, userName, date: dateKey });
-                                }
-                                return filtered;
-                              });
-                            });
-                            apiFetch("/api/assignments", {
-                              method: "POST",
-                              body: JSON.stringify({ choreId: chore.id, userId: newUserId, date: dateKey }),
-                            }).catch(() => setError("担当の保存に失敗しました。"));
-                          }}
-                          className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[#F1F3F4]" : ""}`}
-                        >
-                          <span className={`material-symbols-rounded text-[20px] ${isAssigned ? "text-[#1A9BE8]" : "text-[#DADCE0]"}`}>
-                            {isAssigned ? "check_box" : "check_box_outline_blank"}
-                          </span>
-                          <span className="flex-1 text-[13.5px] font-medium text-[#202124]">{chore.title}</span>
-                          {currentAssigneeName && !isAssigned ? (
-                            <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {currentAssigneeName}</span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
+          {assignmentMounted ? (
+            <div
+              className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-28 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
+            >
+              {error ? <div className="mb-4 mt-5 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
+              <div className={`space-y-4 ${error ? "pt-2" : "pt-5"}`}>
+                <div className="sticky top-0 z-30 -mx-5 space-y-3 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={closeAssignment}
+                      className="flex items-center gap-1 text-[14px] font-bold text-[#1A9BE8]"
+                    >
+                      <ChevronLeft size={18} /> 戻る
+                    </button>
+                    <p className="text-[18px] font-bold text-[#202124]">担当設定</p>
+                    <div className="w-[50px]" />
+                  </div>
+
+                  <div className="flex gap-2">
+                    {(boot?.users ?? []).map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setAssignmentUser(assignmentUser === u.id ? null : u.id)}
+                        className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${assignmentUser === u.id
+                          ? "bg-[#1A9BE8] text-white"
+                          : "border border-[#DADCE0] bg-white text-[#5F6368]"
+                          }`}
+                      >
+                        {u.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-1 rounded-xl bg-[#F1F3F4] p-1">
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentTab("daily")}
+                      className={`flex-1 rounded-lg py-1.5 text-[13px] font-bold ${assignmentTab === "daily" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
+                    >
+                      日々のタスク
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentTab("big")}
+                      className={`flex-1 rounded-lg py-1.5 text-[13px] font-bold ${assignmentTab === "big" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
+                    >
+                      大仕事
+                    </button>
                   </div>
                 </div>
-              ))}
-              {visibleAssignDays < assignmentDays.length && (
-                <div
-                  ref={assignSentinelRef}
-                  className="flex justify-center py-3"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setVisibleAssignDays((prev) => Math.min(prev + 30, assignmentDays.length))}
-                    className="rounded-xl bg-white px-4 py-2 text-[13px] font-bold text-[#5F6368] shadow-sm"
-                  >
-                    もっと見る
-                  </button>
+
+                <div className="space-y-3">
+                  {assignmentDays.slice(0, visibleAssignDays).map(({ date, dateKey, dayChores }) => (
+                    <div key={dateKey} className="space-y-1">
+                      <p className="text-[13px] font-bold text-[#5F6368]">
+                        {formatMonthDay(date.toISOString())}
+                      </p>
+                      <div className="rounded-[14px] bg-white">
+                        {dayChores.map((chore, idx) => {
+                          const entry = assignments.find(
+                            (x) => x.choreId === chore.id && x.date === dateKey,
+                          );
+                          const isAssigned = assignmentUser
+                            ? entry?.userId === assignmentUser
+                            : false;
+                          const currentAssigneeName = entry?.userName ?? null;
+                          return (
+                            <button
+                              key={chore.id}
+                              type="button"
+                              onClick={() => {
+                                if (!assignmentUser) return;
+                                const newUserId = isAssigned ? null : assignmentUser;
+                                startTransition(() => {
+                                  setAssignments((prev) => {
+                                    const filtered = prev.filter((x) => !(x.choreId === chore.id && x.date === dateKey));
+                                    if (newUserId) {
+                                      const userName = boot?.users.find((u) => u.id === newUserId)?.name ?? "";
+                                      filtered.push({ choreId: chore.id, userId: newUserId, userName, date: dateKey });
+                                    }
+                                    return filtered;
+                                  });
+                                });
+                                apiFetch("/api/assignments", {
+                                  method: "POST",
+                                  body: JSON.stringify({ choreId: chore.id, userId: newUserId, date: dateKey }),
+                                }).catch(() => setError("担当の保存に失敗しました。"));
+                              }}
+                              className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[#F1F3F4]" : ""}`}
+                            >
+                              <span className={`material-symbols-rounded text-[20px] ${isAssigned ? "text-[#1A9BE8]" : "text-[#DADCE0]"}`}>
+                                {isAssigned ? "check_box" : "check_box_outline_blank"}
+                              </span>
+                              <span className="flex-1 text-[13.5px] font-medium text-[#202124]">{chore.title}</span>
+                              {currentAssigneeName && !isAssigned ? (
+                                <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {currentAssigneeName}</span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  {visibleAssignDays < assignmentDays.length && (
+                    <div
+                      ref={assignSentinelRef}
+                      className="flex justify-center py-3"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setVisibleAssignDays((prev) => Math.min(prev + 30, assignmentDays.length))}
+                        className="rounded-xl bg-white px-4 py-2 text-[13px] font-bold text-[#5F6368] shadow-sm"
+                      >
+                        もっと見る
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="relative min-h-full overflow-x-hidden">
-            <div
-              className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
-              style={{
-                transform: `translate3d(${swipeTrackTranslatePercent}%, 0, 0)`,
-                transition: swipeTrackTransitionStyle,
-              }}
-            >
-              {TAB_ORDER.map((tab) => (
-                <div key={tab} className="w-full shrink-0">
-                  {renderMainTabContent(tab)}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </section >
+          ) : null}
+        </div>
+      </section>
 
       <div
         aria-hidden
@@ -1375,19 +1419,19 @@ export function KajiApp() {
 
       <nav className="fixed bottom-4 left-0 right-0 z-30 mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
-          <button type="button" onClick={() => { setAssignmentOpen(false); setActiveTab("home"); }} className="flex h-10 w-10 items-center justify-center">
+          <button type="button" onClick={() => { closeAssignment(); setActiveTab("home"); }} className="flex h-10 w-10 items-center justify-center">
             <span className="material-symbols-rounded text-[24px]" style={{ color: !assignmentOpen && activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>home</span>
           </button>
-          <button type="button" onClick={() => { setAssignmentOpen(false); setActiveTab("list"); }} className="flex h-10 w-10 items-center justify-center">
+          <button type="button" onClick={() => { closeAssignment(); setActiveTab("list"); }} className="flex h-10 w-10 items-center justify-center">
             <span className="material-symbols-rounded text-[24px]" style={{ color: !assignmentOpen && activeTab === "list" ? PRIMARY_COLOR : "#9AA0A6" }}>checklist</span>
           </button>
-          <button type="button" onClick={() => { setAssignmentOpen(false); openAddChore(); }} className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[#1A9BE8] text-white shadow-md">
+          <button type="button" onClick={() => { closeAssignment(); openAddChore(); }} className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[#1A9BE8] text-white shadow-md">
             <Plus size={20} strokeWidth={2.5} />
           </button>
-          <button type="button" onClick={() => { setAssignmentOpen(false); setActiveTab("stats"); }} className="flex h-10 w-10 items-center justify-center">
+          <button type="button" onClick={() => { closeAssignment(); setActiveTab("stats"); }} className="flex h-10 w-10 items-center justify-center">
             <span className="material-symbols-rounded text-[24px]" style={{ color: !assignmentOpen && activeTab === "stats" ? PRIMARY_COLOR : "#9AA0A6" }}>bar_chart</span>
           </button>
-          <button type="button" onClick={() => { setAssignmentOpen(false); setActiveTab("settings"); }} className="flex h-10 w-10 items-center justify-center">
+          <button type="button" onClick={() => { closeAssignment(); setActiveTab("settings"); }} className="flex h-10 w-10 items-center justify-center">
             <span className="material-symbols-rounded text-[24px]" style={{ color: !assignmentOpen && activeTab === "settings" ? PRIMARY_COLOR : "#9AA0A6" }}>settings</span>
           </button>
         </div>
