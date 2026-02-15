@@ -1,7 +1,8 @@
-{
+﻿{
   "name": "いえたすく",
   "short_name": "いえたすく",
   "description": "家事分担を手軽に管理できるアプリ",
+  "id": "/",
   "lang": "ja",
   "start_url": "/",
   "scope": "/",
@@ -10,13 +11,13 @@
   "theme_color": "#4285F4",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/icon-192-v2.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icon-512-v2.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
@@ -24,7 +25,8 @@
     {
       "src": "/app-icon.svg",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }
