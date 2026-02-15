@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Loader2,
   Plus,
+  User,
   Users,
 } from "lucide-react";
 
@@ -42,7 +43,6 @@ import {
   UndoToast,
 } from "@/components/kaji/ui-parts";
 import { AnimatedList } from "@/components/ui/animated-list";
-import { BlurFade } from "@/components/ui/blur-fade";
 import {
   BootstrapResponse,
   ChoreAssignmentEntry,
@@ -69,6 +69,7 @@ type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
 const CUSTOM_ICONS_STORAGE_KEY = "kaji_custom_icons";
 type PendingSwipeDelete = {
+  toastId: string;
   chore: ChoreWithComputed;
   removedAssignments: ChoreAssignmentEntry[];
 };
@@ -87,6 +88,26 @@ function defaultCustomDateRange(now = new Date()): CustomDateRange {
 function defaultLastPerformedAt(now = new Date()) {
   const previousDay = addDays(now, -1);
   return previousDay.toISOString();
+}
+
+function scheduledDayOffset(
+  chore: Pick<ChoreWithComputed, "dueAt">,
+  targetDate: Date,
+) {
+  if (!chore.dueAt) return null;
+  const dueStart = startOfJstDay(new Date(chore.dueAt));
+  if (Number.isNaN(dueStart.getTime())) return null;
+  const targetStart = startOfJstDay(targetDate);
+  return Math.floor((targetStart.getTime() - dueStart.getTime()) / DAY_IN_MS);
+}
+
+function isScheduledOnDate(
+  chore: Pick<ChoreWithComputed, "dueAt" | "intervalDays">,
+  targetDate: Date,
+) {
+  const diffDays = scheduledDayOffset(chore, targetDate);
+  if (diffDays === null || diffDays < 0) return false;
+  return diffDays % Math.max(1, chore.intervalDays) === 0;
 }
 
 function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
@@ -210,7 +231,7 @@ export function KajiApp() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<ChoreWithComputed | null>(null);
   const [historyFilter, setHistoryFilter] = useState("all");
-  const [pendingSwipeDelete, setPendingSwipeDelete] = useState<PendingSwipeDelete | null>(null);
+  const [pendingSwipeDeletes, setPendingSwipeDeletes] = useState<PendingSwipeDelete[]>([]);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [saveChoreLoading, setSaveChoreLoading] = useState(false);
   const [deleteChoreLoading, setDeleteChoreLoading] = useState(false);
@@ -227,10 +248,18 @@ export function KajiApp() {
     activeTab,
     onChangeTab: (tab) => { setAssignmentOpen(false); setActiveTab(tab); },
     disabled: assignmentOpen,
+    threshold: 78,
+    dominanceRatio: 1.4,
+    lockDistance: 14,
+    minFlickVelocity: 0.95,
+    minFlickDistance: 42,
+    transitionDurationMs: 220,
   });
   const assignmentEdgeSwipe = useEdgeSwipeBack({
     onBack: () => setAssignmentOpen(false),
     enabled: assignmentOpen,
+    edgeWidth: 20,
+    threshold: 80,
   });
   const [assignmentUser, setAssignmentUser] = useState<string | null>(null);
   const [assignmentTab, setAssignmentTab] = useState<"daily" | "big">("daily");
@@ -282,15 +311,7 @@ export function KajiApp() {
     });
     return days
       .map(({ date, key: dateKey }) => {
-        const dayChores = allFiltered.filter((c) => {
-          if (!c.dueAt) return false;
-          const dueStart = startOfJstDay(new Date(c.dueAt));
-          if (Number.isNaN(dueStart.getTime())) return false;
-          const diffDays = Math.floor((date.getTime() - dueStart.getTime()) / DAY_IN_MS);
-          if (diffDays < 0) return false;
-          const intervalDays = Math.max(1, c.intervalDays);
-          return diffDays % intervalDays === 0;
-        });
+        const dayChores = allFiltered.filter((c) => isScheduledOnDate(c, date));
         if (dayChores.length === 0) return null;
         return { date, dateKey, dayChores };
       })
@@ -566,41 +587,43 @@ export function KajiApp() {
 
   const handleSwipeDeleteChore = useCallback(
     (chore: ChoreWithComputed) => {
-      if (pendingSwipeDelete || saveChoreLoading || deleteChoreLoading) return;
+      if (saveChoreLoading || deleteChoreLoading) return;
 
       setError("");
       const removedAssignments = assignments.filter((entry) => entry.choreId === chore.id);
-      setPendingSwipeDelete({ chore, removedAssignments });
+      const toastId = `${chore.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setPendingSwipeDeletes((prev) => [{ toastId, chore, removedAssignments }, ...prev]);
       setBoot((prev) => removeChoreFromBootstrap(prev, chore.id));
       setAssignments((prev) => prev.filter((entry) => entry.choreId !== chore.id));
     },
-    [assignments, deleteChoreLoading, pendingSwipeDelete, saveChoreLoading],
+    [assignments, deleteChoreLoading, saveChoreLoading],
   );
 
-  const undoSwipeDeleteChore = useCallback(() => {
-    if (!pendingSwipeDelete) return;
-    const pending = pendingSwipeDelete;
-    setPendingSwipeDelete(null);
-    restorePendingSwipeDelete(pending);
-  }, [pendingSwipeDelete, restorePendingSwipeDelete]);
+  const undoSwipeDeleteChore = useCallback((toastId: string) => {
+    const target = pendingSwipeDeletes.find((item) => item.toastId === toastId);
+    if (!target) return;
+    setPendingSwipeDeletes((prev) => prev.filter((item) => item.toastId !== toastId));
+    restorePendingSwipeDelete(target);
+  }, [pendingSwipeDeletes, restorePendingSwipeDelete]);
 
-  const finalizeSwipeDeleteChore = useCallback(async () => {
-    if (!pendingSwipeDelete) return;
-    const pending = pendingSwipeDelete;
-    setPendingSwipeDelete(null);
+  const finalizeSwipeDeleteChore = useCallback(async (toastId: string) => {
+    const target = pendingSwipeDeletes.find((item) => item.toastId === toastId);
+    if (!target) return;
+    setPendingSwipeDeletes((prev) => prev.filter((item) => item.toastId !== toastId));
+
     try {
-      await apiFetch(`/api/chores/${pending.chore.id}`, { method: "DELETE" });
+      await apiFetch(`/api/chores/${target.chore.id}`, { method: "DELETE" });
       void refreshAll(statsPeriod).catch((err: unknown) => {
         setError((err as Error).message ?? "家事一覧の更新に失敗しました。");
       });
     } catch (err: unknown) {
-      restorePendingSwipeDelete(pending);
+      restorePendingSwipeDelete(target);
       setError((err as Error).message ?? "家事の削除に失敗しました。");
     }
-  }, [pendingSwipeDelete, refreshAll, restorePendingSwipeDelete, statsPeriod]);
+  }, [pendingSwipeDeletes, refreshAll, restorePendingSwipeDelete, statsPeriod]);
 
-  const dismissSwipeDeleteToast = useCallback(() => {
-    void finalizeSwipeDeleteChore();
+  const dismissSwipeDeleteToast = useCallback((toastId: string) => {
+    void finalizeSwipeDeleteChore(toastId);
   }, [finalizeSwipeDeleteChore]);
 
   const openMemo = (chore: ChoreWithComputed) => {
@@ -810,7 +833,7 @@ export function KajiApp() {
           <p className="text-[26px] font-bold text-[#202124]">さあ、始めましょう</p>
           <div className="w-full space-y-3 rounded-[20px] border border-[#DADCE0] bg-white px-[18px] py-4">
             <div className="flex items-center gap-2">
-              <span className="text-[22px] text-[#1A9BE8]">ｪｪ</span>
+              <User size={22} className="text-[#1A9BE8]" aria-hidden="true" />
               <p className="text-[24px] font-bold text-[#202124]">あなたの名前は？</p>
             </div>
             <input
@@ -878,6 +901,301 @@ export function KajiApp() {
     },
   ].filter((section) => section.chores.length > 0);
   const hasAnyUpcomingChores = homeSections.length > 0;
+  const cubeRotateDeg = 68;
+  const cubeShiftPercent = 14;
+  const swipeProgress = swipe.visual.progress;
+  const swipeDirection = swipeProgress === 0 ? 0 : swipeProgress < 0 ? -1 : 1;
+  const swipeMagnitude = Math.min(1, Math.abs(swipeProgress));
+  const showSwipeTransition =
+    !assignmentOpen &&
+    (swipe.visual.isDragging || swipe.visual.isAnimating || swipeMagnitude > 0.0001);
+  const swipeTransitionStyle = swipe.visual.isDragging
+    ? "none"
+    : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
+  const currentPanelTransform =
+    swipeDirection === 0
+      ? "translateX(0%) rotateY(0deg)"
+      : `translateX(${swipeDirection * swipeMagnitude * cubeShiftPercent}%) rotateY(${(-swipeDirection) * swipeMagnitude * cubeRotateDeg}deg)`;
+  const nextPanelTransform =
+    swipeDirection === 0
+      ? "translateX(0%) rotateY(0deg)"
+      : `translateX(${-swipeDirection * (1 - swipeMagnitude) * 100}%) rotateY(${swipeDirection * (1 - swipeMagnitude) * cubeRotateDeg}deg)`;
+
+  const renderMainTabContent = (tab: TabKey) => {
+    if (tab === "home") {
+      return (
+        <div className="space-y-[10px]">
+          <div ref={homeHeaderRef} className="sticky top-0 z-30 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+            <div className="flex items-center justify-between">
+              <p className="text-[48px] font-bold leading-none text-[#5F6368]">{formatTopDate()}</p>
+              {boot.users.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignmentOpen(true);
+                    if (!assignmentUser && boot.users.length > 0) {
+                      setAssignmentUser(boot.users[0].id);
+                    }
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF3FF]"
+                >
+                  <Users size={20} color="#1A9BE8" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {hasAnyUpcomingChores ? (
+            <>
+              {homeSections.map((section) => (
+                <div key={section.key} className="space-y-[6px]">
+                  <div
+                    className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
+                    style={{ top: homeHeaderHeight }}
+                  >
+                    <HomeSectionTitle title={section.title} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {section.chores.map((chore) => {
+                      const todayKey = toJstDateKey(startOfJstDay(new Date()));
+                      const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
+                      const bigDueDateKey = chore.dueAt
+                        ? toJstDateKey(startOfJstDay(new Date(chore.dueAt)))
+                        : todayKey;
+                      const sectionDateKey =
+                        section.key === "tomorrow"
+                          ? tomorrowKey
+                          : section.key === "big"
+                            ? bigDueDateKey
+                            : todayKey;
+                      const assignedEntry = assignments.find(
+                        (x) => x.choreId === chore.id && x.date === sectionDateKey,
+                      );
+                      const assigneeName = assignedEntry?.userName ?? null;
+                      const disableTomorrowDailyCheck =
+                        section.key === "tomorrow" && chore.intervalDays === 1;
+                      return (
+                        <HomeTaskRow
+                          key={chore.id}
+                          chore={
+                            section.key === "tomorrow" && chore.doneToday
+                              ? { ...chore, doneToday: false }
+                              : chore
+                          }
+                          onRecord={openMemo}
+                          onUndo={undoRecord}
+                          isUpdating={recordUpdatingIds.includes(chore.id)}
+                          recordDisabled={disableTomorrowDailyCheck}
+                          assigneeName={assigneeName}
+                          meta={
+                            section.key === "big"
+                              ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <div className="rounded-[24px] border border-dashed border-[#CFD8E3] bg-white px-5 py-8 text-center">
+              <p className="text-[16px] font-bold text-[#202124]">近日実施するべきタスクはありません</p>
+              <p className="mt-2 text-[13px] font-medium text-[#5F6368]">
+                必要な家事を追加すると、ここに表示されます。
+              </p>
+              <button
+                type="button"
+                onClick={openAddChore}
+                className="mt-4 rounded-[12px] bg-[#1A9BE8] px-4 py-2 text-[14px] font-bold text-white"
+              >
+                家事を追加
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (tab === "list") {
+      return (
+        <div className="space-y-4">
+          <div className="sticky top-0 z-20 -mx-5 space-y-1.5 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+            <ScreenTitle title="家事一覧" />
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-[13.2px] font-bold text-[#5F6368]">並び替え</p>
+                <button
+                  type="button"
+                  onClick={() => setListSortOpen((prev) => !prev)}
+                  aria-expanded={listSortOpen}
+                  aria-controls="list-sort-options"
+                  className="rounded-lg p-1 text-[#5F6368]"
+                >
+                  {listSortOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+              </div>
+              {listSortOpen ? (
+                <div id="list-sort-options" className="flex flex-wrap gap-1.5">
+                  {LIST_SORT_ITEMS.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setListSortKey(item.key)}
+                      className={`rounded-xl px-3 py-1.5 text-[12.5px] font-bold ${listSortKey === item.key ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="space-y-2">
+            {listChores.map((chore) => {
+              const meta = chore.isBigTask
+                ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
+                } / ${dueInDaysLabel(chore)}`
+                : `${chore.intervalDays}日ごと / 前回:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "未設定"
+                }`;
+              return (
+                <SwipableListChoreRow
+                  key={chore.id}
+                  chore={chore}
+                  meta={meta}
+                  onOpenHistory={openHistory}
+                  onEdit={openEditChore}
+                  onSwipeDelete={handleSwipeDeleteChore}
+                />
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    if (tab === "stats") {
+      return (
+        <div className="space-y-5">
+          <div className="sticky top-0 z-20 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+            <ScreenTitle title="統計" />
+          </div>
+          <StatsView
+            stats={stats}
+            activePeriod={statsPeriod}
+            isLoading={statsLoading}
+            customDateRange={customDateRange}
+            onChangePeriod={async (period) => {
+              try {
+                setError("");
+                if (period === "custom") {
+                  await applyCustomDateRange(customDateRange);
+                  return;
+                }
+                await loadStats(period);
+              } catch (err: unknown) {
+                setError((err as Error).message ?? "統計の読み込みに失敗しました。");
+              }
+            }}
+            onChangeCustomDateRange={setCustomDateRange}
+            onApplyCustomDateRange={applyCustomDateRange}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        <div className="sticky top-0 z-20 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+          <ScreenTitle title="設定" />
+        </div>
+        <div className="space-y-4">
+          <SettingToggleRow
+            title="期限当日通知"
+            subtitle="朝8時・夕方18時に通知"
+            checked={notificationSettings?.notifyDueToday ?? false}
+            onChange={(next) => {
+              if (!notificationSettings) return;
+              updateNotificationSettings({ ...notificationSettings, notifyDueToday: next });
+            }}
+          />
+
+          <SettingToggleRow
+            title="期限超過通知"
+            checked={notificationSettings?.remindDailyIfOverdue ?? false}
+            onChange={(next) => {
+              if (!notificationSettings) return;
+              updateNotificationSettings({ ...notificationSettings, remindDailyIfOverdue: next });
+            }}
+          />
+          <SettingToggleRow
+            title="完了時通知"
+            checked={notificationSettings?.notifyCompletion ?? false}
+            onChange={(next) => {
+              if (!notificationSettings) return;
+              updateNotificationSettings({ ...notificationSettings, notifyCompletion: next });
+            }}
+          />
+
+          <FamilyCodeCard
+            inviteCode={boot.householdInviteCode}
+            partnerName={
+              boot.users.length > 1
+                ? boot.users.find((u) => u.id !== sessionUser.id)?.name ?? null
+                : null
+            }
+          />
+
+          {boot.users.length <= 1 ? (
+            <JoinHouseholdCard
+              onJoin={async (code) => {
+                try {
+                  setError("");
+                  await apiFetch("/api/household/join", {
+                    method: "POST",
+                    body: JSON.stringify({ inviteCode: code }),
+                  });
+                  await refreshAll(statsPeriod);
+                } catch (err: unknown) {
+                  setError((err as Error).message ?? "参加に失敗しました。");
+                }
+              }}
+            />
+          ) : null}
+
+          <div className="rounded-[14px] bg-[#FFF8E8] p-4">
+            <p className="text-[17px] font-bold text-[#202124]">通知テスト</p>
+            <button
+              type="button"
+              onClick={handleTestNotification}
+              disabled={pushLoading}
+              className="mt-3 w-full rounded-[12px] bg-[#C2A12F] px-3 py-2 text-[14.4px] font-bold text-white disabled:opacity-60"
+            >
+              いま通知を送信
+            </button>
+          </div>
+
+          <div className="rounded-[14px] bg-white p-4">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await apiFetch("/api/logout", { method: "POST" });
+                  window.location.reload();
+                } catch (err: unknown) {
+                  setError((err as Error).message ?? "ログアウトに失敗しました。");
+                }
+              }}
+              className="w-full rounded-[12px] bg-[#E8E8E8] px-3 py-2 text-[14.4px] font-bold text-[#5F6368]"
+            >
+              ログアウト
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-hidden bg-[#F8F9FA]">
@@ -887,12 +1205,18 @@ export function KajiApp() {
           swipe.onTouchStart(e);
           assignmentEdgeSwipe.onTouchStart(e);
         }}
-        onTouchMove={assignmentEdgeSwipe.onTouchMove}
+        onTouchMove={(e) => {
+          swipe.onTouchMove(e);
+          assignmentEdgeSwipe.onTouchMove(e);
+        }}
         onTouchEnd={(e) => {
           swipe.onTouchEnd(e);
           assignmentEdgeSwipe.onTouchEnd(e);
         }}
-        onTouchCancel={assignmentEdgeSwipe.onTouchCancel}
+        onTouchCancel={() => {
+          swipe.onTouchCancel();
+          assignmentEdgeSwipe.onTouchCancel();
+        }}
       >
         {error ? <div className="mb-4 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
 
@@ -1013,278 +1337,36 @@ export function KajiApp() {
               )}
             </div>
           </div>
-        ) : activeTab === "home" ? (
-          <div className="space-y-[10px]">
-            <div ref={homeHeaderRef} className="sticky top-0 z-30 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-              <div className="flex items-center justify-between">
-                <p className="text-[48px] font-bold leading-none text-[#5F6368]">{formatTopDate()}</p>
-                {boot.users.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAssignmentOpen(true);
-                      if (!assignmentUser && boot.users.length > 0) {
-                        setAssignmentUser(boot.users[0].id);
-                      }
-                    }}
-                    className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF3FF]"
-                  >
-                    <Users size={20} color="#1A9BE8" />
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {hasAnyUpcomingChores ? (
-              <>
-                {homeSections.map((section) => (
-                  <div key={section.key} className="space-y-[6px]">
-                    <div
-                      className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
-                      style={{ top: homeHeaderHeight }}
-                    >
-                      <HomeSectionTitle title={section.title} />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      {section.chores.map((chore) => {
-                        const todayKey = toJstDateKey(startOfJstDay(new Date()));
-                        const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
-                        const bigDueDateKey = chore.dueAt
-                          ? toJstDateKey(startOfJstDay(new Date(chore.dueAt)))
-                          : todayKey;
-                        const sectionDateKey =
-                          section.key === "tomorrow"
-                            ? tomorrowKey
-                            : section.key === "big"
-                              ? bigDueDateKey
-                              : todayKey;
-                        const assignedEntry = assignments.find(
-                          (x) => x.choreId === chore.id && x.date === sectionDateKey,
-                        );
-                        const assigneeName = assignedEntry?.userName ?? null;
-                        const disableTomorrowDailyCheck =
-                          section.key === "tomorrow" && chore.intervalDays === 1;
-                        return (
-                          <HomeTaskRow
-                            key={chore.id}
-                            chore={
-                              section.key === "tomorrow" && chore.doneToday
-                                ? { ...chore, doneToday: false }
-                                : chore
-                            }
-                            onRecord={openMemo}
-                            onUndo={undoRecord}
-                            isUpdating={recordUpdatingIds.includes(chore.id)}
-                            recordDisabled={disableTomorrowDailyCheck}
-                            assigneeName={assigneeName}
-                            meta={
-                              section.key === "big"
-                                ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
-                                : undefined
-                            }
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </>
-            ) : (
-              <div className="rounded-[24px] border border-dashed border-[#CFD8E3] bg-white px-5 py-8 text-center">
-                <p className="text-[16px] font-bold text-[#202124]">近日実施するべきタスクはありません</p>
-                <p className="mt-2 text-[13px] font-medium text-[#5F6368]">
-                  必要な家事を追加すると、ここに表示されます。
-                </p>
-                <button
-                  type="button"
-                  onClick={openAddChore}
-                  className="mt-4 rounded-[12px] bg-[#1A9BE8] px-4 py-2 text-[14px] font-bold text-white"
-                >
-                  家事を追加
-                </button>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {activeTab === "list" ? (
-          <div className="space-y-4">
-            <div className="sticky top-0 z-20 -mx-5 space-y-1.5 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-              <ScreenTitle title="家事一覧" />
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <p className="text-[13.2px] font-bold text-[#5F6368]">並び替え</p>
-                  <button
-                    type="button"
-                    onClick={() => setListSortOpen((prev) => !prev)}
-                    aria-expanded={listSortOpen}
-                    aria-controls="list-sort-options"
-                    className="rounded-lg p-1 text-[#5F6368]"
-                  >
-                    {listSortOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  </button>
-                </div>
-                {listSortOpen ? (
-                  <div id="list-sort-options" className="flex flex-wrap gap-1.5">
-                    {LIST_SORT_ITEMS.map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => setListSortKey(item.key)}
-                        className={`rounded-xl px-3 py-1.5 text-[12.5px] font-bold ${listSortKey === item.key ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            <div className="space-y-2">
-              {listChores.map((chore) => {
-                const meta = chore.isBigTask
-                  ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
-                  } / ${dueInDaysLabel(chore)}`
-                  : `${chore.intervalDays}日ごと / 前回:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "未設定"
-                  }`;
-                return (
-                  <SwipableListChoreRow
-                    key={chore.id}
-                    chore={chore}
-                    meta={meta}
-                    onOpenHistory={openHistory}
-                    onEdit={openEditChore}
-                    onSwipeDelete={handleSwipeDeleteChore}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        ) : null
-        }
-
-        {
-          activeTab === "stats" ? (
-            <div className="space-y-5">
-              <div className="sticky top-0 z-20 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-                <ScreenTitle title="統計" />
-              </div>
-              <StatsView
-                stats={stats}
-                activePeriod={statsPeriod}
-                isLoading={statsLoading}
-                customDateRange={customDateRange}
-                onChangePeriod={async (period) => {
-                  try {
-                    setError("");
-                    if (period === "custom") {
-                      await applyCustomDateRange(customDateRange);
-                      return;
-                    }
-                    await loadStats(period);
-                  } catch (err: unknown) {
-                    setError((err as Error).message ?? "統計の読み込みに失敗しました。");
+        ) : (
+          <div className="relative min-h-full" style={{ perspective: "1200px" }}>
+            <div
+              className={showSwipeTransition ? "will-change-transform [backface-visibility:hidden] [transform-style:preserve-3d]" : ""}
+              style={
+                showSwipeTransition
+                  ? {
+                    transform: currentPanelTransform,
+                    transition: swipeTransitionStyle,
+                    transformOrigin: swipeDirection < 0 ? "right center" : "left center",
                   }
+                  : undefined
+              }
+            >
+              {renderMainTabContent(swipe.visual.fromTab)}
+            </div>
+            {showSwipeTransition && swipe.visual.toTab ? (
+              <div
+                className="pointer-events-none absolute left-0 top-0 w-full will-change-transform [backface-visibility:hidden] [transform-style:preserve-3d]"
+                style={{
+                  transform: nextPanelTransform,
+                  transition: swipeTransitionStyle,
+                  transformOrigin: swipeDirection < 0 ? "left center" : "right center",
                 }}
-                onChangeCustomDateRange={setCustomDateRange}
-                onApplyCustomDateRange={applyCustomDateRange}
-              />
-            </div>
-          ) : null
-        }
-
-        {
-          activeTab === "settings" ? (
-            <div className="space-y-6">
-              <div className="sticky top-0 z-20 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-                <ScreenTitle title="設定" />
+              >
+                {renderMainTabContent(swipe.visual.toTab)}
               </div>
-              <div className="space-y-4">
-                <SettingToggleRow
-                  title="期限当日通知"
-                  subtitle="朝8時・夕方18時に通知"
-                  checked={notificationSettings?.notifyDueToday ?? false}
-                  onChange={(next) => {
-                    if (!notificationSettings) return;
-                    updateNotificationSettings({ ...notificationSettings, notifyDueToday: next });
-                  }}
-                />
-
-                <SettingToggleRow
-                  title="期限超過通知"
-                  checked={notificationSettings?.remindDailyIfOverdue ?? false}
-                  onChange={(next) => {
-                    if (!notificationSettings) return;
-                    updateNotificationSettings({ ...notificationSettings, remindDailyIfOverdue: next });
-                  }}
-                />
-                <SettingToggleRow
-                  title="完了時通知"
-                  checked={notificationSettings?.notifyCompletion ?? false}
-                  onChange={(next) => {
-                    if (!notificationSettings) return;
-                    updateNotificationSettings({ ...notificationSettings, notifyCompletion: next });
-                  }}
-                />
-
-                <FamilyCodeCard
-                  inviteCode={boot.householdInviteCode}
-                  partnerName={
-                    boot.users.length > 1
-                      ? boot.users.find((u) => u.id !== sessionUser.id)?.name ?? null
-                      : null
-                  }
-                />
-
-                {boot.users.length <= 1 ? (
-                  <JoinHouseholdCard
-                    onJoin={async (code) => {
-                      try {
-                        setError("");
-                        await apiFetch("/api/household/join", {
-                          method: "POST",
-                          body: JSON.stringify({ inviteCode: code }),
-                        });
-                        await refreshAll(statsPeriod);
-                      } catch (err: unknown) {
-                        setError((err as Error).message ?? "参加に失敗しました。");
-                      }
-                    }}
-                  />
-                ) : null}
-
-                <div className="rounded-[14px] bg-[#FFF8E8] p-4">
-                  <p className="text-[17px] font-bold text-[#202124]">通知テスト</p>
-                  <button
-                    type="button"
-                    onClick={handleTestNotification}
-                    disabled={pushLoading}
-                    className="mt-3 w-full rounded-[12px] bg-[#C2A12F] px-3 py-2 text-[14.4px] font-bold text-white disabled:opacity-60"
-                  >
-                    いま通知を送信
-                  </button>
-                </div>
-
-                <div className="rounded-[14px] bg-white p-4">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await apiFetch("/api/logout", { method: "POST" });
-                        window.location.reload();
-                      } catch (err: unknown) {
-                        setError((err as Error).message ?? "ログアウトに失敗しました。");
-                      }
-                    }}
-                    className="w-full rounded-[12px] bg-[#E8E8E8] px-3 py-2 text-[14.4px] font-bold text-[#5F6368]"
-                  >
-                    ログアウト
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null
-        }
+            ) : null}
+          </div>
+        )}
       </section >
 
       <div
@@ -1292,13 +1374,15 @@ export function KajiApp() {
         className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
       />
 
-      {pendingSwipeDelete ? (
+      {pendingSwipeDeletes.map((pending, index) => (
         <UndoToast
-          message={`「${pendingSwipeDelete.chore.title}」を削除しました`}
-          onUndo={undoSwipeDeleteChore}
-          onDismiss={dismissSwipeDeleteToast}
+          key={pending.toastId}
+          message={`「${pending.chore.title}」を削除しました`}
+          offsetY={index * 82}
+          onUndo={() => undoSwipeDeleteChore(pending.toastId)}
+          onDismiss={() => dismissSwipeDeleteToast(pending.toastId)}
         />
-      ) : null}
+      ))}
 
       <nav className="fixed bottom-4 left-0 right-0 z-30 mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">

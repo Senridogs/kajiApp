@@ -377,6 +377,7 @@ export function SwipableListChoreRow({
 
   const { offsetX, swiping, handlers } = useSwipeDelete({
     threshold: 100,
+    startFromRightEdgePx: 84,
     onDelete: handleDelete,
   });
 
@@ -384,7 +385,7 @@ export function SwipableListChoreRow({
   const pastThreshold = offsetX < -100;
 
   return (
-    <div className="relative overflow-hidden rounded-[14px]">
+    <div className="relative mx-auto w-[85%] overflow-hidden rounded-[14px]">
       <div
         className={`absolute inset-0 flex items-center justify-end rounded-[14px] px-5 ${
           pastThreshold ? "bg-[#D45858]" : "bg-[#E88585]"
@@ -435,10 +436,12 @@ export function UndoToast({
   message,
   onUndo,
   onDismiss,
+  offsetY = 0,
 }: {
   message: string;
   onUndo: () => void;
   onDismiss: () => void;
+  offsetY?: number;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [progress, setProgress] = useState(100);
@@ -468,7 +471,10 @@ export function UndoToast({
   };
 
   return (
-    <div className="fixed left-0 right-0 top-0 z-[9999] mx-auto max-w-[430px] px-4 pt-[env(safe-area-inset-top,12px)]">
+    <div
+      className="fixed left-0 right-0 top-0 z-[9999] mx-auto max-w-[430px] px-4 pt-[env(safe-area-inset-top,12px)]"
+      style={{ transform: `translateY(${offsetY}px)` }}
+    >
       <div className="animate-[slideDown_300ms_ease-out] overflow-hidden rounded-2xl bg-[#323232] shadow-lg">
         <div className="flex items-center gap-3 px-4 py-3">
           <p className="flex-1 text-[14px] font-medium text-white">{message}</p>
