@@ -38,9 +38,9 @@ jobs:
         run: |
           URL="${APP_URL%/}/api/cron/reminders"
           if [[ -n "${CRON_SECRET}" ]]; then
-            curl -fsS -X GET \
+            curl -fsSL -X GET \
               -H "Authorization: Bearer ${CRON_SECRET}" \
               "${URL}"
           else
-            curl -fsS -X GET "${URL}"
+            curl -fsSL -X GET "${URL}"
           fi
