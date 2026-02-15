@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Check, Pencil } from "lucide-react";
+import React, { useState } from "react";
+import { Check, Copy, KeyRound, Pencil, Ticket, Users } from "lucide-react";
 
 import { iconByName } from "@/components/kaji/helpers";
 import { ChoreWithComputed } from "@/lib/types";
@@ -77,9 +77,8 @@ export function HomeTaskRow({
   return (
     <div
       onClick={() => onOpenHistory?.(chore)}
-      className={`flex w-full items-center gap-[15px] rounded-xl border px-[10px] py-[8px] text-left ${
-        done ? "border-[#CFEAD8] bg-[#F2FAF5]" : "border-[#E5EAF0] bg-white"
-      }`}
+      className={`flex w-full items-center gap-[15px] rounded-xl border px-[10px] py-[8px] text-left ${done ? "border-[#CFEAD8] bg-[#F2FAF5]" : "border-[#E5EAF0] bg-white"
+        }`}
     >
       {done ? (
         <div className="flex h-[42px] w-[42px] items-center justify-center rounded-full bg-[#33C28A]">
@@ -92,6 +91,11 @@ export function HomeTaskRow({
         <p className={`truncate text-[15.2px] font-bold ${done ? "text-[#2C6E49]" : "text-[#202124]"}`}>
           {title}
         </p>
+        {chore.lastPerformerName ? (
+          <p className="truncate text-[11px] font-medium text-[#9AA0A6]">
+            前回: {chore.lastPerformerName}
+          </p>
+        ) : null}
         {meta ? <p className="truncate text-[10.4px] font-medium text-[#5F6368]">{meta}</p> : null}
       </div>
       {done ? (
@@ -169,9 +173,8 @@ export function SettingToggleRow({
       </div>
       <div className={`relative h-6 w-[42px] rounded-xl ${checked ? "bg-[#33C28A]" : "bg-[#E8EAED]"}`}>
         <div
-          className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white transition-all ${
-            checked ? "left-[21px]" : "left-[3px]"
-          }`}
+          className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white transition-all ${checked ? "left-[21px]" : "left-[3px]"
+            }`}
         />
       </div>
     </button>
@@ -194,9 +197,8 @@ export function SegmentedFilter({
           key={item.key}
           type="button"
           onClick={() => onChange(item.key)}
-          className={`w-full rounded-xl px-[10px] py-[9px] text-[14.4px] font-bold ${
-            activeKey === item.key ? "bg-[#1A9BE8] text-white" : "text-[#5F6368]"
-          }`}
+          className={`w-full rounded-xl px-[10px] py-[9px] text-[14.4px] font-bold ${activeKey === item.key ? "bg-[#1A9BE8] text-white" : "text-[#5F6368]"
+            }`}
         >
           {item.label}
         </button>
@@ -211,5 +213,113 @@ export function DoneBadge() {
       <Check size={11} />
       実施済み
     </span>
+  );
+}
+
+export function FamilyCodeCard({
+  inviteCode,
+  partnerName,
+}: {
+  inviteCode: string | null;
+  partnerName: string | null;
+}) {
+  const [copied, setCopied] = useState(false);
+  const isSharing = Boolean(partnerName);
+
+  const handleCopy = async () => {
+    if (!inviteCode) return;
+    try {
+      await navigator.clipboard.writeText(inviteCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
+  return (
+    <div className={`space-y-2 rounded-[14px] p-3.5 ${isSharing ? "bg-[#E8FBF0]" : "bg-[#EEF3FD]"}`}>
+      <p className="text-[17px] font-bold text-[#202124]">
+        {isSharing ? "パートナーと共有中" : "あなたの家族コード"}
+      </p>
+      <p className="text-[12px] font-medium text-[#5F6368]">
+        {isSharing
+          ? `${partnerName}さんと家事を共有しています`
+          : "パートナーに共有して同じ家事を管理しよう"}
+      </p>
+      {isSharing && partnerName ? (
+        <div className="flex items-center gap-2 rounded-[10px] bg-[#33C28A20] px-3 py-2">
+          <Users size={16} className="text-[#33C28A]" />
+          <span className="text-[14px] font-bold text-[#1B8A56]">{partnerName}</span>
+        </div>
+      ) : null}
+      {inviteCode ? (
+        <>
+          {isSharing ? (
+            <div className="flex items-center gap-1 text-[#5F6368]">
+              <KeyRound size={13} />
+              <span className="text-[12px] font-medium">家族コード</span>
+            </div>
+          ) : null}
+          <div className="flex items-center gap-2">
+            <div className="rounded-[12px] border border-[#DADCE0] bg-white px-3.5 py-2.5">
+              <span className="text-[22px] font-bold tracking-[4px] text-[#1A9BE8]">{inviteCode}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="flex items-center gap-1.5 rounded-[12px] bg-[#1A9BE8] px-3.5 py-2.5 text-[14px] font-bold text-white"
+            >
+              <Copy size={16} />
+              {copied ? "コピー済み" : "コピー"}
+            </button>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+export function JoinHouseholdCard({
+  onJoin,
+}: {
+  onJoin: (code: string) => Promise<void>;
+}) {
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleJoin = async () => {
+    if (!code.trim() || loading) return;
+    setLoading(true);
+    try {
+      await onJoin(code.trim());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2.5 rounded-[14px] border border-[#DADCE0] bg-white p-3.5">
+      <div className="flex items-center gap-1.5">
+        <Ticket size={15} className="text-[#5F6368]" />
+        <p className="text-[15px] font-bold text-[#202124]">パートナーの家族コードで参加</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="コードを入力"
+          className="w-full rounded-[12px] border border-[#DADCE0] bg-white px-3.5 py-2.5 text-[14px] font-semibold text-[#202124] outline-none placeholder:font-medium placeholder:text-[#9AA0A6]"
+        />
+        <button
+          type="button"
+          onClick={handleJoin}
+          disabled={!code.trim() || loading}
+          className="rounded-[12px] bg-[#1A9BE8] px-3.5 py-2.5 text-[14px] font-bold text-white disabled:opacity-60"
+        >
+          参加
+        </button>
+      </div>
+    </div>
   );
 }

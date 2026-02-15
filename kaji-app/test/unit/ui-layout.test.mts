@@ -19,7 +19,9 @@ test("Main app keeps mobile-first max width shell and fixed bottom navigation", 
   const app = read("src/components/kaji/kaji-app.tsx");
   assert.match(app, /max-w-\[430px\]/);
   assert.match(app, /fixed bottom-4 left-0 right-0/);
-  assert.match(app, /openAddChore[\s\S]*lastPerformedAt:\s*new Date\(\)\.toISOString\(\)/);
+  assert.match(app, /openAddChore[\s\S]*lastPerformedAt:\s*defaultLastPerformedAt\(\)/);
+  assert.match(app, /toJstDateKey\(date\)/);
+  assert.doesNotMatch(app, /toISOString\(\)\.slice\(0,\s*10\)/);
   assert.match(app, /BottomSheet open=\{choreEditorOpen && !customIconOpen\}/);
 });
 

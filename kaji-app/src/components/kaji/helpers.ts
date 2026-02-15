@@ -38,8 +38,7 @@ export function labelForDue(chore: ChoreWithComputed) {
   if (chore.isDueToday) return "今日";
   if (chore.isDueTomorrow) return "明日";
   if (!chore.dueAt) return "未設定";
-  const due = new Date(chore.dueAt);
-  return `${due.getMonth() + 1}/${due.getDate()} 期限`;
+  return `${formatMonthDay(chore.dueAt)} 期限`;
 }
 
 export function maxCount(items: Array<{ count: number }>) {

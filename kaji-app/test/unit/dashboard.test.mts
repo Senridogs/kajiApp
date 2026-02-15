@@ -143,11 +143,12 @@ test("splitChoresForHome splits today/tomorrow/big sections", () => {
 
   const split = splitChoresForHome(chores, now);
   assert.equal(split.todayChores.length, 1);
-  assert.equal(split.tomorrowChores.length, 1);
+  // "today" chore (intervalDays=1, isDueToday) also appears in tomorrow
+  assert.equal(split.tomorrowChores.length, 2);
   assert.equal(split.upcomingBigChores.length, 1);
 });
 
-test("splitChoresForHome does not duplicate doneToday chores into tomorrow", () => {
+test("splitChoresForHome shows daily chore in both today and tomorrow when doneToday", () => {
   const now = new Date("2026-02-15T03:00:00.000Z");
   const doneTodayAndDueTomorrow = {
     id: "done",
@@ -173,7 +174,38 @@ test("splitChoresForHome does not duplicate doneToday chores into tomorrow", () 
   const split = splitChoresForHome([doneTodayAndDueTomorrow], now);
   assert.equal(split.todayChores.length, 1);
   assert.equal(split.todayChores[0]?.id, "done");
-  assert.equal(split.tomorrowChores.length, 0);
+  // Daily chore (intervalDays=1) should also appear in tomorrow
+  assert.equal(split.tomorrowChores.length, 1);
+  assert.equal(split.tomorrowChores[0]?.id, "done");
+});
+
+test("splitChoresForHome does not duplicate doneToday non-daily chores into tomorrow", () => {
+  const now = new Date("2026-02-15T03:00:00.000Z");
+  const doneTodayWeekly = {
+    id: "weekly-done",
+    title: "weekly-done",
+    icon: "",
+    iconColor: "",
+    bgColor: "",
+    intervalDays: 7,
+    isBigTask: false,
+    archived: false,
+    lastPerformedAt: "2026-02-14T15:30:00.000Z",
+    lastPerformerName: "A",
+    lastRecordId: "r",
+    dueAt: "2026-02-16T15:00:00.000Z",
+    isDueToday: false,
+    isDueTomorrow: true,
+    isOverdue: false,
+    overdueDays: 0,
+    daysSinceLast: 0,
+    doneToday: true,
+  };
+
+  const split = splitChoresForHome([doneTodayWeekly], now);
+  assert.equal(split.todayChores.length, 1);
+  // Non-daily chore: isDueTomorrow=true so it still shows in tomorrow
+  assert.equal(split.tomorrowChores.length, 1);
 });
 
 test("splitChoresForHome includes big tasks even if due is after a week", () => {

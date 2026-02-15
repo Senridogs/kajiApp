@@ -29,8 +29,10 @@ import {
 } from "@/components/kaji/helpers";
 import { StatsView } from "@/components/kaji/stats-view";
 import {
+  FamilyCodeCard,
   HomeSectionTitle,
   HomeTaskRow,
+  JoinHouseholdCard,
   ListChoreRow,
   ScreenTitle,
   SegmentedFilter,
@@ -46,6 +48,7 @@ import {
   StatsPeriodKey,
   StatsResponse,
 } from "@/lib/types";
+import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 type TabKey = "home" | "list" | "stats" | "settings";
 type StatsQueryOptions = { from: string; to: string };
@@ -53,15 +56,19 @@ type CustomDateRange = { from: string; to: string };
 const CUSTOM_ICONS_STORAGE_KEY = "kaji_custom_icons";
 
 function toDateInputValue(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return toJstDateKey(date);
 }
 
 function defaultCustomDateRange(now = new Date()): CustomDateRange {
   const to = toDateInputValue(now);
-  const fromDate = new Date(now);
-  fromDate.setDate(fromDate.getDate() - 30);
+  const fromDate = addDays(now, -30);
   const from = toDateInputValue(fromDate);
   return { from, to };
+}
+
+function defaultLastPerformedAt(now = new Date()) {
+  const previousDay = addDays(now, -1);
+  return previousDay.toISOString();
 }
 
 export function KajiApp() {
@@ -86,6 +93,7 @@ export function KajiApp() {
   >([]);
 
   const [registerName, setRegisterName] = useState("");
+  const [registerInviteCode, setRegisterInviteCode] = useState("");
 
   const [choreEditorOpen, setChoreEditorOpen] = useState(false);
   const [customIconOpen, setCustomIconOpen] = useState(false);
@@ -206,7 +214,10 @@ export function KajiApp() {
       setError("");
       await apiFetch("/api/register", {
         method: "POST",
-        body: JSON.stringify({ name: registerName }),
+        body: JSON.stringify({
+          name: registerName,
+          ...(registerInviteCode.trim() ? { inviteCode: registerInviteCode.trim() } : {}),
+        }),
       });
       await refreshAll("week");
     } catch (err: unknown) {
@@ -222,7 +233,7 @@ export function KajiApp() {
       icon: "sparkles",
       iconColor: "#1A9BE8",
       bgColor: "#EAF5FF",
-      lastPerformedAt: new Date().toISOString(),
+      lastPerformedAt: defaultLastPerformedAt(),
     });
     setChoreEditorOpen(true);
   };
@@ -402,8 +413,7 @@ export function KajiApp() {
 
   const historyCountLast30 = useMemo(() => {
     if (!historyTarget) return 0;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoff = addDays(startOfJstDay(new Date()), -30);
     return records.filter(
       (record) => record.chore.id === historyTarget.id && new Date(record.performedAt) >= cutoff,
     ).length;
@@ -421,32 +431,54 @@ export function KajiApp() {
     return (
       <main className="min-h-screen bg-gradient-to-b from-[#F8F9FA] to-[#EEF3FD]">
         <form onSubmit={registerUser} className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col">
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6">
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-5">
             <div className="flex h-[110px] w-[110px] items-center justify-center rounded-[18px] bg-[#E8F0FE]">
               <span className="text-[60px]">✦</span>
             </div>
             <p className="text-[26px] font-bold text-[#202124]">さあ、始めましょう</p>
-            <div className="w-full rounded-[20px] border border-[#DADCE0] bg-white p-4">
+            <div className="w-full space-y-3 rounded-[20px] border border-[#DADCE0] bg-white px-[18px] py-4">
               <div className="flex items-center gap-2">
-                <span className="text-[26px] text-[#1A9BE8]">🪪</span>
-                <p className="text-[31.2px] font-bold text-[#202124]">あなたの名前は？</p>
+                <span className="text-[22px] text-[#1A9BE8]">🪪</span>
+                <p className="text-[24px] font-bold text-[#202124]">あなたの名前は？</p>
               </div>
               <input
                 value={registerName}
                 onChange={(e) => setRegisterName(e.target.value)}
-                className="mt-3 w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none"
+                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none"
               />
+              <div className="h-px bg-[#E8EAED]" />
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[14px] text-[#5F6368]">🎟️</span>
+                  <p className="text-[15px] font-bold text-[#202124]">家族コード</p>
+                  <p className="text-[13px] font-medium text-[#9AA0A6]">（任意）</p>
+                </div>
+                <input
+                  value={registerInviteCode}
+                  onChange={(e) => setRegisterInviteCode(e.target.value)}
+                  placeholder="パートナーから届いたコード"
+                  className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[#9AA0A6]"
+                />
+                <p className="text-[11px] font-medium text-[#9AA0A6]">パートナーが先に登録済みの場合のみ入力</p>
+              </div>
             </div>
           </div>
-          <div className="px-6 pb-8">
-            <p className="mb-2 text-center text-[13.2px] font-medium text-[#5F6368]">
-              あとから設定で変更できます
-            </p>
+          <div className="space-y-3 px-5 pb-8">
+            <div className="space-y-1.5 px-1">
+              <div className="flex items-center gap-1.5">
+                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#1A9BE8] text-[11px] font-bold text-white">1</span>
+                <p className="text-[12px] font-medium text-[#5F6368]">名前だけで登録 → 家族コードが発行されます</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#33C28A] text-[11px] font-bold text-white">2</span>
+                <p className="text-[12px] font-medium text-[#5F6368]">コードをもらった方は入力して参加できます</p>
+              </div>
+            </div>
             <button
               type="submit"
               className="flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#1A9BE8] px-4 py-3 text-[16.8px] font-bold text-white shadow-lg shadow-[#2A1E1730]"
             >
-              この設定ではじめる
+              はじめる
               <span>→</span>
             </button>
             {error ? <p className="mt-3 text-center text-sm text-[#C5221F]">{error}</p> : null}
@@ -482,7 +514,11 @@ export function KajiApp() {
                         {section.chores.map((chore) => (
                           <HomeTaskRow
                             key={chore.id}
-                            chore={chore}
+                            chore={
+                              section.key === "tomorrow" && chore.doneToday
+                                ? { ...chore, doneToday: false }
+                                : chore
+                            }
                             onRecord={openMemo}
                             onUndo={section.key === "tomorrow" ? undefined : undoRecord}
                             onOpenHistory={openHistory}
@@ -663,6 +699,32 @@ export function KajiApp() {
                   いま通知を送信
                 </button>
               </div>
+
+              <FamilyCodeCard
+                inviteCode={boot.householdInviteCode}
+                partnerName={
+                  boot.users.length > 1
+                    ? boot.users.find((u) => u.id !== sessionUser.id)?.name ?? null
+                    : null
+                }
+              />
+
+              {boot.users.length <= 1 ? (
+                <JoinHouseholdCard
+                  onJoin={async (code) => {
+                    try {
+                      setError("");
+                      await apiFetch("/api/household/join", {
+                        method: "POST",
+                        body: JSON.stringify({ inviteCode: code }),
+                      });
+                      await refreshAll(statsPeriod);
+                    } catch (err: unknown) {
+                      setError((err as Error).message ?? "参加に失敗しました。");
+                    }
+                  }}
+                />
+              ) : null}
             </div>
           </BlurFade>
         ) : null}

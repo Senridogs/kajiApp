@@ -47,10 +47,12 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
 
 export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()) {
   const todayChores = chores.filter((c) => c.isDueToday || c.isOverdue || c.doneToday);
-  const tomorrowChores = chores.filter((c) => c.isDueTomorrow && !c.doneToday);
+  const tomorrowChores = chores.filter(
+    (c) => c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue)),
+  );
   const nowTime = now.getTime();
   const upcomingBigChores = chores
-    .filter((c) => c.isBigTask)
+    .filter((c) => c.isBigTask && !c.doneToday)
     .sort((a, b) => {
       const aTime = a.dueAt ? new Date(a.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
       const bTime = b.dueAt ? new Date(b.dueAt).getTime() : nowTime + Number.MAX_SAFE_INTEGER;
