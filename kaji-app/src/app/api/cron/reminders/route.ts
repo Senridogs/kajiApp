@@ -77,11 +77,16 @@ export async function GET(request: Request) {
         const latest = c.records[0];
         const base = latest?.performedAt ?? c.createdAt;
         const dueAt = addDays(base, c.intervalDays);
+        const isOverdue = dueAt < todayStart;
+        const overdueDays = isOverdue
+          ? Math.floor((todayStart.getTime() - dueAt.getTime()) / (24 * 60 * 60 * 1000))
+          : 0;
         return {
           title: c.title,
           dueAt,
-          isOverdue: dueAt < todayStart,
+          isOverdue,
           isDueToday: dueAt >= todayStart && dueAt < tomorrowStart,
+          overdueDays,
         };
       })
       .filter(
@@ -94,7 +99,7 @@ export async function GET(request: Request) {
 
     const subs = subsByHousehold.get(household.id) ?? [];
     const payload = buildReminderPayload({
-      chores: dueChores.map((x) => ({ title: x.title, dueAt: x.dueAt })),
+      chores: dueChores.map((x) => ({ title: x.title, isOverdue: x.isOverdue, overdueDays: x.overdueDays })),
     });
 
     await Promise.all(

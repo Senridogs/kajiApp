@@ -509,7 +509,7 @@ export function KajiApp() {
         method: "POST",
         body: JSON.stringify({ memo }),
       });
-      void refreshAll(statsPeriod);
+      void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
       if (previousBoot) {
         setBoot(previousBoot);
@@ -535,7 +535,7 @@ export function KajiApp() {
 
     try {
       await apiFetch(`/api/records/${chore.lastRecordId}`, { method: "DELETE", body: "{}" });
-      void refreshAll(statsPeriod);
+      void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
       if (previousBoot) {
         setBoot(previousBoot);

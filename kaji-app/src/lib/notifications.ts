@@ -53,17 +53,22 @@ export async function sendWebPush(
 }
 
 export function buildReminderPayload(params: {
-  chores: Array<{ title: string; dueAt: Date | null }>;
+  chores: Array<{ title: string; isOverdue: boolean; overdueDays: number }>;
 }): PushPayload {
-  const top = params.chores.slice(0, 2);
-  const body = top
-    .map((c) => `${c.title}${c.dueAt ? `・期限 ${formatJst(c.dueAt)}` : ""}`)
-    .join(" / ");
-  const suffix = params.chores.length > 2 ? ` ほか${params.chores.length - 2}件` : "";
+  const lines = params.chores.slice(0, 5).map((c) => {
+    if (c.isOverdue) {
+      return `${c.title}（${c.overdueDays}日超過）`;
+    }
+    return `${c.title}（今日）`;
+  });
+  const remaining = params.chores.length - lines.length;
+  if (remaining > 0) {
+    lines.push(`ほか${remaining}件`);
+  }
   return {
     type: "reminder",
-    title: "家事リマインド",
-    body: `${body}${suffix}`,
+    title: `家事リマインド（${params.chores.length}件）`,
+    body: lines.join("\n"),
     url: "/",
   };
 }
@@ -73,11 +78,14 @@ export function buildCompletionPayload(params: {
   userName: string;
   memo?: string | null;
 }): PushPayload {
-  const memoPart = params.memo?.trim() ? ` メモ: ${params.memo.trim()}` : "";
+  const lines = [`${params.userName} が ${params.choreTitle} を完了しました`];
+  if (params.memo?.trim()) {
+    lines.push(params.memo.trim());
+  }
   return {
     type: "completion",
-    title: `完了: ${params.choreTitle}`,
-    body: `${params.userName} が完了しました。${memoPart}`.trim(),
+    title: lines[0],
+    body: lines.slice(1).join("\n"),
     url: "/",
   };
 }

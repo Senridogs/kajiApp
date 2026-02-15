@@ -109,16 +109,10 @@ export function StatsView({
                   : "bg-[#F1F3F4] text-[#5F6368]"
             }`}
           >
-            {isLoading && activePeriod === item.key ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : null}
             {item.label}
           </button>
         ))}
       </div>
-      {isLoading ? (
-        <p className="text-[12px] font-medium text-[#5F6368]">Loading latest stats...</p>
-      ) : null}
 
       {activePeriod === "custom" && customEditorOpen ? (
         <div className="space-y-2 rounded-2xl border border-[#DADCE0] bg-white p-4">
@@ -164,7 +158,10 @@ export function StatsView({
       ) : null}
 
       {stats?.rangeLabel ? (
-        <p className="text-[13px] font-medium text-[#5F6368]">集計範囲: {stats.rangeLabel}</p>
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-[#5F6368]">
+          {isLoading ? <Loader2 size={13} className="animate-spin text-[#9AA0A6]" /> : null}
+          集計範囲: {stats.rangeLabel}
+        </p>
       ) : null}
 
       <div className="rounded-2xl bg-white p-4">

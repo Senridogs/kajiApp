@@ -2,7 +2,7 @@
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Kaji App",
+  title: "いえたすく",
   description: "家事分担を手軽に管理できるアプリ",
   themeColor: "#4285F4",
   manifest: "/manifest.webmanifest",
