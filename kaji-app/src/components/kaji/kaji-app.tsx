@@ -292,7 +292,7 @@ export function KajiApp() {
     minFlickDistance: 42,
     transitionDurationMs: 220,
     requireDirectionalHalfStart: true,
-    centerDeadZoneRatio: 0.24,
+    centerDeadZoneRatio: 1 / 3,
   });
   const handleListDeleteSwipeActiveChange = useCallback((active: boolean) => {
     setListDeleteSwipeActive(active);
