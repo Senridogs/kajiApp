@@ -1,0 +1,76 @@
+import { NextResponse } from "next/server";
+
+import { badRequest, requireSession } from "@/lib/api";
+import { getStatsRange } from "@/lib/dashboard";
+import { prisma } from "@/lib/prisma";
+import { StatsPeriodKey } from "@/lib/types";
+
+const VALID_PERIODS: StatsPeriodKey[] = ["week", "month", "half", "year", "all", "custom"];
+
+export async function GET(request: Request) {
+  const { session, response } = await requireSession();
+  if (!session) return response;
+
+  const { searchParams } = new URL(request.url);
+  const period = (searchParams.get("period") as StatsPeriodKey) || "week";
+  if (!VALID_PERIODS.includes(period)) return badRequest("不正な期間です。");
+
+  const customFrom = searchParams.get("from") ?? undefined;
+  const customTo = searchParams.get("to") ?? undefined;
+  const range = getStatsRange(period, new Date(), customFrom, customTo);
+
+  const where =
+    range.start === undefined
+      ? { householdId: session.householdId }
+      : {
+          householdId: session.householdId,
+          performedAt: {
+            gte: range.start,
+            lte: range.end,
+          },
+        };
+
+  const [choreCountsRaw, userCountsRaw, chores, users] = await Promise.all([
+    prisma.choreRecord.groupBy({
+      by: ["choreId"],
+      where,
+      _count: { _all: true },
+    }),
+    prisma.choreRecord.groupBy({
+      by: ["userId"],
+      where,
+      _count: { _all: true },
+    }),
+    prisma.chore.findMany({
+      where: { householdId: session.householdId, archived: false },
+      select: { id: true, title: true },
+      orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
+    }),
+    prisma.user.findMany({
+      where: { householdId: session.householdId },
+      select: { id: true, name: true },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
+
+  const choreCountMap = new Map(choreCountsRaw.map((r) => [r.choreId, r._count._all]));
+  const userCountMap = new Map(userCountsRaw.map((r) => [r.userId, r._count._all]));
+
+  const choreCounts = chores.map((c) => ({
+    choreId: c.id,
+    title: c.title,
+    count: choreCountMap.get(c.id) ?? 0,
+  }));
+
+  const userCounts = users.map((u) => ({
+    userId: u.id,
+    name: u.name,
+    count: userCountMap.get(u.id) ?? 0,
+  }));
+
+  return NextResponse.json({
+    rangeLabel: range.label,
+    choreCounts,
+    userCounts,
+  });
+}

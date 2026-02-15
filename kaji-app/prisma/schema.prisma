@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Household {
+  id                   String             @id @default(cuid())
+  inviteCode           String             @unique
+  reminderTimes        String[]           @default(["06:00", "20:00"])
+  notifyDueToday       Boolean            @default(true)
+  remindDailyIfOverdue Boolean            @default(true)
+  notifyCompletion     Boolean            @default(true)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  users                User[]
+  chores               Chore[]
+  records              ChoreRecord[]
+  subscriptions        PushSubscription[]
+}
+
+model User {
+  id            String             @id @default(cuid())
+  householdId   String
+  name          String
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  household     Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  records       ChoreRecord[]
+  subscriptions PushSubscription[]
+}
+
+model Chore {
+  id           String       @id @default(cuid())
+  householdId  String
+  title        String
+  icon         String       @default("sparkles")
+  iconColor    String       @default("#202124")
+  bgColor      String       @default("#EAF5FF")
+  intervalDays Int
+  isBigTask    Boolean      @default(false)
+  archived     Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  household    Household    @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  records      ChoreRecord[]
+}
+
+model ChoreRecord {
+  id          String    @id @default(cuid())
+  householdId String
+  choreId     String
+  userId      String
+  memo        String?
+  performedAt DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  chore       Chore     @relation(fields: [choreId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([householdId, performedAt])
+  @@index([choreId, performedAt])
+  @@index([userId, performedAt])
+}
+
+model PushSubscription {
+  id          String    @id @default(cuid())
+  householdId String
+  userId      String
+  endpoint    String    @unique
+  p256dh      String
+  auth        String
+  userAgent   String?
+  enabled     Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
