@@ -35,10 +35,11 @@ export async function GET(request: Request) {
     select: { id: true, notifyDueToday: true, remindDailyIfOverdue: true },
   });
 
-  let sent = 0;
-  for (const household of households) {
-    const chores = await prisma.chore.findMany({
-      where: { householdId: household.id, archived: false },
+  const householdIds = households.map((h) => h.id);
+
+  const [allChores, allSubs] = await Promise.all([
+    prisma.chore.findMany({
+      where: { householdId: { in: householdIds }, archived: false },
       include: {
         records: {
           take: 1,
@@ -46,10 +47,34 @@ export async function GET(request: Request) {
           select: { performedAt: true },
         },
       },
-    });
-    const now = new Date();
-    const todayStart = startOfJstDay(now);
-    const tomorrowStart = addDays(todayStart, 1);
+    }),
+    prisma.pushSubscription.findMany({
+      where: { householdId: { in: householdIds }, enabled: true },
+      select: { id: true, householdId: true, endpoint: true, p256dh: true, auth: true },
+    }),
+  ]);
+
+  const choresByHousehold = new Map<string, typeof allChores>();
+  for (const chore of allChores) {
+    const list = choresByHousehold.get(chore.householdId) ?? [];
+    list.push(chore);
+    choresByHousehold.set(chore.householdId, list);
+  }
+
+  const subsByHousehold = new Map<string, typeof allSubs>();
+  for (const sub of allSubs) {
+    const list = subsByHousehold.get(sub.householdId) ?? [];
+    list.push(sub);
+    subsByHousehold.set(sub.householdId, list);
+  }
+
+  const now = new Date();
+  const todayStart = startOfJstDay(now);
+  const tomorrowStart = addDays(todayStart, 1);
+
+  let sent = 0;
+  for (const household of households) {
+    const chores = choresByHousehold.get(household.id) ?? [];
 
     const dueChores = chores
       .map((c) => {
@@ -71,11 +96,7 @@ export async function GET(request: Request) {
 
     if (!dueChores.length) continue;
 
-    const subs = await prisma.pushSubscription.findMany({
-      where: { householdId: household.id, enabled: true },
-      select: { id: true, endpoint: true, p256dh: true, auth: true },
-    });
-
+    const subs = subsByHousehold.get(household.id) ?? [];
     const payload = buildReminderPayload({
       chores: dueChores.map((x) => ({ title: x.title, dueAt: x.dueAt })),
     });

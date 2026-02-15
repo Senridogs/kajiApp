@@ -126,6 +126,7 @@ export function KajiApp() {
 
   const [registerName, setRegisterName] = useState("");
   const [registerInviteCode, setRegisterInviteCode] = useState("");
+  const [registerLoading, setRegisterLoading] = useState(false);
 
   const [choreEditorOpen, setChoreEditorOpen] = useState(false);
   const [customIconOpen, setCustomIconOpen] = useState(false);
@@ -365,7 +366,9 @@ export function KajiApp() {
 
   const registerUser = async (e: FormEvent) => {
     e.preventDefault();
+    if (registerLoading) return;
     try {
+      setRegisterLoading(true);
       setError("");
       await apiFetch("/api/register", {
         method: "POST",
@@ -377,6 +380,8 @@ export function KajiApp() {
       await refreshAll("week");
     } catch (err: unknown) {
       setError((err as Error).message ?? "登録に失敗しました。");
+    } finally {
+      setRegisterLoading(false);
     }
   };
 
@@ -711,10 +716,11 @@ export function KajiApp() {
             </div>
             <button
               type="submit"
-              className="flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#1A9BE8] px-4 py-3 text-[16.8px] font-bold text-white shadow-lg shadow-[#2A1E1730]"
+              disabled={registerLoading}
+              className="flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#1A9BE8] px-4 py-3 text-[16.8px] font-bold text-white shadow-lg shadow-[#2A1E1730] disabled:cursor-not-allowed disabled:opacity-70"
             >
-              <span>→</span>
-              はじめる
+              {registerLoading ? <Loader2 size={18} className="animate-spin" /> : <span>→</span>}
+              {registerLoading ? "読み込み中..." : "はじめる"}
             </button>
             {error ? <p className="mt-3 text-center text-sm text-[#C5221F]">{error}</p> : null}
           </div>
