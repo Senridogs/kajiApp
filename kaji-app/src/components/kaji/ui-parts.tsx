@@ -175,6 +175,7 @@ export function ListChoreRow({
           event.stopPropagation();
           onEdit(chore);
         }}
+        data-delete-swipe-handle="true"
         aria-label={`${chore.title}を編集`}
         className="flex h-8 w-8 items-center justify-center rounded-full text-[#A28775] hover:bg-[#F1F3F4]"
       >
@@ -364,20 +365,36 @@ export function SwipableListChoreRow({
   onOpenHistory,
   onEdit,
   onSwipeDelete,
+  onDeleteSwipeActiveChange,
 }: {
   chore: ChoreWithComputed;
   meta: string;
   onOpenHistory: (chore: ChoreWithComputed) => void;
   onEdit: (chore: ChoreWithComputed) => void;
   onSwipeDelete: (chore: ChoreWithComputed) => void;
+  onDeleteSwipeActiveChange?: (active: boolean) => void;
 }) {
   const handleDelete = useCallback(() => {
     onSwipeDelete(chore);
   }, [chore, onSwipeDelete]);
 
+  const deleteSwipeActiveRef = useRef(false);
+  const updateDeleteSwipeActive = useCallback((active: boolean) => {
+    if (deleteSwipeActiveRef.current === active) return;
+    deleteSwipeActiveRef.current = active;
+    onDeleteSwipeActiveChange?.(active);
+  }, [onDeleteSwipeActiveChange]);
+
+  const canStartDeleteSwipe = useCallback((event: React.TouchEvent) => {
+    const target = event.target as Element | null;
+    return Boolean(target?.closest("[data-delete-swipe-handle='true']"));
+  }, []);
+
+  useEffect(() => () => updateDeleteSwipeActive(false), [updateDeleteSwipeActive]);
+
   const { offsetX, swiping, handlers } = useSwipeDelete({
     threshold: 100,
-    startFromRightEdgePx: 84,
+    startPredicate: canStartDeleteSwipe,
     onDelete: handleDelete,
   });
 
@@ -402,16 +419,31 @@ export function SwipableListChoreRow({
       </div>
       <div
         onTouchStart={(event) => {
-          event.stopPropagation();
+          updateDeleteSwipeActive(false);
           handlers.onTouchStart(event);
         }}
         onTouchMove={(event) => {
+          const consumed = handlers.onTouchMove(event);
+          if (!consumed) {
+            updateDeleteSwipeActive(false);
+            return;
+          }
+          updateDeleteSwipeActive(true);
           event.stopPropagation();
-          handlers.onTouchMove(event);
         }}
         onTouchEnd={(event) => {
-          event.stopPropagation();
-          handlers.onTouchEnd();
+          const consumed = handlers.onTouchEnd();
+          updateDeleteSwipeActive(false);
+          if (consumed) {
+            event.stopPropagation();
+          }
+        }}
+        onTouchCancel={(event) => {
+          const consumed = handlers.onTouchCancel();
+          updateDeleteSwipeActive(false);
+          if (consumed) {
+            event.stopPropagation();
+          }
         }}
         onClickCapture={handlers.onClickCapture}
         style={{

@@ -243,11 +243,12 @@ export function KajiApp() {
   const [pushLoading, setPushLoading] = useState(false);
 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
+  const [listDeleteSwipeActive, setListDeleteSwipeActive] = useState(false);
   const swipe = useSwipeTab({
     tabs: TAB_ORDER,
     activeTab,
     onChangeTab: (tab) => { setAssignmentOpen(false); setActiveTab(tab); },
-    disabled: assignmentOpen,
+    disabled: assignmentOpen || listDeleteSwipeActive,
     threshold: 78,
     dominanceRatio: 1.4,
     lockDistance: 14,
@@ -255,6 +256,12 @@ export function KajiApp() {
     minFlickDistance: 42,
     transitionDurationMs: 220,
   });
+  const handleListDeleteSwipeActiveChange = useCallback((active: boolean) => {
+    setListDeleteSwipeActive(active);
+    if (active) {
+      swipe.onTouchCancel();
+    }
+  }, [swipe]);
   const assignmentEdgeSwipe = useEdgeSwipeBack({
     onBack: () => setAssignmentOpen(false),
     enabled: assignmentOpen,
@@ -901,8 +908,6 @@ export function KajiApp() {
     },
   ].filter((section) => section.chores.length > 0);
   const hasAnyUpcomingChores = homeSections.length > 0;
-  const cubeRotateDeg = 68;
-  const cubeShiftPercent = 14;
   const swipeProgress = swipe.visual.progress;
   const swipeDirection = swipeProgress === 0 ? 0 : swipeProgress < 0 ? -1 : 1;
   const swipeMagnitude = Math.min(1, Math.abs(swipeProgress));
@@ -912,14 +917,16 @@ export function KajiApp() {
   const swipeTransitionStyle = swipe.visual.isDragging
     ? "none"
     : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
+  const currentPanelShiftPercent = swipeProgress * 100;
+  const adjacentPanelBasePercent = swipeDirection < 0 ? 100 : -100;
   const currentPanelTransform =
     swipeDirection === 0
-      ? "translateX(0%) rotateY(0deg)"
-      : `translateX(${swipeDirection * swipeMagnitude * cubeShiftPercent}%) rotateY(${(-swipeDirection) * swipeMagnitude * cubeRotateDeg}deg)`;
+      ? "translate3d(0%, 0, 0)"
+      : `translate3d(${currentPanelShiftPercent}%, 0, 0)`;
   const nextPanelTransform =
     swipeDirection === 0
-      ? "translateX(0%) rotateY(0deg)"
-      : `translateX(${-swipeDirection * (1 - swipeMagnitude) * 100}%) rotateY(${swipeDirection * (1 - swipeMagnitude) * cubeRotateDeg}deg)`;
+      ? "translate3d(0%, 0, 0)"
+      : `translate3d(${adjacentPanelBasePercent + currentPanelShiftPercent}%, 0, 0)`;
 
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
@@ -1067,6 +1074,7 @@ export function KajiApp() {
                   onOpenHistory={openHistory}
                   onEdit={openEditChore}
                   onSwipeDelete={handleSwipeDeleteChore}
+                  onDeleteSwipeActiveChange={handleListDeleteSwipeActiveChange}
                 />
               );
             })}
@@ -1338,15 +1346,14 @@ export function KajiApp() {
             </div>
           </div>
         ) : (
-          <div className="relative min-h-full" style={{ perspective: "1200px" }}>
+          <div className="relative min-h-full overflow-x-hidden">
             <div
-              className={showSwipeTransition ? "will-change-transform [backface-visibility:hidden] [transform-style:preserve-3d]" : ""}
+              className={showSwipeTransition ? "will-change-transform" : ""}
               style={
                 showSwipeTransition
                   ? {
                     transform: currentPanelTransform,
                     transition: swipeTransitionStyle,
-                    transformOrigin: swipeDirection < 0 ? "right center" : "left center",
                   }
                   : undefined
               }
@@ -1355,11 +1362,10 @@ export function KajiApp() {
             </div>
             {showSwipeTransition && swipe.visual.toTab ? (
               <div
-                className="pointer-events-none absolute left-0 top-0 w-full will-change-transform [backface-visibility:hidden] [transform-style:preserve-3d]"
+                className="pointer-events-none absolute left-0 top-0 w-full will-change-transform"
                 style={{
                   transform: nextPanelTransform,
                   transition: swipeTransitionStyle,
-                  transformOrigin: swipeDirection < 0 ? "left center" : "right center",
                 }}
               >
                 {renderMainTabContent(swipe.visual.toTab)}
