@@ -255,6 +255,8 @@ export function KajiApp() {
     minFlickVelocity: 0.95,
     minFlickDistance: 42,
     transitionDurationMs: 220,
+    requireDirectionalHalfStart: true,
+    centerDeadZoneRatio: 0.24,
   });
   const handleListDeleteSwipeActiveChange = useCallback((active: boolean) => {
     setListDeleteSwipeActive(active);
@@ -909,24 +911,15 @@ export function KajiApp() {
   ].filter((section) => section.chores.length > 0);
   const hasAnyUpcomingChores = homeSections.length > 0;
   const swipeProgress = swipe.visual.progress;
-  const swipeDirection = swipeProgress === 0 ? 0 : swipeProgress < 0 ? -1 : 1;
-  const swipeMagnitude = Math.min(1, Math.abs(swipeProgress));
-  const showSwipeTransition =
-    !assignmentOpen &&
-    (swipe.visual.isDragging || swipe.visual.isAnimating || swipeMagnitude > 0.0001);
-  const swipeTransitionStyle = swipe.visual.isDragging
+  const swipeFromTabIndex = Math.max(0, TAB_ORDER.indexOf(swipe.visual.fromTab));
+  const swipeTrackTranslatePercent = (-swipeFromTabIndex + swipeProgress) * 100;
+  const isSwipeSheetMoving =
+    swipe.visual.isDragging || swipe.visual.isAnimating || Math.abs(swipeProgress) > 0.0001;
+  const swipeTrackTransitionStyle = swipe.visual.isDragging
     ? "none"
-    : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
-  const currentPanelShiftPercent = swipeProgress * 100;
-  const adjacentPanelBasePercent = swipeDirection < 0 ? 100 : -100;
-  const currentPanelTransform =
-    swipeDirection === 0
-      ? "translate3d(0%, 0, 0)"
-      : `translate3d(${currentPanelShiftPercent}%, 0, 0)`;
-  const nextPanelTransform =
-    swipeDirection === 0
-      ? "translate3d(0%, 0, 0)"
-      : `translate3d(${adjacentPanelBasePercent + currentPanelShiftPercent}%, 0, 0)`;
+    : swipe.visual.isAnimating
+      ? "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)"
+      : "none";
 
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
@@ -1075,6 +1068,7 @@ export function KajiApp() {
                   onEdit={openEditChore}
                   onSwipeDelete={handleSwipeDeleteChore}
                   onDeleteSwipeActiveChange={handleListDeleteSwipeActiveChange}
+                  relaxedSwipeStart={pendingSwipeDeletes.length > 0}
                 />
               );
             })}
@@ -1348,29 +1342,18 @@ export function KajiApp() {
         ) : (
           <div className="relative min-h-full overflow-x-hidden">
             <div
-              className={showSwipeTransition ? "will-change-transform" : ""}
-              style={
-                showSwipeTransition
-                  ? {
-                    transform: currentPanelTransform,
-                    transition: swipeTransitionStyle,
-                  }
-                  : undefined
-              }
+              className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
+              style={{
+                transform: `translate3d(${swipeTrackTranslatePercent}%, 0, 0)`,
+                transition: swipeTrackTransitionStyle,
+              }}
             >
-              {renderMainTabContent(swipe.visual.fromTab)}
+              {TAB_ORDER.map((tab) => (
+                <div key={tab} className="w-full shrink-0">
+                  {renderMainTabContent(tab)}
+                </div>
+              ))}
             </div>
-            {showSwipeTransition && swipe.visual.toTab ? (
-              <div
-                className="pointer-events-none absolute left-0 top-0 w-full will-change-transform"
-                style={{
-                  transform: nextPanelTransform,
-                  transition: swipeTransitionStyle,
-                }}
-              >
-                {renderMainTabContent(swipe.visual.toTab)}
-              </div>
-            ) : null}
           </div>
         )}
       </section >

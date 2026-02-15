@@ -366,6 +366,7 @@ export function SwipableListChoreRow({
   onEdit,
   onSwipeDelete,
   onDeleteSwipeActiveChange,
+  relaxedSwipeStart = false,
 }: {
   chore: ChoreWithComputed;
   meta: string;
@@ -373,6 +374,7 @@ export function SwipableListChoreRow({
   onEdit: (chore: ChoreWithComputed) => void;
   onSwipeDelete: (chore: ChoreWithComputed) => void;
   onDeleteSwipeActiveChange?: (active: boolean) => void;
+  relaxedSwipeStart?: boolean;
 }) {
   const handleDelete = useCallback(() => {
     onSwipeDelete(chore);
@@ -386,9 +388,14 @@ export function SwipableListChoreRow({
   }, [onDeleteSwipeActiveChange]);
 
   const canStartDeleteSwipe = useCallback((event: React.TouchEvent) => {
+    if (relaxedSwipeStart) {
+      const touch = event.touches[0];
+      const rect = event.currentTarget.getBoundingClientRect();
+      return touch.clientX >= rect.left + rect.width / 2;
+    }
     const target = event.target as Element | null;
     return Boolean(target?.closest("[data-delete-swipe-handle='true']"));
-  }, []);
+  }, [relaxedSwipeStart]);
 
   useEffect(() => () => updateDeleteSwipeActive(false), [updateDeleteSwipeActive]);
 
@@ -402,7 +409,7 @@ export function SwipableListChoreRow({
   const pastThreshold = offsetX < -100;
 
   return (
-    <div className="relative mx-auto w-[85%] overflow-hidden rounded-[14px]">
+    <div className="relative mx-auto w-[95%] overflow-hidden rounded-[14px]">
       <div
         className={`absolute inset-0 flex items-center justify-end rounded-[14px] px-5 ${
           pastThreshold ? "bg-[#D45858]" : "bg-[#E88585]"

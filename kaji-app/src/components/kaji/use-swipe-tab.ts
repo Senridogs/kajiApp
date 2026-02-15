@@ -18,6 +18,14 @@ type SwipeTabOptions<T extends string> = {
   minFlickDistance?: number;
   /** Animation time (ms) used when snapping back or completing swipe. Default: 0 */
   transitionDurationMs?: number;
+  /**
+   * If true, swipe is accepted only when:
+   * - left swipe starts from the right side
+   * - right swipe starts from the left side
+   */
+  requireDirectionalHalfStart?: boolean;
+  /** Dead-zone width ratio around center (0..0.9). Default: 0 */
+  centerDeadZoneRatio?: number;
 };
 
 export type SwipeTabVisualState<T extends string> = {
@@ -35,6 +43,7 @@ type TrackingState<T extends string> = {
   startTab: T | null;
   startAt: number;
   width: number;
+  startLocalX: number;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -52,6 +61,8 @@ export function useSwipeTab<T extends string>({
   minFlickVelocity = 0.7,
   minFlickDistance = 28,
   transitionDurationMs = 0,
+  requireDirectionalHalfStart = false,
+  centerDeadZoneRatio = 0,
 }: SwipeTabOptions<T>) {
   const startX = useRef(0);
   const startY = useRef(0);
@@ -62,6 +73,7 @@ export function useSwipeTab<T extends string>({
     startTab: null,
     startAt: 0,
     width: 1,
+    startLocalX: 0,
   });
 
   const [visual, setVisual] = useState<SwipeTabVisualState<T>>({
@@ -136,11 +148,29 @@ export function useSwipeTab<T extends string>({
     [clearSettleTimer, resetVisual, transitionDurationMs],
   );
 
+  const isStartAllowedForDirection = useCallback(
+    (dx: number, startLocalX: number, width: number) => {
+      if (!requireDirectionalHalfStart || dx === 0) return true;
+      const clampedRatio = clamp(centerDeadZoneRatio, 0, 0.9);
+      const center = width / 2;
+      const deadZoneHalf = (width * clampedRatio) / 2;
+      if (startLocalX > center - deadZoneHalf && startLocalX < center + deadZoneHalf) {
+        return false;
+      }
+      if (dx < 0) {
+        return startLocalX >= center + deadZoneHalf;
+      }
+      return startLocalX <= center - deadZoneHalf;
+    },
+    [centerDeadZoneRatio, requireDirectionalHalfStart],
+  );
+
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (disabled) return;
       const touch = e.touches[0];
       if (!touch) return;
+      const rect = e.currentTarget.getBoundingClientRect();
 
       clearSettleTimer();
 
@@ -150,7 +180,8 @@ export function useSwipeTab<T extends string>({
       tracking.current.horizontalLocked = false;
       tracking.current.startTab = activeTab;
       tracking.current.startAt = Date.now();
-      tracking.current.width = Math.max(1, e.currentTarget.clientWidth);
+      tracking.current.width = Math.max(1, rect.width || e.currentTarget.clientWidth);
+      tracking.current.startLocalX = touch.clientX - rect.left;
 
       setVisual({
         fromTab: activeTab,
@@ -185,6 +216,12 @@ export function useSwipeTab<T extends string>({
           return;
         }
         tracking.current.horizontalLocked = true;
+      }
+
+      if (!isStartAllowedForDirection(dx, tracking.current.startLocalX, tracking.current.width)) {
+        tracking.current.active = false;
+        resetVisual(fromTab);
+        return;
       }
 
       const targetTab = getTargetTab(fromTab, dx);
@@ -222,9 +259,18 @@ export function useSwipeTab<T extends string>({
 
       const targetTab = getTargetTab(fromTab, dx);
       const horizontalDominant = absDx >= absDy * dominanceRatio;
+      const startAllowed = isStartAllowedForDirection(
+        dx,
+        tracking.current.startLocalX,
+        tracking.current.width,
+      );
       const distanceEnough = absDx >= threshold;
       const flickEnough = absDx >= minFlickDistance && velocity >= minFlickVelocity;
-      const shouldCommit = Boolean(targetTab) && horizontalDominant && (distanceEnough || flickEnough);
+      const shouldCommit =
+        Boolean(targetTab) &&
+        startAllowed &&
+        horizontalDominant &&
+        (distanceEnough || flickEnough);
 
       tracking.current.active = false;
 
@@ -251,6 +297,7 @@ export function useSwipeTab<T extends string>({
       disabled,
       dominanceRatio,
       getTargetTab,
+      isStartAllowedForDirection,
       minFlickDistance,
       minFlickVelocity,
       onChangeTab,
