@@ -11,20 +11,20 @@
 
   <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#surface)" filter="url(#cardShadow)"/>
 
-  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="86">
-    <path d="M232 520L512 244" stroke="#4285F4"/>
-    <path d="M512 244L792 520" stroke="#EA4335"/>
-    <path d="M282 520V820" stroke="#34A853"/>
-    <path d="M742 520V820" stroke="#FBBC05"/>
-    <path d="M282 820H742" stroke="#4285F4"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="94">
+    <path d="M166 530L512 170" stroke="#4285F4"/>
+    <path d="M512 170L858 530" stroke="#EA4335"/>
+    <path d="M214 530V888" stroke="#34A853"/>
+    <path d="M810 530V888" stroke="#FBBC05"/>
+    <path d="M214 888H810" stroke="#4285F4"/>
   </g>
 
   <path
-    d="M364 650L482 768L694 548"
+    d="M330 690L476 836L730 576"
     fill="none"
     stroke="#5F6368"
     stroke-linecap="round"
     stroke-linejoin="round"
-    stroke-width="70"
+    stroke-width="82"
   />
 </svg>
