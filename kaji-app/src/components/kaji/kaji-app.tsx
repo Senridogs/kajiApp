@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
@@ -857,7 +857,7 @@ export function KajiApp() {
                 const meta = chore.isBigTask
                   ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
                   } / ${dueInDaysLabel(chore)}`
-                  : `${chore.intervalDays}日ごと / 前回:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "未設定"
+                  : `${chore.intervalDays}譌･縺斐→ / 蜑榊屓:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "譛ｪ險ｭ螳・
                   }`;
                 return (
                   <ListChoreRow
