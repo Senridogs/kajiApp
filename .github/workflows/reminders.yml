@@ -12,9 +12,35 @@ jobs:
   send-reminders:
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    env:
+      APP_URL: ${{ secrets.APP_URL || vars.APP_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
-      - name: Call reminder endpoint
+      - name: Validate workflow config
+        shell: bash
         run: |
-          curl -sf -X GET \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.APP_URL }}/api/cron/reminders"
+          if [[ -z "${APP_URL}" ]]; then
+            echo "::error title=Missing APP_URL::Set APP_URL as a repository secret or variable (example: https://your-app.vercel.app)."
+            exit 1
+          fi
+
+          if [[ ! "${APP_URL}" =~ ^https?:// ]]; then
+            echo "::error title=Invalid APP_URL::APP_URL must start with http:// or https://. Current value: ${APP_URL}"
+            exit 1
+          fi
+
+          if [[ -z "${CRON_SECRET}" ]]; then
+            echo "::warning title=Missing CRON_SECRET::CRON_SECRET is empty. Request may be rejected if endpoint auth is enabled."
+          fi
+
+      - name: Call reminder endpoint
+        shell: bash
+        run: |
+          URL="${APP_URL%/}/api/cron/reminders"
+          if [[ -n "${CRON_SECRET}" ]]; then
+            curl -fsS -X GET \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              "${URL}"
+          else
+            curl -fsS -X GET "${URL}"
+          fi
