@@ -267,7 +267,7 @@ export function KajiApp() {
   const assignmentEdgeSwipe = useEdgeSwipeBack({
     onBack: () => setAssignmentOpen(false),
     enabled: assignmentOpen,
-    edgeWidth: 20,
+    edgeWidth: Number.POSITIVE_INFINITY,
     threshold: 80,
   });
   const [assignmentUser, setAssignmentUser] = useState<string | null>(null);
