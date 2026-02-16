@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Copy, KeyRound, Loader2, Pencil, Ticket, Trash2, Undo2, Users } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Pencil, Ticket, Trash2, Undo2, User, Users } from "lucide-react";
 
 import { iconByName } from "@/components/kaji/helpers";
 import { useSwipeDelete } from "@/components/kaji/use-swipe-delete";
@@ -65,6 +65,7 @@ export function HomeTaskRow({
   onUndo,
   meta,
   assigneeName,
+  assigneeColor,
   recordDisabled = false,
   isUpdating = false,
 }: {
@@ -73,6 +74,7 @@ export function HomeTaskRow({
   onUndo?: (chore: ChoreWithComputed) => void;
   meta?: string;
   assigneeName?: string | null;
+  assigneeColor?: string | null;
   recordDisabled?: boolean;
   isUpdating?: boolean;
 }) {
@@ -82,6 +84,7 @@ export function HomeTaskRow({
   const disableRecordAction = isUpdating || (!done && recordDisabled);
   const actorName = done ? (chore.lastPerformerName ?? assigneeName ?? null) : assigneeName;
   const actorLabel = done ? "実施者" : "担当者";
+  const actorColor = done ? "#1A9BE8" : (assigneeColor ?? "#BDC1C6");
 
   return (
     <div
@@ -93,9 +96,20 @@ export function HomeTaskRow({
         <p className={`truncate text-[15.2px] font-bold leading-tight ${done ? "text-[#2C6E49]" : "text-[#202124]"}`}>
           {title}
         </p>
-        <p className={`truncate text-[11px] font-semibold ${actorName ? "text-[#1A9BE8]" : "text-[#BDC1C6]"}`}>
-          {actorLabel}: {actorName || "未設定"}
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className={`truncate text-[11px] font-semibold ${actorName ? "" : "text-[#BDC1C6]"}`} style={actorName ? { color: actorColor } : {}}>
+            {actorLabel}:
+          </p>
+          {actorName ? (
+            <div className="flex items-center gap-0.5" style={{ color: actorColor }}>
+              <span className="truncate text-[11px] font-bold">
+                {actorName}
+              </span>
+            </div>
+          ) : (
+            <span className="text-[11px] font-semibold text-[#BDC1C6]">未設定</span>
+          )}
+        </div>
         {meta ? <p className="truncate text-[10.4px] font-medium text-[#5F6368]">{meta}</p> : null}
       </div>
       <button

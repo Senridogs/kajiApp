@@ -80,7 +80,7 @@ export function ChoreEditor({
   mode: "create" | "edit";
   value: ChoreForm;
   customIcons: CustomIconOption[];
-  users: Array<{ id: string; name: string }>;
+  users: Array<{ id: string; name: string; color: string | null }>;
   isSaving?: boolean;
   isDeleting?: boolean;
   onChange: (next: ChoreForm) => void;
@@ -386,24 +386,31 @@ export function ChoreEditor({
         <div>
           <p className="mb-1.5 text-[14px] font-bold text-[#202124]">デフォルト担当者</p>
           <div className="flex gap-2">
-            {users.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() =>
-                  onChange({
-                    ...value,
-                    defaultAssigneeId: value.defaultAssigneeId === u.id ? null : u.id,
-                  })
-                }
-                className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${value.defaultAssigneeId === u.id
-                  ? "bg-[#1A9BE8] text-white"
-                  : "border border-[#DADCE0] bg-white text-[#5F6368]"
-                  }`}
-              >
-                {u.name}
-              </button>
-            ))}
+            {users.map((u) => {
+              const isSelected = value.defaultAssigneeId === u.id;
+              const userColor = u.color ?? "#1A9BE8";
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      ...value,
+                      defaultAssigneeId: isSelected ? null : u.id,
+                    })
+                  }
+                  className={`rounded-2xl px-4 py-2 text-[13px] font-bold transition-colors ${isSelected ? "text-white" : "border text-[#5F6368]"
+                    }`}
+                  style={
+                    isSelected
+                      ? { backgroundColor: userColor, borderColor: userColor }
+                      : { backgroundColor: "white", borderColor: "#DADCE0" }
+                  }
+                >
+                  {u.name}
+                </button>
+              );
+            })}
             <button
               type="button"
               onClick={() => onChange({ ...value, defaultAssigneeId: null })}

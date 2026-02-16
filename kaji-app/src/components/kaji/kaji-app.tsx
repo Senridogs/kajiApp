@@ -150,26 +150,32 @@ function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
   return { todayChores, tomorrowChores, upcomingBigChores };
 }
 
-function compareCompletionThenKana(
-  aDone: boolean,
-  bDone: boolean,
-  aTitle: string,
-  bTitle: string,
-) {
-  if (aDone !== bDone) {
-    return aDone ? -1 : 1;
-  }
-  return JA_COLLATOR.compare(aTitle, bTitle);
+/** Assignee priority: self=0 > partner=1 > none=2 */
+function assigneePriority(assigneeId: string | null, sessionUserId: string | null): number {
+  if (!assigneeId) return 2;
+  if (assigneeId === sessionUserId) return 0;
+  return 1;
 }
 
 function sortHomeSectionChores(
   sectionKey: "today" | "tomorrow" | "big",
   chores: ChoreWithComputed[],
+  sessionUserId: string | null,
+  resolveAssigneeId: (choreId: string) => string | null,
 ) {
   return [...chores].sort((a, b) => {
     const aDone = sectionKey === "tomorrow" ? false : a.doneToday;
     const bDone = sectionKey === "tomorrow" ? false : b.doneToday;
-    return compareCompletionThenKana(aDone, bDone, a.title, b.title);
+    // 1. done last (completed items at the bottom)
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    // 2. assignee priority: self > partner > none
+    const aAssignee = resolveAssigneeId(a.id);
+    const bAssignee = resolveAssigneeId(b.id);
+    const aPri = assigneePriority(aAssignee, sessionUserId);
+    const bPri = assigneePriority(bAssignee, sessionUserId);
+    if (aPri !== bPri) return aPri - bPri;
+    // 3. kana order
+    return JA_COLLATOR.compare(a.title, b.title);
   });
 }
 
@@ -1483,21 +1489,48 @@ export function KajiApp() {
     );
   }
 
+  const resolveAssigneeForSort = (choreId: string, sectionKey: "today" | "tomorrow" | "big", choreRef?: ChoreWithComputed) => {
+    const todayKey = toJstDateKey(startOfJstDay(new Date()));
+    const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
+    const sectionDateKey =
+      sectionKey === "tomorrow"
+        ? tomorrowKey
+        : sectionKey === "big" && choreRef?.dueAt
+          ? toJstDateKey(startOfJstDay(new Date(choreRef.dueAt)))
+          : todayKey;
+    const entry = assignments.find((x) => x.choreId === choreId && x.date === sectionDateKey);
+    const clearKey = `${choreId}:${sectionDateKey}`;
+    const isDefaultCleared = clearedDefaults.has(clearKey);
+    const chore = choreRef ?? boot.chores.find((c) => c.id === choreId);
+    if (entry) return entry.userId;
+    if (!isDefaultCleared && chore?.defaultAssigneeId) return chore.defaultAssigneeId;
+    return null;
+  };
+
   const homeSections = [
     {
       key: "today" as const,
       title: "今日",
-      chores: sortHomeSectionChores("today", boot.todayChores),
+      chores: sortHomeSectionChores("today", boot.todayChores, sessionUser?.id ?? null, (choreId) => {
+        const c = boot.todayChores.find((ch) => ch.id === choreId);
+        return resolveAssigneeForSort(choreId, "today", c);
+      }),
     },
     {
       key: "tomorrow" as const,
       title: "明日",
-      chores: sortHomeSectionChores("tomorrow", boot.tomorrowChores),
+      chores: sortHomeSectionChores("tomorrow", boot.tomorrowChores, sessionUser?.id ?? null, (choreId) => {
+        const c = boot.tomorrowChores.find((ch) => ch.id === choreId);
+        return resolveAssigneeForSort(choreId, "tomorrow", c);
+      }),
     },
     {
       key: "big" as const,
       title: "大仕事",
-      chores: sortHomeSectionChores("big", boot.upcomingBigChores),
+      chores: sortHomeSectionChores("big", boot.upcomingBigChores, sessionUser?.id ?? null, (choreId) => {
+        const c = boot.upcomingBigChores.find((ch) => ch.id === choreId);
+        return resolveAssigneeForSort(choreId, "big", c);
+      }),
     },
   ].filter((section) => section.chores.length > 0);
   const hasAnyUpcomingChores = homeSections.length > 0;
@@ -1792,7 +1825,10 @@ export function KajiApp() {
                           (x) => x.choreId === chore.id && x.date === sectionDateKey,
                         );
                         const isDefaultCleared = clearedDefaults.has(`${chore.id}:${sectionDateKey}`);
+                        const effectiveAssigneeId = assignedEntry?.userId ?? (isDefaultCleared ? null : chore.defaultAssigneeId) ?? null;
                         const assigneeName = assignedEntry?.userName ?? (isDefaultCleared ? null : chore.defaultAssigneeName) ?? null;
+                        const assigneeUser = effectiveAssigneeId ? boot.users.find((u) => u.id === effectiveAssigneeId) : null;
+                        const assigneeColor = assigneeUser?.color ?? null;
                         const disableTomorrowDailyCheck =
                           section.key === "tomorrow" && chore.intervalDays === 1;
                         return (
@@ -1808,6 +1844,7 @@ export function KajiApp() {
                             isUpdating={recordUpdatingIds.includes(chore.id)}
                             recordDisabled={disableTomorrowDailyCheck}
                             assigneeName={assigneeName}
+                            assigneeColor={assigneeColor}
                             meta={
                               section.key === "big"
                                 ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
