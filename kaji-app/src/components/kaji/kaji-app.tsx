@@ -266,6 +266,7 @@ export function KajiApp() {
       memo: string | null;
       chore: { id: string; title: string };
       user: { id: string; name: string };
+      isInitial?: boolean;
     }>
   >([]);
 
@@ -511,6 +512,7 @@ export function KajiApp() {
         memo: string | null;
         chore: { id: string; title: string };
         user: { id: string; name: string };
+        isInitial?: boolean;
       }>;
     }>("/api/records");
     setRecords(data.records);
@@ -1070,6 +1072,8 @@ export function KajiApp() {
         doneToday: true,
         lastPerformedAt: nowIso,
         lastPerformerName: sessionUser.name,
+        lastPerformerId: sessionUser.id,
+        lastRecordSkipped: false,
         lastRecordId: chore.lastRecordId ?? `optimistic-${now.getTime()}`,
         dueAt: addDays(now, chore.intervalDays).toISOString(),
         isDueToday: false,
@@ -1119,7 +1123,9 @@ export function KajiApp() {
         ...chore,
         doneToday: true,
         lastPerformedAt: nowIso,
-        lastPerformerName: sessionUser.name,
+        lastPerformerName: "スキップ",
+        lastPerformerId: sessionUser.id,
+        lastRecordSkipped: true,
         lastRecordId: chore.lastRecordId ?? `optimistic-skip-${now.getTime()}`,
         dueAt: addDays(now, chore.intervalDays).toISOString(),
         isDueToday: false,
@@ -1178,6 +1184,7 @@ export function KajiApp() {
       ...current,
       doneToday: false,
       lastRecordId: null,
+      lastRecordSkipped: false,
       dueAt: origDueAt,
       isDueToday: restoredIsDueToday,
       isDueTomorrow: restoredIsDueTomorrow,
@@ -1893,6 +1900,8 @@ export function KajiApp() {
                         const assigneeColor = assigneeUser?.color ?? null;
                         const disableTomorrowDailyCheck =
                           section.key === "tomorrow" && chore.intervalDays === 1;
+                        const performerUser = chore.lastPerformerId ? boot.users.find((u) => u.id === chore.lastPerformerId) : null;
+                        const performerColor = performerUser?.color ?? null;
                         return (
                           <HomeTaskRow
                             key={chore.id}
@@ -1907,6 +1916,7 @@ export function KajiApp() {
                             recordDisabled={disableTomorrowDailyCheck}
                             assigneeName={assigneeName}
                             assigneeColor={assigneeColor}
+                            performerColor={performerColor}
                             meta={
                               section.key === "big"
                                 ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
@@ -2536,7 +2546,7 @@ export function KajiApp() {
                 />
                 <div className="space-y-1">
                   <p className="text-[15.6px] font-bold text-[#202124]">
-                    {formatJpDate(record.performedAt)} {record.user.name}が実施
+                    {formatJpDate(record.performedAt)} {record.isInitial || record.user.name === "初期登録" ? "初回登録" : `${record.user.name}が実施`}
                   </p>
                   {record.memo ? (
                     <p className="text-[13.2px] font-medium text-[#5F6368]">メモ: {record.memo}</p>

@@ -17,7 +17,9 @@ export type ChoreWithComputed = {
   defaultAssigneeName: string | null;
   lastPerformedAt: string | null;
   lastPerformerName: string | null;
+  lastPerformerId: string | null;
   lastRecordId: string | null;
+  lastRecordSkipped: boolean;
   dueAt: string | null;
   isDueToday: boolean;
   isDueTomorrow: boolean;

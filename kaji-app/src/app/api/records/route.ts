@@ -23,7 +23,7 @@ export async function GET() {
       performedAt: r.performedAt.toISOString(),
       memo: r.memo,
       chore: r.chore,
-      user: r.isInitial ? { id: r.user.id, name: "初期登録" } : r.user,
+      user: r.isInitial ? { id: r.user.id, name: "初回登録" } : r.user,
       isInitial: r.isInitial,
     })),
   });

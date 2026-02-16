@@ -24,6 +24,9 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
   const daysSinceLast = lastPerformedAt ? diffDaysFloor(lastPerformedAt, now) : null;
   const doneToday = !!latest && latest.performedAt >= todayStart;
 
+  // Use 'any' cast for isSkipped if types are not up to date
+  const isSkipped = (latest as any)?.isSkipped ?? false;
+
   return {
     id: chore.id,
     title: chore.title,
@@ -36,8 +39,10 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
     defaultAssigneeId: chore.defaultAssigneeId ?? null,
     defaultAssigneeName: chore.defaultAssignee?.name ?? null,
     lastPerformedAt: lastPerformedAt ? lastPerformedAt.toISOString() : null,
-    lastPerformerName: latest?.user.name ?? null,
+    lastPerformerName: isSkipped ? "スキップ" : (latest?.user.name ?? null),
+    lastPerformerId: latest?.user.id ?? null,
     lastRecordId: latest?.id ?? null,
+    lastRecordSkipped: isSkipped,
     dueAt: dueAt ? dueAt.toISOString() : null,
     isDueToday,
     isDueTomorrow,

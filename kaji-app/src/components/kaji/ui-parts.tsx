@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Copy, Flame, KeyRound, Loader2, Pencil, Ticket, Trash2, Undo2, User, Users } from "lucide-react";
+import { Check, Copy, Flame, KeyRound, Loader2, Minus, Pencil, Ticket, Trash2, Undo2, User, Users } from "lucide-react";
 
 import { darkenColor, iconByName } from "@/components/kaji/helpers";
 import { useSwipeDelete } from "@/components/kaji/use-swipe-delete";
@@ -66,6 +66,7 @@ export function HomeTaskRow({
   meta,
   assigneeName,
   assigneeColor,
+  performerColor,
   recordDisabled = false,
   isUpdating = false,
 }: {
@@ -75,21 +76,17 @@ export function HomeTaskRow({
   meta?: string;
   assigneeName?: string | null;
   assigneeColor?: string | null;
+  performerColor?: string | null;
   recordDisabled?: boolean;
   isUpdating?: boolean;
 }) {
   const done = chore.doneToday;
-  const displayDone = done && !isUpdating;
+  const skipped = chore.lastRecordSkipped;
   const title = chore.title;
   const disableRecordAction = isUpdating || (!done && recordDisabled);
   const actorName = done ? (chore.lastPerformerName ?? assigneeName ?? null) : assigneeName;
   const actorLabel = done ? "実施者" : "担当者";
-  const actorColor = done ? "#1A9BE8" : (assigneeColor ?? "#BDC1C6");
-  const actorTextColor = done
-    ? "#1A9BE8"
-    : assigneeColor
-      ? darkenColor(assigneeColor, 0.4)
-      : "#BDC1C6";
+  const actorColor = done ? (performerColor ?? "#1A9BE8") : (assigneeColor ?? "#BDC1C6");
 
   return (
     <div
@@ -99,19 +96,24 @@ export function HomeTaskRow({
       <IconBadge icon={chore.icon} iconColor={chore.iconColor} bgColor={chore.bgColor} size={42} iconSize={21} />
       <div className="min-w-0 flex-1 space-y-[2px]">
         <div className="flex items-center gap-1">
-          <p className={`truncate text-[15.2px] font-bold leading-tight ${done ? "text-[#2C6E49]" : "text-[#202124]"}`}>
+          <p className={`truncate text-[15.2px] font-bold leading-tight ${done
+            ? "text-[#2C6E49]"
+            : chore.isOverdue
+              ? "text-[#D93025]"
+              : "text-[#202124]"
+            }`}>
             {title}
           </p>
           {chore.isOverdue && !done && (
-            <Flame size={14} className="fill-orange-500 text-orange-500" />
+            <Flame size={14} className="fill-[#D93025] text-[#D93025]" />
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <p className={`truncate text-[11px] font-semibold ${actorName ? "" : "text-[#BDC1C6]"}`} style={actorName ? { color: actorTextColor } : {}}>
+          <p className={`truncate text-[11px] font-semibold ${actorName ? "" : "text-[#BDC1C6]"}`} style={actorName ? { color: actorColor } : {}}>
             {actorLabel}:
           </p>
           {actorName ? (
-            <div className="flex items-center gap-0.5" style={{ color: actorTextColor }}>
+            <div className="flex items-center gap-0.5" style={{ color: actorColor }}>
               <span className="truncate text-[11px] font-bold">
                 {actorName}
               </span>
@@ -147,9 +149,7 @@ export function HomeTaskRow({
         className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${isUpdating
           ? "border-[#DADCE0] bg-[#F1F3F4]"
           : done
-            ? assigneeColor
-              ? "text-white" // Background and border handled by style
-              : "border-[#33C28A] bg-[#33C28A]"
+            ? "text-white"
             : disableRecordAction
               ? "border-[#DADCE0] bg-[#F1F3F4]"
               : assigneeColor
@@ -157,11 +157,15 @@ export function HomeTaskRow({
                 : "border-[#C0C6CC] bg-white hover:border-[#1A9BE8]"
           }`}
         style={
-          done && assigneeColor
-            ? { backgroundColor: assigneeColor, borderColor: assigneeColor }
-            : !done && !disableRecordAction && !isUpdating && assigneeColor
-              ? { borderColor: assigneeColor }
-              : undefined
+          isUpdating
+            ? undefined
+            : done
+              ? skipped
+                ? { backgroundColor: "#D93025", borderColor: actorColor }
+                : { backgroundColor: actorColor, borderColor: actorColor }
+              : assigneeColor
+                ? { borderColor: assigneeColor }
+                : undefined
         }
       >
         {isUpdating ? (
@@ -173,7 +177,11 @@ export function HomeTaskRow({
               : "opacity-0"
               }`}
           >
-            <Check size={15} strokeWidth={3} className="text-white" />
+            {skipped ? (
+              <Minus size={15} strokeWidth={4} className="text-white" />
+            ) : (
+              <Check size={15} strokeWidth={3} className="text-white" />
+            )}
           </span>
         )}
       </button>
