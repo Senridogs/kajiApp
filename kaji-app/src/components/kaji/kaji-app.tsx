@@ -1758,7 +1758,7 @@ export function KajiApp() {
                         const assignedEntry = assignments.find(
                           (x) => x.choreId === chore.id && x.date === sectionDateKey,
                         );
-                        const assigneeName = assignedEntry?.userName ?? null;
+                        const assigneeName = assignedEntry?.userName ?? chore.defaultAssigneeName ?? null;
                         const disableTomorrowDailyCheck =
                           section.key === "tomorrow" && chore.intervalDays === 1;
                         return (

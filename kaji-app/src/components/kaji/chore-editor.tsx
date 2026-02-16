@@ -479,7 +479,7 @@ export function CustomIconPicker({
   }, [iconPages.length]);
 
   return (
-    <div className="space-y-[10px] pb-2">
+    <div className="space-y-[8px] pb-2">
       <div>
         <input
           value={customName}
@@ -489,7 +489,7 @@ export function CustomIconPicker({
         />
       </div>
 
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         <div
           ref={viewportRef}
           onScroll={(e) => {
@@ -523,7 +523,7 @@ export function CustomIconPicker({
           <div className="flex">
             {iconPages.map((page, pageIndex) => (
               <div key={pageIndex} className="w-full shrink-0">
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-5 gap-1.5">
                   {page.slice(0, ICONS_PER_PAGE).map((iconName) => {
                     const Icon = iconByName(iconName);
                     const selected = value.icon === iconName;
@@ -532,7 +532,7 @@ export function CustomIconPicker({
                         key={iconName}
                         type="button"
                         onClick={() => onChange({ ...value, icon: iconName })}
-                        className={`flex aspect-square w-full items-center justify-center rounded-[12px] border ${selected ? "border-[#1A9BE8] bg-[#EEF3FF]" : "border-[#DADCE0] bg-white"
+                        className={`flex aspect-square w-full items-center justify-center rounded-[10px] border ${selected ? "border-[#1A9BE8] bg-[#EEF3FF]" : "border-[#DADCE0] bg-white"
                           }`}
                       >
                         <Icon size={24} color="#202124" />
@@ -554,7 +554,7 @@ export function CustomIconPicker({
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <div>
           <p className="mb-1 text-xs font-bold text-[#5F6368]">アイコン色</p>
           <div className="flex flex-wrap gap-1">
@@ -602,7 +602,7 @@ export function CustomIconPicker({
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[#DADCE0] bg-white p-[10px]">
+      <div className="rounded-[14px] border border-[#DADCE0] bg-white p-[8px]">
         <div className="flex justify-center">
           <IconBadge icon={value.icon} iconColor={value.iconColor} bgColor={value.bgColor} size={56} iconSize={28} />
         </div>
