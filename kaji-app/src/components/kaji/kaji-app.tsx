@@ -371,6 +371,7 @@ export function KajiApp() {
   const assignmentTabSwipeActiveRef = useRef(false);
   const assignmentBackSwipeActiveRef = useRef(false);
   const [assignments, setAssignments] = useState<ChoreAssignmentEntry[]>([]);
+  const [clearedDefaults, setClearedDefaults] = useState<Set<string>>(new Set());
   const [visibleAssignDays, setVisibleAssignDays] = useState(14);
   const [, startTransition] = useTransition();
   const assignSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -1553,12 +1554,14 @@ export function KajiApp() {
                 const entry = assignments.find(
                   (x) => x.choreId === chore.id && x.date === dateKey,
                 );
-                const effectiveUserId = entry?.userId ?? chore.defaultAssigneeId ?? null;
-                const effectiveUserName = entry?.userName ?? chore.defaultAssigneeName ?? null;
+                const clearKey = `${chore.id}:${dateKey}`;
+                const isCleared = clearedDefaults.has(clearKey);
+                const isDefaultOnly = !entry && !!chore.defaultAssigneeId && !isCleared;
+                const effectiveUserId = entry?.userId ?? (isDefaultOnly ? chore.defaultAssigneeId : null);
+                const effectiveUserName = entry?.userName ?? (isDefaultOnly ? chore.defaultAssigneeName : null);
                 const isAssigned = assignmentUser
                   ? effectiveUserId === assignmentUser
                   : false;
-                const isDefaultOnly = !entry && !!chore.defaultAssigneeId;
                 return (
                   <button
                     key={chore.id}
@@ -1566,6 +1569,11 @@ export function KajiApp() {
                     onClick={() => {
                       if (!assignmentUser) return;
                       const newUserId = isAssigned ? null : assignmentUser;
+                      if (isDefaultOnly && isAssigned) {
+                        setClearedDefaults((prev) => { const next = new Set(prev); next.add(clearKey); return next; });
+                      } else if (newUserId) {
+                        setClearedDefaults((prev) => { const next = new Set(prev); next.delete(clearKey); return next; });
+                      }
                       startTransition(() => {
                         setAssignments((prev) => {
                           const filtered = prev.filter((x) => !(x.choreId === chore.id && x.date === dateKey));
@@ -1587,13 +1595,12 @@ export function KajiApp() {
                       {isAssigned ? "check_box" : "check_box_outline_blank"}
                     </span>
                     <span className="flex-1 text-[13.5px] font-medium text-[#202124]">{chore.title}</span>
-                    {effectiveUserName && !isAssigned ? (
-                      <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {effectiveUserName}</span>
-                    ) : null}
                     {isDefaultOnly && effectiveUserName ? (
                       <span className="text-[11px] font-medium text-[#9AA0A6]">
                         <span className="text-[10px] text-[#93CDEE]">デフォルト </span>👤 {effectiveUserName}
                       </span>
+                    ) : effectiveUserName && !isAssigned ? (
+                      <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {effectiveUserName}</span>
                     ) : null}
                   </button>
                 );
