@@ -1635,7 +1635,7 @@ export function KajiApp() {
   const getPullAnimatedContentStyle = (tab: TabKey) =>
     pullRefreshEnabled && tab === activeTab && tab !== "settings"
       ? {
-        transform: `translate3d(0, ${pullDistance}px, 0)`,
+        transform: pullDistance === 0 ? "none" : `translate3d(0, ${pullDistance}px, 0)`,
         transition:
           pullDragging || pullRefreshing ? "none" : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
       }
@@ -1689,7 +1689,7 @@ export function KajiApp() {
                   : false;
                 const effectiveUser = effectiveUserId ? boot.users.find((u) => u.id === effectiveUserId) : null;
                 const effectiveColor = effectiveUser?.color || "#202124";
-                const checkboxColor = isAssigned ? (effectiveUser?.color || "#1A9BE8") : "#DADCE0";
+                const checkboxColor = effectiveUserId ? (effectiveUser?.color || "#1A9BE8") : "#DADCE0";
 
                 return (
                   <button
@@ -1741,7 +1741,7 @@ export function KajiApp() {
                       className="material-symbols-rounded text-[20px]"
                       style={{ color: checkboxColor }}
                     >
-                      {isAssigned ? "check_box" : "check_box_outline_blank"}
+                      {effectiveUserId ? "check_box" : "check_box_outline_blank"}
                     </span>
                     <span
                       className="flex-1 flex items-center gap-1 text-[13.5px] font-medium min-w-0 text-[#202124]"
@@ -2239,7 +2239,7 @@ export function KajiApp() {
               <div
                 className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
                 style={{
-                  transform: `translate3d(${swipeTrackTranslatePercent}%, 0, 0)`,
+                  transform: swipeTrackTranslatePercent === 0 ? "none" : `translate3d(${swipeTrackTranslatePercent}%, 0, 0)`,
                   transition: swipeTrackTransitionStyle,
                 }}
               >
