@@ -18,7 +18,7 @@ import {
   type ChoreForm,
   type CustomIconOption,
 } from "@/components/kaji/chore-editor";
-import { PRIMARY_COLOR, USER_COLOR_PALETTE } from "@/components/kaji/constants";
+import { PRIMARY_COLOR, QUICK_ICON_PRESETS, USER_COLOR_PALETTE } from "@/components/kaji/constants";
 import {
   apiFetch,
   dueInDaysLabel,
@@ -434,16 +434,25 @@ export function KajiApp() {
 
       case "icon":
         arr.sort((a, b) => {
-          const getIndex = (c: ChoreWithComputed) => {
-            const idx = customIcons.findIndex(
+          const getLabel = (c: ChoreWithComputed) => {
+            const custom = customIcons.find(
               (ci) =>
                 ci.icon === c.icon && ci.iconColor === c.iconColor && ci.bgColor === c.bgColor,
             );
-            return idx === -1 ? 999999 : idx;
+            if (custom) return custom.label;
+            const preset = QUICK_ICON_PRESETS.find(
+              (pi) =>
+                pi.icon === c.icon && pi.iconColor === c.iconColor && pi.bgColor === c.bgColor,
+            );
+            if (preset) return preset.label;
+            return c.icon;
           };
-          const idxA = getIndex(a);
-          const idxB = getIndex(b);
-          if (idxA !== idxB) return idxA - idxB;
+
+          const labelA = getLabel(a);
+          const labelB = getLabel(b);
+          const diff = JA_COLLATOR.compare(labelA, labelB);
+          if (diff !== 0) return diff;
+
           return JA_COLLATOR.compare(a.title, b.title);
         });
         break;
