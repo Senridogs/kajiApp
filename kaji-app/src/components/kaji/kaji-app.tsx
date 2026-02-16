@@ -267,6 +267,7 @@ export function KajiApp() {
       chore: { id: string; title: string };
       user: { id: string; name: string };
       isInitial?: boolean;
+      isSkipped?: boolean;
     }>
   >([]);
 
@@ -513,6 +514,7 @@ export function KajiApp() {
         chore: { id: string; title: string };
         user: { id: string; name: string };
         isInitial?: boolean;
+        isSkipped?: boolean;
       }>;
     }>("/api/records");
     setRecords(data.records);
@@ -2546,7 +2548,13 @@ export function KajiApp() {
                 />
                 <div className="space-y-1">
                   <p className="text-[15.6px] font-bold text-[#202124]">
-                    {formatJpDate(record.performedAt)} {record.isInitial || record.user.name === "初期登録" ? "初回登録" : `${record.user.name}が実施`}
+                    {formatJpDate(record.performedAt)} {
+                      record.isSkipped
+                        ? "スキップ"
+                        : record.isInitial || record.user.name === "初期登録"
+                          ? "初回登録"
+                          : `${record.user.name}が実施`
+                    }
                   </p>
                   {record.memo ? (
                     <p className="text-[13.2px] font-medium text-[#5F6368]">メモ: {record.memo}</p>
