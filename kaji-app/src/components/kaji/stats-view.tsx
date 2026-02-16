@@ -94,6 +94,7 @@ export function StatsView({
   activePeriod,
   isLoading = false,
   customDateRange,
+  customEditorOpen = false,
   animationSeed = 0,
   userColors,
   onChangeCustomDateRange,
@@ -104,6 +105,7 @@ export function StatsView({
   activePeriod: StatsPeriodKey;
   isLoading?: boolean;
   customDateRange: CustomDateRange;
+  customEditorOpen?: boolean;
   animationSeed?: number;
   userColors?: Map<string, string>;
   onChangeCustomDateRange: (range: CustomDateRange) => void;
@@ -235,10 +237,9 @@ export function StatsView({
   return (
     <div className="space-y-4">
 
-      {activePeriod === "custom" ? (
-        <div className="space-y-2 rounded-2xl border border-[#DADCE0] bg-white p-4">
-          <p className="text-[14px] font-bold text-[#202124]">カスタム期間</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-center">
+      {activePeriod === "custom" && customEditorOpen ? (
+        <div className="rounded-2xl border border-[#DADCE0] bg-white p-3">
+          <div className="flex items-center gap-1.5">
             <input
               type="date"
               value={customDateRange.from}
@@ -249,9 +250,9 @@ export function StatsView({
                   from: e.target.value,
                 })
               }
-              className="rounded-[12px] border border-[#DADCE0] bg-white px-3 py-2 text-[14px] font-semibold text-[#202124]"
+              className="min-w-0 flex-1 rounded-[10px] border border-[#DADCE0] bg-white px-2 py-1.5 text-[13px] font-semibold text-[#202124]"
             />
-            <p className="text-center text-[14px] font-bold text-[#5F6368]">〜</p>
+            <p className="shrink-0 text-[13px] font-bold text-[#5F6368]">〜</p>
             <input
               type="date"
               value={customDateRange.to}
@@ -262,14 +263,14 @@ export function StatsView({
                   to: e.target.value,
                 })
               }
-              className="rounded-[12px] border border-[#DADCE0] bg-white px-3 py-2 text-[14px] font-semibold text-[#202124]"
+              className="min-w-0 flex-1 rounded-[10px] border border-[#DADCE0] bg-white px-2 py-1.5 text-[13px] font-semibold text-[#202124]"
             />
             <button
               type="button"
               onClick={async () => {
                 await onApplyCustomDateRange(customDateRange);
               }}
-              className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-[10px] bg-[#1A9BE8] px-2.5 text-[13px] font-bold leading-none text-white [writing-mode:horizontal-tb]"
+              className="shrink-0 rounded-[10px] bg-[#1A9BE8] px-3 py-1.5 text-[13px] font-bold text-white"
             >
               適用
             </button>

@@ -234,6 +234,7 @@ export function KajiApp() {
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriodKey>("week");
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsAnimationSeed, setStatsAnimationSeed] = useState(0);
+  const [customEditorOpen, setCustomEditorOpen] = useState(false);
   const [customDateRange, setCustomDateRange] = useState<CustomDateRange>(() =>
     defaultCustomDateRange(),
   );
@@ -1605,9 +1606,11 @@ export function KajiApp() {
                     setError("");
                     setStatsAnimationSeed((prev) => prev + 1);
                     if (item.key === "custom") {
+                      setCustomEditorOpen(true);
                       await applyCustomDateRange(customDateRange);
                       return;
                     }
+                    setCustomEditorOpen(false);
                     await loadStats(item.key);
                   } catch (err: unknown) {
                     setError((err as Error).message ?? "統計の読み込みに失敗しました。");
@@ -1765,7 +1768,11 @@ export function KajiApp() {
                 return map;
               })()}
               onChangeCustomDateRange={setCustomDateRange}
-              onApplyCustomDateRange={applyCustomDateRange}
+              onApplyCustomDateRange={async (range) => {
+                await applyCustomDateRange(range);
+                setCustomEditorOpen(false);
+              }}
+              customEditorOpen={customEditorOpen}
               onBalanceSwipeActiveChange={setBalanceSwipeActive}
             />
           </div>

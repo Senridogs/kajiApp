@@ -54,7 +54,7 @@ export async function POST(request: Request, { params }: RouteParams) {
         select: { notifyCompletion: true },
       }),
       prisma.pushSubscription.findMany({
-        where: { householdId: session.householdId, enabled: true },
+        where: { householdId: session.householdId, enabled: true, userId: { not: session.userId } },
         select: { id: true, endpoint: true, p256dh: true, auth: true },
       }),
     ]);
