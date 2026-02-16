@@ -16,7 +16,7 @@
     "db:down": "docker compose -f docker-compose.local-db.yml down",
     "db:down:volumes": "docker compose -f docker-compose.local-db.yml down -v",
     "db:logs": "docker compose -f docker-compose.local-db.yml logs -f postgres",
-    "db:init": "node ./scripts/db-init-local.mjs",
+    "db:init": "npm run prisma:generate && npm run prisma:push",
     "db:init:local": "node ./scripts/db-init-local.mjs",
     "db:init:current-env": "npm run prisma:generate && npm run prisma:push",
     "db:seed:senri": "node ./scripts/seed-local-senri-nozomi.mjs",

@@ -63,7 +63,7 @@ export function StatsView({
   activePeriod,
   isLoading = false,
   customDateRange,
-  animationSeed: _animationSeed = 0,
+  animationSeed = 0,
   userColors,
   onChangePeriod,
   onChangeCustomDateRange,
@@ -83,6 +83,7 @@ export function StatsView({
 }) {
   const [customEditorOpen, setCustomEditorOpen] = useState(false);
   const [balanceTab, setBalanceTab] = useState<BalanceTabKey>("all");
+  const [chartsAnimationReady, setChartsAnimationReady] = useState(false);
 
   const users = stats?.userCounts ?? [];
   const bigTaskUsers = stats?.bigTaskUserCounts ?? [];
@@ -117,6 +118,13 @@ export function StatsView({
   useEffect(() => {
     onBalanceSwipeActiveChange?.(balanceDragging);
   }, [balanceDragging, onBalanceSwipeActiveChange]);
+  useEffect(() => {
+    setChartsAnimationReady(false);
+    const frame = requestAnimationFrame(() => {
+      setChartsAnimationReady(true);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [stats, activePeriod, balanceTab, animationSeed]);
 
   const balanceByTab: Record<BalanceTabKey, { total: number; pie: PieSlice[] }> = {
     all: {
@@ -270,7 +278,7 @@ export function StatsView({
                   <div className="flex items-center gap-3">
                     <svg viewBox="0 0 42 42" className="h-[120px] w-[120px] -rotate-90">
                       <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E8EAED" strokeWidth="10" />
-                      {tabData.pie.map((slice) => (
+                      {tabData.pie.map((slice, sliceIdx) => (
                         <circle
                           key={`${tabKey}-${slice.userId}`}
                           cx="21"
@@ -279,8 +287,15 @@ export function StatsView({
                           fill="none"
                           stroke={slice.color}
                           strokeWidth="10"
-                          strokeDasharray={`${slice.ratio * 100} ${100 - slice.ratio * 100}`}
-                          strokeDashoffset={`${-slice.start * 100}`}
+                          style={{
+                            strokeDasharray: `${
+                              chartsAnimationReady ? slice.ratio * 100 : 0
+                            } ${100 - (chartsAnimationReady ? slice.ratio * 100 : 0)}`,
+                            strokeDashoffset: `${-slice.start * 100}`,
+                            transition:
+                              "stroke-dasharray 520ms cubic-bezier(0.22, 1, 0.36, 1), stroke-dashoffset 520ms cubic-bezier(0.22, 1, 0.36, 1)",
+                            transitionDelay: `${sliceIdx * 48}ms`,
+                          }}
                         />
                       ))}
                     </svg>
@@ -324,7 +339,7 @@ export function StatsView({
         </div>
 
         <div className="space-y-3">
-          {choreCounts.map((item) => {
+          {choreCounts.map((item, itemIdx) => {
             const barWidth = item.count > 0 ? Math.max((item.count / choreMax) * 100, 8) : 0;
             return (
               <div key={item.choreId} className="space-y-1.5">
@@ -341,7 +356,14 @@ export function StatsView({
                   </div>
                   <div className="relative h-3 flex-1 overflow-hidden rounded-md bg-[#F1F3F4]">
                     {barWidth > 0 ? (
-                      <div className="flex h-3 overflow-hidden rounded-md" style={{ width: `${barWidth}%` }}>
+                      <div
+                        className="flex h-3 overflow-hidden rounded-md"
+                        style={{
+                          width: `${chartsAnimationReady ? barWidth : 0}%`,
+                          transition: "width 520ms cubic-bezier(0.22, 1, 0.36, 1)",
+                          transitionDelay: `${itemIdx * 42}ms`,
+                        }}
+                      >
                         {item.userCounts.map((userCount, idx) => {
                           if (userCount.count === 0) return null;
                           const color =

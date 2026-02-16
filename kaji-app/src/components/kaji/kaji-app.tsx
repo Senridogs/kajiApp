@@ -230,6 +230,7 @@ export function KajiApp() {
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriodKey>("week");
   const [statsLoading, setStatsLoading] = useState(false);
+  const [statsAnimationSeed, setStatsAnimationSeed] = useState(0);
   const [customDateRange, setCustomDateRange] = useState<CustomDateRange>(() =>
     defaultCustomDateRange(),
   );
@@ -446,6 +447,7 @@ export function KajiApp() {
       const data = await apiFetch<StatsResponse>(`/api/stats?${params.toString()}`, { cache: "no-store" });
       if (requestId !== statsRequestIdRef.current) return;
       setStats(data);
+      setStatsAnimationSeed((prev) => prev + 1);
     } finally {
       if (requestId === statsRequestIdRef.current) {
         setStatsLoading(false);
@@ -1343,6 +1345,7 @@ export function KajiApp() {
             stats={stats}
             activePeriod={statsPeriod}
             isLoading={statsLoading}
+            animationSeed={statsAnimationSeed}
             customDateRange={customDateRange}
             userColors={(() => {
               const map = new Map<string, string>();
