@@ -2318,7 +2318,7 @@ export function KajiApp() {
         </div>
       </BottomSheet>
 
-      <BottomSheet open={customIconOpen} onClose={() => setCustomIconOpen(false)} title="">
+      <BottomSheet open={customIconOpen} onClose={() => setCustomIconOpen(false)} title="" maxHeightClassName="max-h-[92vh]">
         {editingChore ? (
           <CustomIconPicker
             value={editingChore}

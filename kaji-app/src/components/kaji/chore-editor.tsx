@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Loader2, Minus, Plus, Trash2 } from "lucide-react";
 
 import {
@@ -99,6 +99,8 @@ export function ChoreEditor({
   );
   const iconViewportRef = useRef<HTMLDivElement | null>(null);
   const lastCustomIconTapRef = useRef<{ id: string; at: number; count: number } | null>(null);
+  const iconTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const iconSwipeLockRef = useRef(false);
   const [activeIconPage, setActiveIconPage] = useState(0);
   const [deleteArmedCustomIconId, setDeleteArmedCustomIconId] = useState<string | null>(null);
   const selectableIcons = useMemo<SelectableIconOption[]>(
@@ -247,15 +249,42 @@ export function ChoreEditor({
           <div
             ref={iconViewportRef}
             onScroll={(e) => {
+              if (iconSwipeLockRef.current) return;
               const node = e.currentTarget;
               const next = Math.round(node.scrollLeft / node.clientWidth);
               setActiveIconPage(Math.max(0, Math.min(iconPages.length - 1, next)));
             }}
-            className="snap-x snap-mandatory overflow-x-auto"
+            onTouchStart={(e) => {
+              const touch = e.touches[0];
+              if (!touch) return;
+              iconTouchStartRef.current = { x: touch.clientX, y: touch.clientY };
+            }}
+            onTouchEnd={() => {
+              iconTouchStartRef.current = null;
+            }}
+            onTouchMove={(e) => {
+              const start = iconTouchStartRef.current;
+              const touch = e.touches[0];
+              if (!start || !touch) return;
+              const dx = touch.clientX - start.x;
+              const dy = touch.clientY - start.y;
+              if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
+                iconTouchStartRef.current = null;
+                const node = iconViewportRef.current;
+                if (!node) return;
+                const direction = dx < 0 ? 1 : -1;
+                const nextPage = Math.max(0, Math.min(iconPages.length - 1, displayActiveIconPage + direction));
+                iconSwipeLockRef.current = true;
+                setActiveIconPage(nextPage);
+                node.scrollTo({ left: nextPage * node.clientWidth, behavior: "smooth" });
+                setTimeout(() => { iconSwipeLockRef.current = false; }, 350);
+              }
+            }}
+            className="overflow-x-hidden touch-pan-y"
           >
-            <div className="flex gap-3">
+            <div className="flex">
               {iconPages.map((page, pageIndex) => (
-                <div key={`icon-page-${pageIndex}`} className="w-full shrink-0 snap-start">
+                <div key={`icon-page-${pageIndex}`} className="w-full shrink-0">
                   <div className="grid grid-cols-3 gap-2">
                     {page.map((option) => {
                       const Icon = iconByName(option.icon);
@@ -434,8 +463,20 @@ export function CustomIconPicker({
 }) {
   const iconPages = useMemo(() => getIconPages(), []);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const swipeLockRef = useRef(false);
   const [activePage, setActivePage] = useState(0);
   const [customName, setCustomName] = useState("");
+
+  const scrollToPage = useCallback((page: number) => {
+    const node = viewportRef.current;
+    if (!node) return;
+    const clamped = Math.max(0, Math.min(iconPages.length - 1, page));
+    swipeLockRef.current = true;
+    setActivePage(clamped);
+    node.scrollTo({ left: clamped * node.clientWidth, behavior: "smooth" });
+    setTimeout(() => { swipeLockRef.current = false; }, 350);
+  }, [iconPages.length]);
 
   return (
     <div className="space-y-[10px] pb-2">
@@ -452,16 +493,37 @@ export function CustomIconPicker({
         <div
           ref={viewportRef}
           onScroll={(e) => {
+            if (swipeLockRef.current) return;
             const node = e.currentTarget;
             const next = Math.round(node.scrollLeft / node.clientWidth);
             setActivePage(Math.max(0, Math.min(iconPages.length - 1, next)));
           }}
-          className="snap-x snap-mandatory overflow-x-auto"
+          onTouchStart={(e) => {
+            const touch = e.touches[0];
+            if (!touch) return;
+            touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+          }}
+          onTouchEnd={() => {
+            touchStartRef.current = null;
+          }}
+          onTouchMove={(e) => {
+            const start = touchStartRef.current;
+            const touch = e.touches[0];
+            if (!start || !touch) return;
+            const dx = touch.clientX - start.x;
+            const dy = touch.clientY - start.y;
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
+              touchStartRef.current = null;
+              const direction = dx < 0 ? 1 : -1;
+              scrollToPage(activePage + direction);
+            }
+          }}
+          className="overflow-x-hidden touch-pan-y"
         >
-          <div className="flex gap-3">
+          <div className="flex">
             {iconPages.map((page, pageIndex) => (
-              <div key={pageIndex} className="w-full shrink-0 snap-start">
-                <div className="grid grid-cols-6 gap-2">
+              <div key={pageIndex} className="w-full shrink-0">
+                <div className="grid grid-cols-4 gap-2">
                   {page.slice(0, ICONS_PER_PAGE).map((iconName) => {
                     const Icon = iconByName(iconName);
                     const selected = value.icon === iconName;
@@ -470,10 +532,10 @@ export function CustomIconPicker({
                         key={iconName}
                         type="button"
                         onClick={() => onChange({ ...value, icon: iconName })}
-                        className={`flex h-[36px] w-[36px] items-center justify-center rounded-[10px] border ${selected ? "border-[#1A9BE8] bg-[#EEF3FF]" : "border-[#DADCE0] bg-white"
+                        className={`flex aspect-square w-full items-center justify-center rounded-[12px] border ${selected ? "border-[#1A9BE8] bg-[#EEF3FF]" : "border-[#DADCE0] bg-white"
                           }`}
                       >
-                        <Icon size={14} color="#202124" />
+                        <Icon size={24} color="#202124" />
                       </button>
                     );
                   })}
