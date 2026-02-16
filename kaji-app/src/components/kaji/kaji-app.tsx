@@ -1605,6 +1605,10 @@ export function KajiApp() {
                 const isAssigned = assignmentUser
                   ? effectiveUserId === assignmentUser
                   : false;
+                const effectiveUser = effectiveUserId ? boot.users.find((u) => u.id === effectiveUserId) : null;
+                const effectiveColor = effectiveUser?.color || "#202124";
+                const checkboxColor = isAssigned ? (effectiveUser?.color || "#1A9BE8") : "#DADCE0";
+
                 return (
                   <button
                     key={chore.id}
@@ -1646,43 +1650,24 @@ export function KajiApp() {
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[#F1F3F4]" : ""}`}
                   >
-                    <span className={`material-symbols-rounded text-[20px] ${isAssigned ? (isDefaultOnly ? "text-[#93CDEE]" : "text-[#1A9BE8]") : "text-[#DADCE0]"}`}>
+                    <span
+                      className="material-symbols-rounded text-[20px]"
+                      style={{ color: checkboxColor }}
+                    >
                       {isAssigned ? "check_box" : "check_box_outline_blank"}
                     </span>
-                    <span className="flex-1 flex items-center gap-1 text-[13.5px] font-medium text-[#202124] min-w-0">
+                    <span
+                      className="flex-1 flex items-center gap-1 text-[13.5px] font-medium min-w-0"
+                      style={{ color: effectiveUserId ? effectiveColor : "#202124" }}
+                    >
                       <span className="truncate">{chore.title}</span>
                       {chore.isOverdue && <Flame size={12} className="fill-orange-500 text-orange-500 flex-shrink-0" />}
                     </span>
-                    {isDefaultOnly && effectiveUserName ? (
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-[#9AA0A6]">
-                        <span className="text-[10px] text-[#93CDEE]">デフォルト </span>
-                        {effectiveUserId ? (() => {
-                          const u = boot?.users.find((user) => user.id === effectiveUserId);
-                          const color = u?.color ?? "#9AA0A6";
-                          return (
-                            <span className="flex items-center gap-0.5" style={{ color }}>
-                              <User size={11} strokeWidth={2.5} />
-                              {effectiveUserName}
-                            </span>
-                          );
-                        })() : (
-                          <>👤 {effectiveUserName}</>
-                        )}
+                    {!effectiveUserId && (
+                      <span className="shrink-0 rounded-full bg-[#BDC1C6] px-2 py-[2px] text-[10px] font-bold text-white">
+                        未設定
                       </span>
-                    ) : effectiveUserName && !isAssigned ? (
-                      effectiveUserId ? (() => {
-                        const u = boot?.users.find((user) => user.id === effectiveUserId);
-                        const color = u?.color ?? "#9AA0A6";
-                        return (
-                          <span className="flex items-center gap-0.5 text-[11px] font-medium" style={{ color }}>
-                            <User size={11} strokeWidth={2.5} />
-                            {effectiveUserName}
-                          </span>
-                        );
-                      })() : (
-                        <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {effectiveUserName}</span>
-                      )
-                    ) : null}
+                    )}
                   </button>
                 );
               })}
