@@ -8,6 +8,7 @@ import {
   Loader2,
   Plus,
   User,
+  Flame,
   Users,
 } from "lucide-react";
 
@@ -1648,13 +1649,39 @@ export function KajiApp() {
                     <span className={`material-symbols-rounded text-[20px] ${isAssigned ? (isDefaultOnly ? "text-[#93CDEE]" : "text-[#1A9BE8]") : "text-[#DADCE0]"}`}>
                       {isAssigned ? "check_box" : "check_box_outline_blank"}
                     </span>
-                    <span className="flex-1 text-[13.5px] font-medium text-[#202124]">{chore.title}</span>
+                    <span className="flex-1 flex items-center gap-1 text-[13.5px] font-medium text-[#202124] min-w-0">
+                      <span className="truncate">{chore.title}</span>
+                      {chore.isOverdue && <Flame size={12} className="fill-orange-500 text-orange-500 flex-shrink-0" />}
+                    </span>
                     {isDefaultOnly && effectiveUserName ? (
-                      <span className="text-[11px] font-medium text-[#9AA0A6]">
-                        <span className="text-[10px] text-[#93CDEE]">デフォルト </span>👤 {effectiveUserName}
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-[#9AA0A6]">
+                        <span className="text-[10px] text-[#93CDEE]">デフォルト </span>
+                        {effectiveUserId ? (() => {
+                          const u = boot?.users.find((user) => user.id === effectiveUserId);
+                          const color = u?.color ?? "#9AA0A6";
+                          return (
+                            <span className="flex items-center gap-0.5" style={{ color }}>
+                              <User size={11} strokeWidth={2.5} />
+                              {effectiveUserName}
+                            </span>
+                          );
+                        })() : (
+                          <>👤 {effectiveUserName}</>
+                        )}
                       </span>
                     ) : effectiveUserName && !isAssigned ? (
-                      <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {effectiveUserName}</span>
+                      effectiveUserId ? (() => {
+                        const u = boot?.users.find((user) => user.id === effectiveUserId);
+                        const color = u?.color ?? "#9AA0A6";
+                        return (
+                          <span className="flex items-center gap-0.5 text-[11px] font-medium" style={{ color }}>
+                            <User size={11} strokeWidth={2.5} />
+                            {effectiveUserName}
+                          </span>
+                        );
+                      })() : (
+                        <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {effectiveUserName}</span>
+                      )
                     ) : null}
                   </button>
                 );
@@ -2154,7 +2181,7 @@ export function KajiApp() {
 
           {assignmentMounted ? (
             <div
-              className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-28 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
+              className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-20 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
             >
               {error ? <div className="mb-4 mt-5 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
               <div className={`space-y-4 ${error ? "pt-2" : "pt-5"}`}>
@@ -2172,19 +2199,26 @@ export function KajiApp() {
                   </div>
 
                   <div className="flex gap-2">
-                    {(boot?.users ?? []).map((u) => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => setAssignmentUser(assignmentUser === u.id ? null : u.id)}
-                        className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${assignmentUser === u.id
-                          ? "bg-[#1A9BE8] text-white"
-                          : "border border-[#DADCE0] bg-white text-[#5F6368]"
-                          }`}
-                      >
-                        {u.name}
-                      </button>
-                    ))}
+                    {(boot?.users ?? []).map((u) => {
+                      const isSelected = assignmentUser === u.id;
+                      const userColor = u.color ?? "#1A9BE8";
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => setAssignmentUser(isSelected ? null : u.id)}
+                          className={`rounded-2xl px-4 py-2 text-[13px] font-bold transition-colors ${isSelected ? "text-white" : "border text-[#5F6368]"
+                            }`}
+                          style={
+                            isSelected
+                              ? { backgroundColor: userColor, borderColor: userColor }
+                              : { backgroundColor: "white", borderColor: "#DADCE0" }
+                          }
+                        >
+                          {u.name}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   <div className="flex gap-1 rounded-xl bg-[#F1F3F4] p-1">
