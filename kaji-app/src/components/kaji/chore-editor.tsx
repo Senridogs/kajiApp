@@ -270,11 +270,10 @@ export function ChoreEditor({
                           <button
                             type="button"
                             onClick={(event) => handleSelectIcon(option, event.timeStamp)}
-                            className={`flex w-full items-center justify-center gap-1.5 rounded-xl border px-[10px] py-[9px] ${
-                              selected
-                                ? "border-[#BFD6FF] bg-[#EEF3FF]"
-                                : "border-[#DADCE0] bg-[#F8F9FA]"
-                            }`}
+                            className={`flex w-full items-center justify-center gap-1.5 rounded-xl border px-[10px] py-[9px] ${selected
+                              ? "border-[#BFD6FF] bg-[#EEF3FF]"
+                              : "border-[#DADCE0] bg-[#F8F9FA]"
+                              }`}
                           >
                             <Icon size={14} color={option.iconColor} />
                             <span className="truncate text-[13.2px] font-bold" style={{ color: option.iconColor }}>
@@ -323,11 +322,10 @@ export function ChoreEditor({
           <button
             type="button"
             onClick={onOpenCustomIcon}
-            className={`w-full rounded-xl border px-3 py-[10px] text-[13.2px] font-bold ${
-              isCustomIconSelected
-                ? "border-[#BFD6FF] bg-[#EEF3FF] text-[#1A9BE8]"
-                : "border-[#DADCE0] bg-white text-[#5F6368]"
-            }`}
+            className={`w-full rounded-xl border px-3 py-[10px] text-[13.2px] font-bold ${isCustomIconSelected
+              ? "border-[#BFD6FF] bg-[#EEF3FF] text-[#1A9BE8]"
+              : "border-[#DADCE0] bg-white text-[#5F6368]"
+              }`}
           >
             ＋ カスタムアイコン
           </button>
@@ -344,14 +342,12 @@ export function ChoreEditor({
             <p className="text-[13px] font-bold text-[#202124]">大仕事として扱う</p>
           </div>
           <div
-            className={`relative h-6 w-[42px] rounded-xl ${
-              value.isBigTask ? "bg-[#33C28A]" : "bg-[#E8EAED]"
-            }`}
+            className={`relative h-6 w-[42px] rounded-xl ${value.isBigTask ? "bg-[#33C28A]" : "bg-[#E8EAED]"
+              }`}
           >
             <div
-              className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white transition-all ${
-                value.isBigTask ? "left-[21px]" : "left-[3px]"
-              }`}
+              className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white transition-all ${value.isBigTask ? "left-[21px]" : "left-[3px]"
+                }`}
             />
           </div>
         </button>
@@ -371,11 +367,10 @@ export function ChoreEditor({
                     defaultAssigneeId: value.defaultAssigneeId === u.id ? null : u.id,
                   })
                 }
-                className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${
-                  value.defaultAssigneeId === u.id
-                    ? "bg-[#1A9BE8] text-white"
-                    : "border border-[#DADCE0] bg-white text-[#5F6368]"
-                }`}
+                className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${value.defaultAssigneeId === u.id
+                  ? "bg-[#1A9BE8] text-white"
+                  : "border border-[#DADCE0] bg-white text-[#5F6368]"
+                  }`}
               >
                 {u.name}
               </button>
@@ -383,11 +378,10 @@ export function ChoreEditor({
             <button
               type="button"
               onClick={() => onChange({ ...value, defaultAssigneeId: null })}
-              className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${
-                !value.defaultAssigneeId
-                  ? "bg-[#F1F3F4] text-[#202124]"
-                  : "border border-[#DADCE0] bg-white text-[#5F6368]"
-              }`}
+              className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${!value.defaultAssigneeId
+                ? "bg-[#F1F3F4] text-[#202124]"
+                : "border border-[#DADCE0] bg-white text-[#5F6368]"
+                }`}
             >
               なし
             </button>
@@ -400,9 +394,8 @@ export function ChoreEditor({
           type="button"
           onClick={onSave}
           disabled={!canSave}
-          className={`w-full rounded-[14px] px-[14px] py-[12px] text-[15.6px] font-bold text-white ${
-            canSave ? "bg-[#1A9BE8]" : "cursor-not-allowed bg-[#B6C8D6]"
-          }`}
+          className={`w-full rounded-[14px] px-[14px] py-[12px] text-[15.6px] font-bold text-white ${canSave ? "bg-[#1A9BE8]" : "cursor-not-allowed bg-[#B6C8D6]"
+            }`}
         >
           {isSaving ? (
             <span className="inline-flex items-center gap-2">
@@ -437,7 +430,7 @@ export function CustomIconPicker({
 }: {
   value: ChoreForm;
   onChange: (next: ChoreForm) => void;
-  onApply: (next: CustomIconOption) => void;
+  onApply: (next: Omit<CustomIconOption, "id">) => void | Promise<void>;
 }) {
   const iconPages = useMemo(() => getIconPages(), []);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -477,9 +470,8 @@ export function CustomIconPicker({
                         key={iconName}
                         type="button"
                         onClick={() => onChange({ ...value, icon: iconName })}
-                        className={`flex h-[36px] w-[36px] items-center justify-center rounded-[10px] border ${
-                          selected ? "border-[#1A9BE8] bg-[#EEF3FF]" : "border-[#DADCE0] bg-white"
-                        }`}
+                        className={`flex h-[36px] w-[36px] items-center justify-center rounded-[10px] border ${selected ? "border-[#1A9BE8] bg-[#EEF3FF]" : "border-[#DADCE0] bg-white"
+                          }`}
                       >
                         <Icon size={14} color="#202124" />
                       </button>
@@ -558,7 +550,6 @@ export function CustomIconPicker({
         type="button"
         onClick={() =>
           onApply({
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             label: customName.trim() || "カスタム",
             icon: value.icon,
             iconColor: value.iconColor,

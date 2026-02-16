@@ -19,6 +19,7 @@ export async function GET() {
       assignments: [],
       householdInviteCode: null,
       notificationSettings: null,
+      customIcons: [],
     });
   }
 
@@ -53,10 +54,11 @@ export async function GET() {
       assignments: [],
       householdInviteCode: null,
       notificationSettings: null,
+      customIcons: [],
     });
   }
 
-  const [chores, assignments] = await Promise.all([
+  const [chores, assignments, customIcons] = await Promise.all([
     prisma.chore.findMany({
       where: {
         householdId: household.id,
@@ -78,6 +80,11 @@ export async function GET() {
       },
       include: { user: { select: { id: true, name: true } } },
       orderBy: { date: "asc" },
+    }),
+    prisma.customIcon.findMany({
+      where: { householdId: household.id },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, label: true, icon: true, iconColor: true, bgColor: true },
     }),
   ]);
 
@@ -105,5 +112,6 @@ export async function GET() {
       remindDailyIfOverdue: household.remindDailyIfOverdue,
       notifyCompletion: household.notifyCompletion,
     },
+    customIcons,
   });
 }

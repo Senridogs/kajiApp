@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { maxCount } from "@/components/kaji/helpers";
@@ -119,7 +119,14 @@ export function StatsView({
   const [choreAnimationReady, setChoreAnimationReady] = useState(false);
   const [choreAnimationTrigger, setChoreAnimationTrigger] = useState(0);
 
+  // Track which animationSeed has already been animated so that revisiting
+  // the stats tab doesn't replay the same animation.
+  const lastAnimatedSeedRef = useRef<number>(-1);
+  const balanceHasAnimatedRef = useRef(false);
+  const choreHasAnimatedRef = useRef(false);
+
   const triggerBalanceAnimation = useCallback(() => {
+    balanceHasAnimatedRef.current = false;
     setBalanceAnimationReady(false);
     setBalanceAnimationTrigger((prev) => prev + 1);
   }, []);
@@ -163,7 +170,22 @@ export function StatsView({
   useEffect(() => {
     onBalanceSwipeActiveChange?.(balanceDragging);
   }, [balanceDragging, onBalanceSwipeActiveChange]);
+  // Reset the "has animated" flags when the seed actually changes (new data loaded)
+  useEffect(() => {
+    if (animationSeed !== lastAnimatedSeedRef.current) {
+      balanceHasAnimatedRef.current = false;
+      choreHasAnimatedRef.current = false;
+      lastAnimatedSeedRef.current = animationSeed;
+    }
+  }, [animationSeed]);
+
   useLayoutEffect(() => {
+    // If the balance chart has already animated for this seed + tab,
+    // skip the animation and show the final state immediately.
+    if (balanceHasAnimatedRef.current) {
+      setBalanceAnimationReady(true);
+      return;
+    }
     setBalanceAnimationReady(false);
     let frame2: number | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -171,6 +193,7 @@ export function StatsView({
       frame2 = requestAnimationFrame(() => {
         timer = setTimeout(() => {
           setBalanceAnimationReady(true);
+          balanceHasAnimatedRef.current = true;
         }, CHARTS_ZERO_HOLD_MS);
       });
     });
@@ -186,6 +209,12 @@ export function StatsView({
   }, [stats, activePeriod, balanceTab, animationSeed, balanceAnimationTrigger]);
 
   useLayoutEffect(() => {
+    // If the chore bars have already animated for this seed,
+    // skip the animation and show the final state immediately.
+    if (choreHasAnimatedRef.current) {
+      setChoreAnimationReady(true);
+      return;
+    }
     setChoreAnimationReady(false);
     let frame2: number | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -193,6 +222,7 @@ export function StatsView({
       frame2 = requestAnimationFrame(() => {
         timer = setTimeout(() => {
           setChoreAnimationReady(true);
+          choreHasAnimatedRef.current = true;
         }, CHARTS_ZERO_HOLD_MS);
       });
     });
@@ -400,7 +430,7 @@ export function StatsView({
 
       <div className="space-y-3 rounded-2xl bg-white p-4">
         <h3 className="text-[19px] font-bold text-[#202124]">各タスクごと詳細</h3>
-        <p className="text-[12px] font-semibold text-[#EA4335]">※ 赤い※マークは大仕事です</p>
+        <p className="text-[12px] font-semibold text-[#EA4335]">※大仕事</p>
         <div className="flex flex-wrap gap-3">
           {users.map((user, idx) => {
             const color = userColorMap.get(user.userId) ?? USER_COLORS[idx % USER_COLORS.length];

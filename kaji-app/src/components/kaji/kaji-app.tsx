@@ -74,7 +74,6 @@ type AssignmentTabKey = "daily" | "big";
 const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily", "big"] as const;
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
-const CUSTOM_ICONS_STORAGE_KEY = "kaji_custom_icons";
 const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
 const APP_UPDATE_TARGET_TAB_STORAGE_KEY = "kaji_app_update_target_tab";
 type PendingSwipeDelete = {
@@ -455,6 +454,7 @@ export function KajiApp() {
     setBoot(data);
     setAssignments(data.assignments ?? []);
     setNotificationSettings(data.notificationSettings);
+    setCustomIcons(data.customIcons ?? []);
     return data;
   }, []);
 
@@ -689,27 +689,25 @@ export function KajiApp() {
     })();
   }, [refreshAll]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(CUSTOM_ICONS_STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as CustomIconOption[];
-      if (Array.isArray(parsed)) {
-        setCustomIcons(parsed);
-      }
-    } catch {
-      window.localStorage.removeItem(CUSTOM_ICONS_STORAGE_KEY);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(CUSTOM_ICONS_STORAGE_KEY, JSON.stringify(customIcons));
-  }, [customIcons]);
-
   const handleDeleteCustomIcon = useCallback((customIconId: string) => {
     setCustomIcons((prev) => prev.filter((icon) => icon.id !== customIconId));
+    apiFetch(`/api/custom-icons/${customIconId}`, { method: "DELETE" }).catch(() => {
+      // Reload on failure to restore state
+      void loadBootstrap();
+    });
+  }, [loadBootstrap]);
+
+  const handleAddCustomIcon = useCallback(async (icon: Omit<CustomIconOption, "id">) => {
+    try {
+      const result = await apiFetch<{ icon: CustomIconOption }>("/api/custom-icons", {
+        method: "POST",
+        body: JSON.stringify(icon),
+      });
+      setCustomIcons((prev) => [...prev, result.icon]);
+      return result.icon;
+    } catch {
+      return null;
+    }
   }, []);
 
   useEffect(() => {
@@ -2296,7 +2294,7 @@ export function KajiApp() {
         title=""
         maxHeightClassName="max-h-[92vh]"
         containerClassName="px-0 pb-4 pt-[10px]"
-        scrollable={false}
+        scrollable={true}
       >
         <div className="space-y-[14px] px-5 pb-1">
           <p className="text-center text-[24px] font-bold text-[#202124]">
@@ -2325,18 +2323,20 @@ export function KajiApp() {
           <CustomIconPicker
             value={editingChore}
             onChange={setEditingChore}
-            onApply={(added) => {
-              setCustomIcons((prev) => [...prev, added]);
-              setEditingChore((prev) =>
-                prev
-                  ? {
-                    ...prev,
-                    icon: added.icon,
-                    iconColor: added.iconColor,
-                    bgColor: added.bgColor,
-                  }
-                  : prev,
-              );
+            onApply={async (iconData) => {
+              const saved = await handleAddCustomIcon(iconData);
+              if (saved) {
+                setEditingChore((prev) =>
+                  prev
+                    ? {
+                      ...prev,
+                      icon: saved.icon,
+                      iconColor: saved.iconColor,
+                      bgColor: saved.bgColor,
+                    }
+                    : prev,
+                );
+              }
               setCustomIconOpen(false);
             }}
           />

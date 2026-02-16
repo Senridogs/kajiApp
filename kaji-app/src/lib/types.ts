@@ -78,5 +78,6 @@ export type BootstrapResponse = {
   upcomingBigChores: ChoreWithComputed[];
   assignments: ChoreAssignmentEntry[];
   notificationSettings: NotificationSettings | null;
+  customIcons: Array<{ id: string; label: string; icon: string; iconColor: string; bgColor: string }>;
   needsRegistration: boolean;
 };

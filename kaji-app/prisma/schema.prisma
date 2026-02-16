@@ -20,6 +20,20 @@ model Household {
   chores               Chore[]
   records              ChoreRecord[]
   subscriptions        PushSubscription[]
+  customIcons          CustomIcon[]
+}
+
+model CustomIcon {
+  id          String    @id @default(cuid())
+  householdId String
+  label       String
+  icon        String
+  iconColor   String
+  bgColor     String
+  createdAt   DateTime  @default(now())
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
 }
 
 model User {
