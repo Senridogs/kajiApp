@@ -1569,9 +1569,21 @@ export function KajiApp() {
                     onClick={() => {
                       if (!assignmentUser) return;
                       const newUserId = isAssigned ? null : assignmentUser;
+                      // デフォルト担当者のチェックを外す
                       if (isDefaultOnly && isAssigned) {
                         setClearedDefaults((prev) => { const next = new Set(prev); next.add(clearKey); return next; });
-                      } else if (newUserId) {
+                        apiFetch("/api/assignments", {
+                          method: "POST",
+                          body: JSON.stringify({ choreId: chore.id, userId: null, date: dateKey }),
+                        }).catch(() => setError("担当の保存に失敗しました。"));
+                        return;
+                      }
+                      // デフォルト担当者を再チェック → clearedから削除するだけ
+                      if (isCleared && newUserId === chore.defaultAssigneeId) {
+                        setClearedDefaults((prev) => { const next = new Set(prev); next.delete(clearKey); return next; });
+                        return;
+                      }
+                      if (newUserId) {
                         setClearedDefaults((prev) => { const next = new Set(prev); next.delete(clearKey); return next; });
                       }
                       startTransition(() => {
