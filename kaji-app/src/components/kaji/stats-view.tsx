@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { maxCount } from "@/components/kaji/helpers";
@@ -66,19 +66,11 @@ function buildPieData(users: StatsUserCount[], userColorMap: Map<string, string>
 function buildPieAnimationState(slice: PieSlice, sliceIdx: number, animated: boolean): PieAnimationState {
   const fullLength = slice.ratio * 100;
   const currentLength = animated ? fullLength : 0;
-
-  if (sliceIdx % 2 === 0) {
-    return {
-      dasharray: `${currentLength} ${100 - currentLength}`,
-      dashoffset: `${-slice.start * 100}`,
-    };
-  }
-
-  // Alternate slices grow from the opposite edge, so the arc expands in reverse direction.
-  const reverseStart = slice.start * 100 + (fullLength - currentLength);
+  const anchorStart = sliceIdx % 2 === 0 ? 0 : 50;
+  const currentStart = animated ? slice.start * 100 : anchorStart;
   return {
     dasharray: `${currentLength} ${100 - currentLength}`,
-    dashoffset: `${-reverseStart}`,
+    dashoffset: `${-currentStart}`,
   };
 }
 
@@ -108,6 +100,12 @@ export function StatsView({
   const [customEditorOpen, setCustomEditorOpen] = useState(false);
   const [balanceTab, setBalanceTab] = useState<BalanceTabKey>("all");
   const [chartsAnimationReady, setChartsAnimationReady] = useState(false);
+  const [chartsAnimationTrigger, setChartsAnimationTrigger] = useState(0);
+
+  const triggerChartsAnimation = useCallback(() => {
+    setChartsAnimationReady(false);
+    setChartsAnimationTrigger((prev) => prev + 1);
+  }, []);
 
   const users = stats?.userCounts ?? [];
   const bigTaskUsers = stats?.bigTaskUserCounts ?? [];
@@ -132,7 +130,10 @@ export function StatsView({
   const balanceSwipe = useSwipeTab<BalanceTabKey>({
     tabs: BALANCE_TAB_KEYS,
     activeTab: balanceTab,
-    onChangeTab: setBalanceTab,
+    onChangeTab: (tab) => {
+      triggerChartsAnimation();
+      setBalanceTab(tab);
+    },
     threshold: 56,
     dominanceRatio: 1.15,
     lockDistance: 12,
@@ -142,13 +143,21 @@ export function StatsView({
   useEffect(() => {
     onBalanceSwipeActiveChange?.(balanceDragging);
   }, [balanceDragging, onBalanceSwipeActiveChange]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     setChartsAnimationReady(false);
-    const frame = requestAnimationFrame(() => {
-      setChartsAnimationReady(true);
+    let frame2: number | null = null;
+    const frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => {
+        setChartsAnimationReady(true);
+      });
     });
-    return () => cancelAnimationFrame(frame);
-  }, [stats, activePeriod, balanceTab, animationSeed]);
+    return () => {
+      cancelAnimationFrame(frame1);
+      if (frame2 !== null) {
+        cancelAnimationFrame(frame2);
+      }
+    };
+  }, [stats, activePeriod, balanceTab, animationSeed, chartsAnimationTrigger]);
 
   const balanceByTab: Record<BalanceTabKey, { total: number; pie: PieSlice[] }> = {
     all: {
@@ -185,6 +194,7 @@ export function StatsView({
             key={item.key}
             type="button"
             onClick={() => {
+              triggerChartsAnimation();
               onChangePeriod(item.key);
               setCustomEditorOpen(item.key === "custom");
             }}
@@ -276,7 +286,10 @@ export function StatsView({
             <button
               key={tab.key}
               type="button"
-              onClick={() => setBalanceTab(tab.key)}
+              onClick={() => {
+                triggerChartsAnimation();
+                setBalanceTab(tab.key);
+              }}
               className={`rounded-[10px] px-3 py-1.5 text-[12px] font-bold ${
                 balanceTab === tab.key
                   ? "bg-[#1A9BE8] text-white"
@@ -300,10 +313,11 @@ export function StatsView({
               return (
                 <div key={tabKey} className="w-full shrink-0">
                   <div className="flex items-center gap-3">
-                    <svg viewBox="0 0 42 42" className="h-[120px] w-[120px] -rotate-90">
+                    <svg viewBox="0 0 42 42" className="h-[120px] w-[120px]">
                       <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E8EAED" strokeWidth="10" />
                       {tabData.pie.map((slice, sliceIdx) => {
-                        const pieAnim = buildPieAnimationState(slice, sliceIdx, chartsAnimationReady);
+                        const pieAnimated = tabKey === balanceTab ? chartsAnimationReady : true;
+                        const pieAnim = buildPieAnimationState(slice, sliceIdx, pieAnimated);
                         return (
                           <circle
                             key={`${tabKey}-${slice.userId}`}
@@ -313,6 +327,7 @@ export function StatsView({
                             fill="none"
                             stroke={slice.color}
                             strokeWidth="10"
+                            strokeLinecap="round"
                             style={{
                               strokeDasharray: pieAnim.dasharray,
                               strokeDashoffset: pieAnim.dashoffset,

@@ -76,6 +76,7 @@ type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
 const CUSTOM_ICONS_STORAGE_KEY = "kaji_custom_icons";
 const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
+const APP_UPDATE_TARGET_TAB_STORAGE_KEY = "kaji_app_update_target_tab";
 const APP_STARTUP_UPDATE_DONE_STORAGE_KEY = "kaji_app_startup_update_done";
 type PendingSwipeDelete = {
   toastId: string;
@@ -242,7 +243,15 @@ export function KajiApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<TabKey>("home");
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    if (typeof window === "undefined") return "home";
+    const storedTab = window.sessionStorage.getItem(APP_UPDATE_TARGET_TAB_STORAGE_KEY);
+    if (storedTab && TAB_ORDER.includes(storedTab as TabKey)) {
+      window.sessionStorage.removeItem(APP_UPDATE_TARGET_TAB_STORAGE_KEY);
+      return storedTab as TabKey;
+    }
+    return "home";
+  });
 
   const [records, setRecords] = useState<
     Array<{
@@ -332,7 +341,7 @@ export function KajiApp() {
     minFlickDistance: 42,
     transitionDurationMs: 220,
     requireDirectionalHalfStart: true,
-    centerDeadZoneRatio: 1 / 3,
+    centerDeadZoneRatio: 0,
   });
   const handleListDeleteSwipeActiveChange = useCallback((active: boolean) => {
     setListDeleteSwipeActive(active);
@@ -494,9 +503,14 @@ export function KajiApp() {
     [loadBootstrap, loadHistory, loadStats],
   );
 
-  const reloadAppForLatestUpdate = useCallback(() => {
+  const reloadAppForLatestUpdate = useCallback((options?: { showNotice?: boolean; targetTab?: TabKey }) => {
     if (typeof window === "undefined") return;
-    window.sessionStorage.setItem(APP_UPDATE_NOTICE_STORAGE_KEY, "1");
+    if (options?.showNotice) {
+      window.sessionStorage.setItem(APP_UPDATE_NOTICE_STORAGE_KEY, "1");
+    }
+    if (options?.targetTab) {
+      window.sessionStorage.setItem(APP_UPDATE_TARGET_TAB_STORAGE_KEY, options.targetTab);
+    }
     window.location.reload();
   }, []);
 
@@ -523,7 +537,11 @@ export function KajiApp() {
       } catch {
         // SW更新に失敗した場合でも通常のリロードで最新化を試みる
       } finally {
-        reloadAppForLatestUpdate();
+        reloadAppForLatestUpdate(
+          reason === "manual"
+            ? { showNotice: true, targetTab: "settings" }
+            : { showNotice: false },
+        );
         if (reason === "manual") {
           setAppUpdateLoading(false);
         }
@@ -566,6 +584,10 @@ export function KajiApp() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(CUSTOM_ICONS_STORAGE_KEY, JSON.stringify(customIcons));
   }, [customIcons]);
+
+  const handleDeleteCustomIcon = useCallback((customIconId: string) => {
+    setCustomIcons((prev) => prev.filter((icon) => icon.id !== customIconId));
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -619,6 +641,11 @@ export function KajiApp() {
       setPullDistance(0);
     }
   }, [assignmentOpen, pullRefreshing]);
+
+  useEffect(() => {
+    if (activeTab !== "stats") return;
+    setStatsAnimationSeed((prev) => prev + 1);
+  }, [activeTab]);
 
   const setRecordUpdating = useCallback((choreId: string, isUpdating: boolean) => {
     setRecordUpdatingIds((prev) => {
@@ -1757,7 +1784,6 @@ export function KajiApp() {
             onTouchEnd={handleMainScrollTouchEnd}
             onTouchCancel={handleMainScrollTouchCancel}
           >
-            {infoMessage ? <div className="mb-4 rounded-xl bg-[#E6F4EA] px-3 py-2 text-sm text-[#137333]">{infoMessage}</div> : null}
             {error ? <div className="mb-4 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
             <div className="relative min-h-full overflow-x-hidden">
               <div
@@ -1780,7 +1806,6 @@ export function KajiApp() {
             <div
               className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-28 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
             >
-              {infoMessage ? <div className="mb-4 mt-5 rounded-xl bg-[#E6F4EA] px-3 py-2 text-sm text-[#137333]">{infoMessage}</div> : null}
               {error ? <div className="mb-4 mt-5 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
               <div className={`space-y-4 ${error ? "pt-2" : "pt-5"}`}>
                 <div className="sticky top-0 z-30 -mx-5 space-y-3 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
@@ -1834,8 +1859,10 @@ export function KajiApp() {
                   className="relative overflow-x-hidden"
                   onTouchStart={(e) => {
                     const touch = e.touches[0];
+                    const containerLeft = e.currentTarget.getBoundingClientRect().left;
                     const startsFromLeftEdge =
-                      touch !== undefined && touch.clientX <= ASSIGNMENT_BACK_SWIPE_EDGE_PX;
+                      touch !== undefined &&
+                      touch.clientX - containerLeft <= ASSIGNMENT_BACK_SWIPE_EDGE_PX;
                     const shouldPreferBackSwipe = assignmentTab === "daily" && startsFromLeftEdge;
 
                     assignmentTabSwipeActiveRef.current = !shouldPreferBackSwipe;
@@ -1897,6 +1924,29 @@ export function KajiApp() {
         />
       ))}
 
+      {infoMessage ? (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/35 px-6 backdrop-blur-[1px]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="更新完了"
+            className="w-full max-w-[320px] rounded-[20px] border border-[#DADCE0] bg-white px-5 py-5 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
+          >
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#E8F3FD]">
+              <span className="material-symbols-rounded text-[24px] text-[#1A9BE8]">check_circle</span>
+            </div>
+            <p className="mt-3 text-center text-[16px] font-bold text-[#202124]">{infoMessage}</p>
+            <button
+              type="button"
+              onClick={() => setInfoMessage("")}
+              className="mt-4 w-full rounded-xl border border-[#1A9BE8] bg-[#1A9BE8] px-3 py-2 text-[14px] font-bold text-white shadow-[0_4px_12px_rgba(26,155,232,0.35)]"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <nav className="fixed bottom-4 left-0 right-0 z-30 mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
           <button type="button" onClick={() => { closeAssignment(); setActiveTab("home"); setRefreshAnimationSeed((p) => p + 1); }} className="flex h-10 w-10 items-center justify-center">
@@ -1943,6 +1993,7 @@ export function KajiApp() {
               onChange={setEditingChore}
               onSave={saveChore}
               onDelete={requestDeleteChore}
+              onDeleteCustomIcon={handleDeleteCustomIcon}
               onOpenCustomIcon={() => setCustomIconOpen(true)}
             />
           ) : null}

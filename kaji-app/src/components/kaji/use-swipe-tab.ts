@@ -154,22 +154,17 @@ export function useSwipeTab<T extends string>({
     (dx: number, startLocalX: number, width: number) => {
       if (!requireDirectionalHalfStart || dx === 0) return true;
       const clampedRatio = clamp(centerDeadZoneRatio, 0, 0.9);
+      const oneThird = width / 3;
+      const twoThirds = (width * 2) / 3;
       const deadZoneHalf = (width * clampedRatio) / 2;
-      const center = width / 2;
-      const leftEdgeMax = center - deadZoneHalf;
-      const rightEdgeMin = center + deadZoneHalf;
+      const leftSwipeMax = twoThirds - deadZoneHalf;
+      const rightSwipeMin = oneThird + deadZoneHalf;
 
-      if (startLocalX > leftEdgeMax && startLocalX < rightEdgeMin) {
-        return false;
-      }
-
-      // Reverse-side start rule:
-      // swipe left  => start from left edge zone
-      // swipe right => start from right edge zone
+      // Keep directional restriction, but allow crossing-center zone.
       if (dx < 0) {
-        return startLocalX <= leftEdgeMax;
+        return startLocalX <= leftSwipeMax;
       }
-      return startLocalX >= rightEdgeMin;
+      return startLocalX >= rightSwipeMin;
     },
     [centerDeadZoneRatio, requireDirectionalHalfStart],
   );

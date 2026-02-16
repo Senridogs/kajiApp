@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Loader2, Minus, Plus } from "lucide-react";
+import { Loader2, Minus, Plus, Trash2 } from "lucide-react";
 
 import {
   BG_COLOR_PALETTE,
@@ -37,6 +37,7 @@ const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const MIN_INTERVAL_DAYS = 1;
 const MAX_INTERVAL_DAYS = 365;
 const ICON_PRESETS_PER_PAGE = 6;
+const CUSTOM_ICON_TAP_WINDOW_MS = 420;
 
 type SelectableIconOption = {
   id: string;
@@ -44,6 +45,7 @@ type SelectableIconOption = {
   icon: string;
   iconColor: string;
   bgColor: string;
+  source: "custom" | "preset";
 };
 
 function toDateInputValueInJst(value: string | null | undefined): string {
@@ -72,6 +74,7 @@ export function ChoreEditor({
   onChange,
   onSave,
   onDelete,
+  onDeleteCustomIcon,
   onOpenCustomIcon,
 }: {
   mode: "create" | "edit";
@@ -83,6 +86,7 @@ export function ChoreEditor({
   onChange: (next: ChoreForm) => void;
   onSave: () => void;
   onDelete: () => void;
+  onDeleteCustomIcon: (id: string) => void;
   onOpenCustomIcon: () => void;
 }) {
   const lastPerformedDate = toDateInputValueInJst(value.lastPerformedAt);
@@ -94,7 +98,9 @@ export function ChoreEditor({
       value.bgColor === custom.bgColor,
   );
   const iconViewportRef = useRef<HTMLDivElement | null>(null);
+  const lastCustomIconTapRef = useRef<{ id: string; at: number; count: number } | null>(null);
   const [activeIconPage, setActiveIconPage] = useState(0);
+  const [deleteArmedCustomIconId, setDeleteArmedCustomIconId] = useState<string | null>(null);
   const selectableIcons = useMemo<SelectableIconOption[]>(
     () => [
       ...customIcons.slice().reverse().map((custom) => ({
@@ -103,6 +109,7 @@ export function ChoreEditor({
         icon: custom.icon,
         iconColor: custom.iconColor,
         bgColor: custom.bgColor,
+        source: "custom" as const,
       })),
       ...QUICK_ICON_PRESETS.map((preset, idx) => ({
         id: `preset-${preset.icon}-${idx}`,
@@ -110,6 +117,7 @@ export function ChoreEditor({
         icon: preset.icon,
         iconColor: preset.iconColor,
         bgColor: preset.bgColor,
+        source: "preset" as const,
       })),
     ],
     [customIcons],
@@ -123,6 +131,37 @@ export function ChoreEditor({
   }, [selectableIcons]);
   const displayActiveIconPage = Math.max(0, Math.min(activeIconPage, iconPages.length - 1));
   const canSave = value.title.trim().length > 0 && Boolean(lastPerformedDate) && !isSaving && !isDeleting;
+
+  const handleSelectIcon = (option: SelectableIconOption, tappedAt: number) => {
+    onChange({
+      ...value,
+      icon: option.icon,
+      iconColor: option.iconColor,
+      bgColor: option.bgColor,
+    });
+
+    if (option.source !== "custom") {
+      lastCustomIconTapRef.current = null;
+      setDeleteArmedCustomIconId(null);
+      return;
+    }
+
+    const lastTap = lastCustomIconTapRef.current;
+    const nextTapCount =
+      lastTap?.id === option.id && tappedAt - lastTap.at <= CUSTOM_ICON_TAP_WINDOW_MS
+        ? lastTap.count + 1
+        : 1;
+
+    if (nextTapCount >= 3) {
+      lastCustomIconTapRef.current = null;
+      setDeleteArmedCustomIconId(null);
+      onDeleteCustomIcon(option.id);
+      return;
+    }
+
+    lastCustomIconTapRef.current = { id: option.id, at: tappedAt, count: nextTapCount };
+    setDeleteArmedCustomIconId(nextTapCount >= 2 ? option.id : null);
+  };
 
   const updateIntervalDays = (delta: number) => {
     const next = Math.min(
@@ -224,29 +263,42 @@ export function ChoreEditor({
                         value.icon === option.icon &&
                         value.iconColor === option.iconColor &&
                         value.bgColor === option.bgColor;
+                      const showDeleteMark =
+                        option.source === "custom" && deleteArmedCustomIconId === option.id;
                       return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() =>
-                            onChange({
-                              ...value,
-                              icon: option.icon,
-                              iconColor: option.iconColor,
-                              bgColor: option.bgColor,
-                            })
-                          }
-                          className={`flex items-center justify-center gap-1.5 rounded-xl border px-[10px] py-[9px] ${
-                            selected
-                              ? "border-[#BFD6FF] bg-[#EEF3FF]"
-                              : "border-[#DADCE0] bg-[#F8F9FA]"
-                          }`}
-                        >
-                          <Icon size={14} color={option.iconColor} />
-                          <span className="truncate text-[13.2px] font-bold" style={{ color: option.iconColor }}>
-                            {option.label}
-                          </span>
-                        </button>
+                        <div key={option.id} className="relative">
+                          <button
+                            type="button"
+                            onClick={(event) => handleSelectIcon(option, event.timeStamp)}
+                            className={`flex w-full items-center justify-center gap-1.5 rounded-xl border px-[10px] py-[9px] ${
+                              selected
+                                ? "border-[#BFD6FF] bg-[#EEF3FF]"
+                                : "border-[#DADCE0] bg-[#F8F9FA]"
+                            }`}
+                          >
+                            <Icon size={14} color={option.iconColor} />
+                            <span className="truncate text-[13.2px] font-bold" style={{ color: option.iconColor }}>
+                              {option.label}
+                            </span>
+                          </button>
+                          {showDeleteMark ? (
+                            <button
+                              type="button"
+                              aria-label="delete-custom-icon"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                lastCustomIconTapRef.current = null;
+                                setDeleteArmedCustomIconId(null);
+                                onDeleteCustomIcon(option.id);
+                              }}
+                              className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/62 backdrop-blur-[1px]"
+                            >
+                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#D45858] text-white shadow-[0_2px_6px_rgba(0,0,0,0.24)]">
+                                <Trash2 size={14} />
+                              </span>
+                            </button>
+                          ) : null}
+                        </div>
                       );
                     })}
                     {Array.from({ length: Math.max(0, ICON_PRESETS_PER_PAGE - page.length) }).map((_, idx) => (
