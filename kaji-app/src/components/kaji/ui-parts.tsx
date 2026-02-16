@@ -77,6 +77,7 @@ export function HomeTaskRow({
   isUpdating?: boolean;
 }) {
   const done = chore.doneToday;
+  const displayDone = done && !isUpdating;
   const title = chore.title;
   const disableRecordAction = isUpdating || (!done && recordDisabled);
   const actorName = done ? (chore.lastPerformerName ?? assigneeName ?? null) : assigneeName;
@@ -110,18 +111,22 @@ export function HomeTaskRow({
           onRecord(chore);
         }}
         aria-label={
-          done
-            ? `${chore.title}の完了を取り消す`
-            : disableRecordAction
-              ? `${chore.title}は明日チェックできません`
-              : `${chore.title}を完了にする`
+          isUpdating
+            ? `${chore.title}を更新中`
+            : done
+              ? `${chore.title}の完了を取り消す`
+              : disableRecordAction
+                ? `${chore.title}は明日チェックできません`
+                : `${chore.title}を完了にする`
         }
         aria-pressed={done}
-        className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${done
-          ? "border-[#33C28A] bg-[#33C28A]"
-          : disableRecordAction
+        className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${isUpdating
             ? "border-[#DADCE0] bg-[#F1F3F4]"
-            : "border-[#C0C6CC] bg-white hover:border-[#1A9BE8]"
+            : done
+              ? "border-[#33C28A] bg-[#33C28A]"
+              : disableRecordAction
+                ? "border-[#DADCE0] bg-[#F1F3F4]"
+                : "border-[#C0C6CC] bg-white hover:border-[#1A9BE8]"
           }`}
       >
         {isUpdating ? (
@@ -411,14 +416,12 @@ export function SwipableListChoreRow({
   return (
     <div className="relative mx-auto w-[95%] overflow-hidden rounded-[14px]">
       <div
-        className={`absolute inset-0 flex items-center justify-end rounded-[14px] px-5 ${
-          pastThreshold ? "bg-[#D45858]" : "bg-[#E88585]"
-        }`}
+        className={`absolute inset-0 flex items-center justify-end rounded-[14px] px-5 ${pastThreshold ? "bg-[#D45858]" : "bg-[#E88585]"
+          }`}
       >
         <div
-          className={`flex items-center gap-1.5 text-white transition-opacity ${
-            showDeleteHint ? "opacity-100" : "opacity-0"
-          }`}
+          className={`flex items-center gap-1.5 text-white transition-opacity ${showDeleteHint ? "opacity-100" : "opacity-0"
+            }`}
         >
           <Trash2 size={18} />
           <span className="text-[13px] font-bold">削除</span>

@@ -179,25 +179,32 @@ export function useSwipeTab<T extends string>({
 
       clearSettleTimer();
 
+      let baseTab = activeTab;
+      if (visual.isAnimating && visual.toTab) {
+        baseTab = visual.toTab;
+        onChangeTab(visual.toTab);
+        resetVisual(visual.toTab);
+      }
+
       startX.current = touch.clientX;
       startY.current = touch.clientY;
       tracking.current.active = true;
       tracking.current.horizontalLocked = false;
       tracking.current.verticalLocked = false;
-      tracking.current.startTab = activeTab;
+      tracking.current.startTab = baseTab;
       tracking.current.startAt = Date.now();
       tracking.current.width = Math.max(1, rect.width || e.currentTarget.clientWidth);
       tracking.current.startLocalX = touch.clientX - rect.left;
 
       setVisual({
-        fromTab: activeTab,
+        fromTab: baseTab,
         toTab: null,
         progress: 0,
         isDragging: false,
         isAnimating: false,
       });
     },
-    [activeTab, clearSettleTimer, disabled],
+    [activeTab, clearSettleTimer, disabled, onChangeTab, resetVisual, visual.isAnimating, visual.toTab],
   );
 
   const onTouchMove = useCallback(

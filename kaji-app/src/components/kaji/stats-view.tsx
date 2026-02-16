@@ -427,18 +427,6 @@ export function StatsView({
                 (userOrderMap.get(a.userId) ?? Number.MAX_SAFE_INTEGER) -
                 (userOrderMap.get(b.userId) ?? Number.MAX_SAFE_INTEGER),
             );
-            const leftUserCount = sortedUserCounts[0] ?? null;
-            const rightUserCount = sortedUserCounts[1] ?? null;
-            const leftRatio = item.count > 0 && leftUserCount ? leftUserCount.count / item.count : 0;
-            const rightRatio = item.count > 0 && rightUserCount ? rightUserCount.count / item.count : 0;
-            const leftWidth = barWidth * leftRatio;
-            const rightWidth = barWidth * rightRatio;
-            const leftColor = leftUserCount
-              ? userColorMap.get(leftUserCount.userId) ?? USER_COLORS[0]
-              : USER_COLORS[0];
-            const rightColor = rightUserCount
-              ? userColorMap.get(rightUserCount.userId) ?? USER_COLORS[1]
-              : USER_COLORS[1];
             return (
               <div key={item.choreId} className="space-y-1.5">
                 <div className="flex items-center gap-2">
@@ -454,52 +442,38 @@ export function StatsView({
                   </div>
                   <div className="relative h-3 flex-1 overflow-hidden rounded-md bg-[#F1F3F4]">
                     {barWidth > 0 ? (
-                      <>
-                        <div
-                          className="absolute left-0 top-0 h-full rounded-md bg-[#80868B]"
-                          style={{
-                            width: `${barWidth}%`,
-                          }}
-                        />
-                        {leftUserCount && leftWidth > 0 ? (
-                          <div
-                            className="absolute left-0 top-0 h-full rounded-l-md"
-                            style={{
-                              width: `${leftWidth}%`,
-                              backgroundColor: leftColor,
-                              transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
-                              transformOrigin: "left center",
-                              transitionProperty: chartsAnimationReady ? "transform" : "none",
-                              transitionDuration: chartsAnimationReady ? "420ms" : "0ms",
-                              transitionTimingFunction: chartsAnimationReady
-                                ? "cubic-bezier(0.2, 0.8, 0.2, 1)"
-                                : "linear",
-                              transitionDelay: chartsAnimationReady
-                                ? `${itemIdx * 64 + BAR_OVERLAY_START_OFFSET_MS}ms`
-                                : "0ms",
-                            }}
-                          />
-                        ) : null}
-                        {rightUserCount && rightWidth > 0 ? (
-                          <div
-                            className="absolute right-0 top-0 h-full rounded-r-md"
-                            style={{
-                              width: `${rightWidth}%`,
-                              backgroundColor: rightColor,
-                              transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
-                              transformOrigin: "right center",
-                              transitionProperty: chartsAnimationReady ? "transform" : "none",
-                              transitionDuration: chartsAnimationReady ? "420ms" : "0ms",
-                              transitionTimingFunction: chartsAnimationReady
-                                ? "cubic-bezier(0.2, 0.8, 0.2, 1)"
-                                : "linear",
-                              transitionDelay: chartsAnimationReady
-                                ? `${itemIdx * 64 + BAR_OVERLAY_START_OFFSET_MS + 54}ms`
-                                : "0ms",
-                            }}
-                          />
-                        ) : null}
-                      </>
+                      <div
+                        className="flex h-full overflow-hidden rounded-md"
+                        style={{
+                          width: `${barWidth}%`,
+                        }}
+                      >
+                        {sortedUserCounts.map((userCount, idx) => {
+                          if (userCount.count === 0) return null;
+                          const color =
+                            userColorMap.get(userCount.userId) ?? USER_COLORS[idx % USER_COLORS.length];
+                          return (
+                            <div
+                              key={`${item.choreId}-${userCount.userId}`}
+                              className="h-full"
+                              style={{
+                                flexGrow: userCount.count,
+                                backgroundColor: color,
+                                transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
+                                transformOrigin: "left center",
+                                transitionProperty: chartsAnimationReady ? "transform" : "none",
+                                transitionDuration: chartsAnimationReady ? "420ms" : "0ms",
+                                transitionTimingFunction: chartsAnimationReady
+                                  ? "cubic-bezier(0.2, 0.8, 0.2, 1)"
+                                  : "linear",
+                                transitionDelay: chartsAnimationReady
+                                  ? `${itemIdx * 64 + idx * 54}ms`
+                                  : "0ms",
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
                     ) : null}
                   </div>
                   <p className="w-8 text-right text-[15px] font-bold text-[#202124]">{item.count}</p>

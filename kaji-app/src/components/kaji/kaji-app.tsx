@@ -954,10 +954,17 @@ export function KajiApp() {
     }
 
     try {
-      await apiFetch(`/api/chores/${targetId}/record`, {
+      const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
         method: "POST",
         body: JSON.stringify({ memo }),
       });
+      // Replace the optimistic lastRecordId with the real one from the server
+      if (result?.record?.id) {
+        updateBootChoreOptimistically(targetId, (chore) => ({
+          ...chore,
+          lastRecordId: result.record.id,
+        }));
+      }
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
       if (previousBoot) {
@@ -1079,7 +1086,7 @@ export function KajiApp() {
     }
   };
 
-  const pullRefreshEnabled = false;
+  const pullRefreshEnabled = true;
   const executePullRefresh = useCallback(async () => {
     if (!pullRefreshEnabled) return;
     if (pullRefreshing) return;
@@ -1659,8 +1666,8 @@ export function KajiApp() {
                     onDeleteSwipeActiveChange={handleListDeleteSwipeActiveChange}
                     relaxedSwipeStart={pendingSwipeDeletes.length > 0}
                   />
-                  );
-                })}
+                );
+              })}
             </div>
           </div>
         </div>
