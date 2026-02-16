@@ -57,9 +57,9 @@ import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 const JA_COLLATOR = new Intl.Collator("ja");
 type ListSortKey = "kana" | "due" | "icon";
 const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
-  { key: "kana", label: "かな順" },
+  { key: "icon", label: "アイコン" },
   { key: "due", label: "期日" },
-  { key: "icon", label: "カスタムアイコン" },
+  { key: "kana", label: "かな順" },
 ];
 
 const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
@@ -164,12 +164,24 @@ function sortHomeSectionChores(
   chores: ChoreWithComputed[],
   sessionUserId: string | null,
   resolveAssigneeId: (choreId: string) => string | null,
+  customIcons: CustomIconOption[],
 ) {
   return [...chores].sort((a, b) => {
-    const aDone = sectionKey === "tomorrow" ? false : a.doneToday;
-    const bDone = sectionKey === "tomorrow" ? false : b.doneToday;
-    // 1. done last (completed items at the bottom)
-    if (aDone !== bDone) return aDone ? 1 : -1;
+    const aIsSkipped = !!a.lastRecordSkipped && a.doneToday;
+    const bIsSkipped = !!b.lastRecordSkipped && b.doneToday;
+
+    // doneState: 0=not done, 1=done, 2=skipped
+    const getDoneState = (done: boolean, skipped: boolean) => {
+      if (sectionKey === "tomorrow") return 0; // Tomorrow section doesn't show done state sorting in the same way usually
+      if (!done) return 0;
+      return skipped ? 2 : 1;
+    };
+
+    const aState = getDoneState(a.doneToday, aIsSkipped);
+    const bState = getDoneState(b.doneToday, bIsSkipped);
+
+    // 1. Sort by done state (Not Done -> Done -> Skipped)
+    if (aState !== bState) return aState - bState;
 
     // 2. assignee priority: self > partner > none
     const aAssignee = resolveAssigneeId(a.id);
@@ -178,11 +190,30 @@ function sortHomeSectionChores(
     const bPri = assigneePriority(bAssignee, sessionUserId);
     if (aPri !== bPri) return aPri - bPri;
 
-    // 3. kama order (50-on)
+    // 3. icon label order
+    const getLabel = (c: ChoreWithComputed) => {
+      const custom = customIcons.find(
+        (ci) =>
+          ci.icon === c.icon && ci.iconColor === c.iconColor && ci.bgColor === c.bgColor,
+      );
+      if (custom) return custom.label;
+      const preset = QUICK_ICON_PRESETS.find(
+        (pi) =>
+          pi.icon === c.icon && pi.iconColor === c.iconColor && pi.bgColor === c.bgColor,
+      );
+      if (preset) return preset.label;
+      return c.icon;
+    };
+    const labelA = getLabel(a);
+    const labelB = getLabel(b);
+    const labelDiff = JA_COLLATOR.compare(labelA, labelB);
+    if (labelDiff !== 0) return labelDiff;
+
+    // 4. kama order (50-on)
     const titleDiff = a.title.localeCompare(b.title, "ja");
     if (titleDiff !== 0) return titleDiff;
 
-    // 4. ID fallback for stability
+    // 5. ID fallback for stability
     return a.id.localeCompare(b.id);
   });
 }
@@ -391,7 +422,7 @@ export function KajiApp() {
   const [visibleAssignDays, setVisibleAssignDays] = useState(14);
   const [, startTransition] = useTransition();
   const assignSentinelRef = useRef<HTMLDivElement | null>(null);
-  const [listSortKey, setListSortKey] = useState<ListSortKey>("kana");
+  const [listSortKey, setListSortKey] = useState<ListSortKey>("icon");
   const [listSortOpen, setListSortOpen] = useState(true);
   const [homeHeaderHeight, setHomeHeaderHeight] = useState(HOME_SECTION_STICKY_FALLBACK_TOP);
   const homeHeaderRef = useRef<HTMLDivElement | null>(null);
@@ -1606,7 +1637,7 @@ export function KajiApp() {
       chores: sortHomeSectionChores("today", boot.todayChores, sessionUser?.id ?? null, (choreId) => {
         const c = boot.todayChores.find((ch) => ch.id === choreId);
         return resolveAssigneeForSort(choreId, "today", c);
-      }),
+      }, customIcons),
     },
     {
       key: "tomorrow" as const,
@@ -1614,7 +1645,7 @@ export function KajiApp() {
       chores: sortHomeSectionChores("tomorrow", boot.tomorrowChores, sessionUser?.id ?? null, (choreId) => {
         const c = boot.tomorrowChores.find((ch) => ch.id === choreId);
         return resolveAssigneeForSort(choreId, "tomorrow", c);
-      }),
+      }, customIcons),
     },
     {
       key: "big" as const,
@@ -1622,7 +1653,7 @@ export function KajiApp() {
       chores: sortHomeSectionChores("big", boot.upcomingBigChores, sessionUser?.id ?? null, (choreId) => {
         const c = boot.upcomingBigChores.find((ch) => ch.id === choreId);
         return resolveAssigneeForSort(choreId, "big", c);
-      }),
+      }, customIcons),
     },
   ].filter((section) => section.chores.length > 0);
   const hasAnyUpcomingChores = homeSections.length > 0;
