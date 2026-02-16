@@ -366,10 +366,16 @@ export function StatsView({
                             style={{
                               strokeDasharray: pieAnim.dasharray,
                               strokeDashoffset: pieAnim.dashoffset,
-                              transition: pieAnimated
-                                ? "stroke-dasharray 560ms cubic-bezier(0.22, 1, 0.36, 1), stroke-dashoffset 560ms cubic-bezier(0.22, 1, 0.36, 1)"
+                              transitionProperty: pieAnimated
+                                ? "stroke-dasharray, stroke-dashoffset"
                                 : "none",
-                              transitionDelay: pieAnimated ? `${sliceIdx * 72}ms` : "0ms",
+                              transitionDuration: pieAnimated ? "560ms, 560ms" : "0ms, 0ms",
+                              transitionTimingFunction: pieAnimated
+                                ? "cubic-bezier(0.22, 1, 0.36, 1), cubic-bezier(0.22, 1, 0.36, 1)"
+                                : "linear, linear",
+                              transitionDelay: pieAnimated
+                                ? `${sliceIdx * 72}ms, ${sliceIdx * 72}ms`
+                                : "0ms, 0ms",
                             }}
                           />
                         );
@@ -454,9 +460,11 @@ export function StatsView({
                           className="absolute left-0 top-0 h-full rounded-md bg-[#80868B]"
                           style={{
                             width: `${chartsAnimationReady ? barWidth : 0}%`,
-                            transition: chartsAnimationReady
-                              ? `width ${BAR_BASE_ANIMATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
-                              : "none",
+                            transitionProperty: chartsAnimationReady ? "width" : "none",
+                            transitionDuration: chartsAnimationReady ? `${BAR_BASE_ANIMATION_MS}ms` : "0ms",
+                            transitionTimingFunction: chartsAnimationReady
+                              ? "cubic-bezier(0.22, 1, 0.36, 1)"
+                              : "linear",
                             transitionDelay: chartsAnimationReady ? `${itemIdx * 64}ms` : "0ms",
                           }}
                         />
@@ -468,9 +476,11 @@ export function StatsView({
                               backgroundColor: leftColor,
                               transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
                               transformOrigin: "left center",
-                              transition: chartsAnimationReady
-                                ? "transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1)"
-                                : "none",
+                              transitionProperty: chartsAnimationReady ? "transform" : "none",
+                              transitionDuration: chartsAnimationReady ? "420ms" : "0ms",
+                              transitionTimingFunction: chartsAnimationReady
+                                ? "cubic-bezier(0.2, 0.8, 0.2, 1)"
+                                : "linear",
                               transitionDelay: chartsAnimationReady
                                 ? `${itemIdx * 64 + BAR_OVERLAY_START_OFFSET_MS}ms`
                                 : "0ms",
@@ -485,9 +495,11 @@ export function StatsView({
                               backgroundColor: rightColor,
                               transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
                               transformOrigin: "right center",
-                              transition: chartsAnimationReady
-                                ? "transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1)"
-                                : "none",
+                              transitionProperty: chartsAnimationReady ? "transform" : "none",
+                              transitionDuration: chartsAnimationReady ? "420ms" : "0ms",
+                              transitionTimingFunction: chartsAnimationReady
+                                ? "cubic-bezier(0.2, 0.8, 0.2, 1)"
+                                : "linear",
                               transitionDelay: chartsAnimationReady
                                 ? `${itemIdx * 64 + BAR_OVERLAY_START_OFFSET_MS + 54}ms`
                                 : "0ms",
