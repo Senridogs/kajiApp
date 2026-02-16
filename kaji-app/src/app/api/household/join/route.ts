@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { setSession } from "@/lib/session";
+import { touchHousehold } from "@/lib/sync";
 
 export async function POST(request: Request) {
   const { session, response } = await requireSession();
@@ -36,6 +37,9 @@ export async function POST(request: Request) {
     { userId: session.userId, householdId: household.id },
     { secure: isSecure },
   );
+
+  // Notify the existing household members that a new partner joined
+  await touchHousehold(household.id);
 
   return NextResponse.json({ success: true });
 }

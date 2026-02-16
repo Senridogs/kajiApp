@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { touchHousehold } from "@/lib/sync";
 
 const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
 
@@ -36,6 +37,8 @@ export async function PATCH(request: Request) {
     data,
     select: { id: true, name: true, color: true },
   });
+
+  await touchHousehold(session.householdId);
 
   return NextResponse.json({ user });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { touchHousehold } from "@/lib/sync";
 
 type Body = {
   reminderTimes?: string[];
@@ -80,6 +81,10 @@ export async function PATCH(request: Request) {
       notifyCompletion: true,
     },
   });
+
+  // touchHousehold is implicit here because the household.update already
+  // bumps updatedAt — but we call it explicitly to ensure the sync token changes.
+  await touchHousehold(session.householdId);
 
   return NextResponse.json(updated);
 }

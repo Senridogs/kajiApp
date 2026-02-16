@@ -516,14 +516,17 @@ export function KajiApp() {
 
   // ── Real-time sync polling ──────────────────────────────────
   const syncTokenRef = useRef<string | null>(null);
-  const syncBusyRef = useRef(false);
+  const syncPollingRef = useRef(false);
+  const syncRefreshingRef = useRef(false);
   const statsPeriodRef = useRef(statsPeriod);
+  const activeTabRef = useRef(activeTab);
   useEffect(() => { statsPeriodRef.current = statsPeriod; }, [statsPeriod]);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
   const syncCheck = useCallback(async () => {
-    // Don't sync while busy with another operation
-    if (syncBusyRef.current) return;
-    syncBusyRef.current = true;
+    // Don't start another poll while one is in-flight
+    if (syncPollingRef.current) return;
+    syncPollingRef.current = true;
 
     try {
       const res = await fetch("/api/sync", { cache: "no-store" });
@@ -540,20 +543,36 @@ export function KajiApp() {
       // No change
       if (token === syncTokenRef.current) return;
 
-      // Change detected from another device — refresh data silently
+      // Change detected from another device — refresh data in parallel
       syncTokenRef.current = token;
-      await loadBootstrap();
-      await loadStats(statsPeriodRef.current).catch(() => { });
-      await loadHistory().catch(() => { });
+
+      // Skip if a previous refresh is still running
+      if (syncRefreshingRef.current) return;
+      syncRefreshingRef.current = true;
+
+      // Fire bootstrap (critical) plus stats/history (secondary) in parallel
+      const refreshPromises: Promise<unknown>[] = [loadBootstrap()];
+      // Only refresh stats/history when user is on those tabs
+      const tab = activeTabRef.current;
+      if (tab === "stats") {
+        refreshPromises.push(loadStats(statsPeriodRef.current).catch(() => { }));
+      }
+      if (tab === "stats" || tab === "home") {
+        refreshPromises.push(loadHistory().catch(() => { }));
+      }
+      // Don't await — let polling continue while refresh runs in background
+      Promise.all(refreshPromises).finally(() => {
+        syncRefreshingRef.current = false;
+      });
     } catch {
       // Silently ignore network errors during polling
     } finally {
-      syncBusyRef.current = false;
+      syncPollingRef.current = false;
     }
   }, [loadBootstrap, loadStats, loadHistory]);
 
   useEffect(() => {
-    const SYNC_INTERVAL_MS = 3_000;
+    const SYNC_INTERVAL_MS = 1_000;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     const startPolling = () => {
@@ -2201,7 +2220,7 @@ export function KajiApp() {
 
       <div
         aria-hidden
-        className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-[45] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
       />
 
       {pendingSwipeDeletes.map((pending, index) => (
@@ -2248,22 +2267,22 @@ export function KajiApp() {
         className={`pointer-events-none fixed inset-0 z-[10010] bg-[#F8F9FA] transition-opacity duration-200 ${appReloading ? "opacity-100" : "opacity-0"}`}
       />
 
-      <nav className="fixed bottom-4 left-0 right-0 z-30 mx-auto max-w-[430px] px-4">
+      <nav className="fixed bottom-4 left-0 right-0 z-50 mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
           <button type="button" onClick={() => { closeAssignment(); setActiveTab("home"); setRefreshAnimationSeed((p) => p + 1); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: !assignmentOpen && activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>home</span>
+            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>home</span>
           </button>
           <button type="button" onClick={() => { closeAssignment(); setActiveTab("list"); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: !assignmentOpen && activeTab === "list" ? PRIMARY_COLOR : "#9AA0A6" }}>checklist</span>
+            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "#9AA0A6" }}>checklist</span>
           </button>
           <button type="button" onClick={() => { closeAssignment(); openAddChore(); }} className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[#1A9BE8] text-white shadow-md">
             <Plus size={20} strokeWidth={2.5} />
           </button>
           <button type="button" onClick={() => { closeAssignment(); setActiveTab("stats"); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: !assignmentOpen && activeTab === "stats" ? PRIMARY_COLOR : "#9AA0A6" }}>bar_chart</span>
+            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "#9AA0A6" }}>bar_chart</span>
           </button>
           <button type="button" onClick={() => { closeAssignment(); setActiveTab("settings"); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: !assignmentOpen && activeTab === "settings" ? PRIMARY_COLOR : "#9AA0A6" }}>settings</span>
+            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "settings" ? PRIMARY_COLOR : "#9AA0A6" }}>settings</span>
           </button>
         </div>
       </nav>
