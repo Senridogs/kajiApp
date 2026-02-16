@@ -83,6 +83,7 @@ export async function POST(request: Request) {
         userId: session.userId,
         performedAt,
         memo: null,
+        isInitial: true,
       },
     });
 

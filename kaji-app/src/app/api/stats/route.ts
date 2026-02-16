@@ -22,14 +22,15 @@ export async function GET(request: Request) {
 
   const where =
     range.start === undefined
-      ? { householdId: session.householdId }
+      ? { householdId: session.householdId, isInitial: false }
       : {
-          householdId: session.householdId,
-          performedAt: {
-            gte: range.start,
-            lte: range.end,
-          },
-        };
+        householdId: session.householdId,
+        isInitial: false,
+        performedAt: {
+          gte: range.start,
+          lte: range.end,
+        },
+      };
 
   const [choreCountsRaw, userCountsRaw, bigTaskUserCountsRaw, choreUserCountsRaw, chores, users] =
     await Promise.all([

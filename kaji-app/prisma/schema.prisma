@@ -89,6 +89,7 @@ model ChoreRecord {
   choreId     String
   userId      String
   memo        String?
+  isInitial   Boolean   @default(false)
   performedAt DateTime  @default(now())
   createdAt   DateTime  @default(now())
   household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
