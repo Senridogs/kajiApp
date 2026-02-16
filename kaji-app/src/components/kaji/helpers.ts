@@ -153,3 +153,26 @@ export function darkenColor(color: string, amount: number): string {
 
   return `#${rHex}${gHex}${bHex}`;
 }
+
+export function lightenColor(color: string, amount: number): string {
+  if (!color.startsWith("#")) return color;
+
+  const hex = color.slice(1);
+  const num = parseInt(hex, 16);
+  if (Number.isNaN(num)) return color;
+
+  let r = (num >> 16) & 255;
+  let g = (num >> 8) & 255;
+  let b = num & 255;
+
+  // Lighten: approach 255
+  r = Math.min(255, r + ((255 - r) * amount));
+  g = Math.min(255, g + ((255 - g) * amount));
+  b = Math.min(255, b + ((255 - b) * amount));
+
+  const rHex = Math.round(r).toString(16).padStart(2, "0");
+  const gHex = Math.round(g).toString(16).padStart(2, "0");
+  const bHex = Math.round(b).toString(16).padStart(2, "0");
+
+  return `#${rHex}${gHex}${bHex}`;
+}
