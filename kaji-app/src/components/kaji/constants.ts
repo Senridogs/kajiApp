@@ -42,8 +42,8 @@ export const USER_COLOR_PALETTE = [
   "#A8C4D6",
 ];
 
-export const ICONS_PER_PAGE = 30;
-export const ICON_PAGE_COUNT = 5;
+export const ICONS_PER_PAGE = 20;
+export const ICON_PAGE_COUNT = 8;
 
 export const QUICK_ICON_PRESETS = [
   { icon: "sparkles", label: "掃除", iconColor: "#B97700", bgColor: "#FFF6E3" },
