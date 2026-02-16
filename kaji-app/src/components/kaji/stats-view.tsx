@@ -31,7 +31,6 @@ const BALANCE_SWIPE_TRANSITION_MS = 220;
 const BALANCE_TAB_KEYS: readonly BalanceTabKey[] = BALANCE_TABS.map((tab) => tab.key);
 const CHARTS_ZERO_HOLD_MS = 300;
 const PIE_TOP_START = 75; // 0時位置
-const BAR_BASE_ANIMATION_MS = 420;
 const BAR_OVERLAY_START_OFFSET_MS = 280;
 
 type CustomDateRange = {
@@ -459,13 +458,7 @@ export function StatsView({
                         <div
                           className="absolute left-0 top-0 h-full rounded-md bg-[#80868B]"
                           style={{
-                            width: `${chartsAnimationReady ? barWidth : 0}%`,
-                            transitionProperty: chartsAnimationReady ? "width" : "none",
-                            transitionDuration: chartsAnimationReady ? `${BAR_BASE_ANIMATION_MS}ms` : "0ms",
-                            transitionTimingFunction: chartsAnimationReady
-                              ? "cubic-bezier(0.22, 1, 0.36, 1)"
-                              : "linear",
-                            transitionDelay: chartsAnimationReady ? `${itemIdx * 64}ms` : "0ms",
+                            width: `${barWidth}%`,
                           }}
                         />
                         {leftUserCount && leftWidth > 0 ? (

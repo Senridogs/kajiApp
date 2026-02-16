@@ -62,7 +62,7 @@ const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
 
 const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
 const ASSIGNMENT_SHEET_SLIDE_MS = 240;
-const ASSIGNMENT_BACK_SWIPE_EDGE_PX = 28;
+const ASSIGNMENT_BACK_SWIPE_EDGE_PX = 72;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PULL_REFRESH_TRIGGER_PX = 74;
 const PULL_REFRESH_MAX_PX = 128;
@@ -1533,13 +1533,7 @@ export function KajiApp() {
                     >
                       <HomeSectionTitle title={section.title} />
                     </div>
-                    <AnimatedList
-                      key={`home-${section.key}-${refreshAnimationSeed}`}
-                      delay={45}
-                      reverse={false}
-                      disabled={isSwipeSheetMoving}
-                      className="items-stretch gap-2"
-                    >
+                    <div className="flex flex-col items-stretch gap-2">
                       {section.chores.map((chore) => {
                         const todayKey = toJstDateKey(startOfJstDay(new Date()));
                         const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
@@ -1579,7 +1573,7 @@ export function KajiApp() {
                           />
                         );
                       })}
-                    </AnimatedList>
+                    </div>
                   </div>
                 ))}
               </>
@@ -1639,13 +1633,7 @@ export function KajiApp() {
           </div>
           <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
-            <AnimatedList
-              key={`list-${listSortKey}-${refreshAnimationSeed}`}
-              delay={45}
-              reverse={false}
-              disabled={isSwipeSheetMoving}
-              className="items-stretch gap-2"
-            >
+            <div className="flex flex-col items-stretch gap-2">
               {listChores.map((chore) => {
                 const meta = chore.isBigTask
                   ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
@@ -1665,7 +1653,7 @@ export function KajiApp() {
                   />
                   );
                 })}
-            </AnimatedList>
+            </div>
           </div>
         </div>
       );
