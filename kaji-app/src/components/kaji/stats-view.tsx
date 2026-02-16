@@ -29,6 +29,10 @@ const BALANCE_TABS = [
 type BalanceTabKey = (typeof BALANCE_TABS)[number]["key"];
 const BALANCE_SWIPE_TRANSITION_MS = 220;
 const BALANCE_TAB_KEYS: readonly BalanceTabKey[] = BALANCE_TABS.map((tab) => tab.key);
+const CHARTS_ZERO_HOLD_MS = 300;
+const PIE_TOP_START = 75; // 0時位置
+const BAR_BASE_ANIMATION_MS = 420;
+const BAR_OVERLAY_START_OFFSET_MS = 280;
 
 type CustomDateRange = {
   from: string;
@@ -63,14 +67,33 @@ function buildPieData(users: StatsUserCount[], userColorMap: Map<string, string>
   });
 }
 
-function buildPieAnimationState(slice: PieSlice, sliceIdx: number, animated: boolean): PieAnimationState {
+function buildPieAnimationState(
+  slice: PieSlice,
+  sliceIdx: number,
+  sliceCount: number,
+  animated: boolean,
+): PieAnimationState {
   const fullLength = slice.ratio * 100;
   const currentLength = animated ? fullLength : 0;
-  const anchorStart = sliceIdx % 2 === 0 ? 0 : 50;
-  const currentStart = animated ? slice.start * 100 : anchorStart;
+
+  if (sliceCount === 2) {
+    if (sliceIdx === 0) {
+      return {
+        dasharray: `${currentLength} ${100 - currentLength}`,
+        dashoffset: `${-PIE_TOP_START}`,
+      };
+    }
+    const counterStart = PIE_TOP_START - currentLength;
+    return {
+      dasharray: `${currentLength} ${100 - currentLength}`,
+      dashoffset: `${-counterStart}`,
+    };
+  }
+
+  const clockwiseStart = PIE_TOP_START + (animated ? slice.start * 100 : 0);
   return {
     dasharray: `${currentLength} ${100 - currentLength}`,
-    dashoffset: `${-currentStart}`,
+    dashoffset: `${-clockwiseStart}`,
   };
 }
 
@@ -125,6 +148,7 @@ export function StatsView({
       userColors?.get(user.userId) ?? USER_COLORS[idx % USER_COLORS.length],
     );
   });
+  const userOrderMap = new Map(users.map((user, idx) => [user.userId, idx]));
 
   const choreMax = maxCount(choreCounts);
   const balanceSwipe = useSwipeTab<BalanceTabKey>({
@@ -146,15 +170,21 @@ export function StatsView({
   useLayoutEffect(() => {
     setChartsAnimationReady(false);
     let frame2: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const frame1 = requestAnimationFrame(() => {
       frame2 = requestAnimationFrame(() => {
-        setChartsAnimationReady(true);
+        timer = setTimeout(() => {
+          setChartsAnimationReady(true);
+        }, CHARTS_ZERO_HOLD_MS);
       });
     });
     return () => {
       cancelAnimationFrame(frame1);
       if (frame2 !== null) {
         cancelAnimationFrame(frame2);
+      }
+      if (timer !== null) {
+        clearTimeout(timer);
       }
     };
   }, [stats, activePeriod, balanceTab, animationSeed, chartsAnimationTrigger]);
@@ -314,10 +344,15 @@ export function StatsView({
                 <div key={tabKey} className="w-full shrink-0">
                   <div className="flex items-center gap-3">
                     <svg viewBox="0 0 42 42" className="h-[120px] w-[120px]">
-                      <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E8EAED" strokeWidth="10" />
+                      <circle cx="21" cy="21" r="15.915" fill="none" stroke="#F1F3F4" strokeWidth="10" />
                       {tabData.pie.map((slice, sliceIdx) => {
                         const pieAnimated = tabKey === balanceTab ? chartsAnimationReady : true;
-                        const pieAnim = buildPieAnimationState(slice, sliceIdx, pieAnimated);
+                        const pieAnim = buildPieAnimationState(
+                          slice,
+                          sliceIdx,
+                          tabData.pie.length,
+                          pieAnimated,
+                        );
                         return (
                           <circle
                             key={`${tabKey}-${slice.userId}`}
@@ -331,9 +366,10 @@ export function StatsView({
                             style={{
                               strokeDasharray: pieAnim.dasharray,
                               strokeDashoffset: pieAnim.dashoffset,
-                              transition:
-                                "stroke-dasharray 560ms cubic-bezier(0.22, 1, 0.36, 1), stroke-dashoffset 560ms cubic-bezier(0.22, 1, 0.36, 1)",
-                              transitionDelay: `${sliceIdx * 72}ms`,
+                              transition: pieAnimated
+                                ? "stroke-dasharray 560ms cubic-bezier(0.22, 1, 0.36, 1), stroke-dashoffset 560ms cubic-bezier(0.22, 1, 0.36, 1)"
+                                : "none",
+                              transitionDelay: pieAnimated ? `${sliceIdx * 72}ms` : "0ms",
                             }}
                           />
                         );
@@ -381,6 +417,23 @@ export function StatsView({
         <div className="space-y-3">
           {choreCounts.map((item, itemIdx) => {
             const barWidth = item.count > 0 ? Math.max((item.count / choreMax) * 100, 8) : 0;
+            const sortedUserCounts = [...item.userCounts].sort(
+              (a, b) =>
+                (userOrderMap.get(a.userId) ?? Number.MAX_SAFE_INTEGER) -
+                (userOrderMap.get(b.userId) ?? Number.MAX_SAFE_INTEGER),
+            );
+            const leftUserCount = sortedUserCounts[0] ?? null;
+            const rightUserCount = sortedUserCounts[1] ?? null;
+            const leftRatio = item.count > 0 && leftUserCount ? leftUserCount.count / item.count : 0;
+            const rightRatio = item.count > 0 && rightUserCount ? rightUserCount.count / item.count : 0;
+            const leftWidth = barWidth * leftRatio;
+            const rightWidth = barWidth * rightRatio;
+            const leftColor = leftUserCount
+              ? userColorMap.get(leftUserCount.userId) ?? USER_COLORS[0]
+              : USER_COLORS[0];
+            const rightColor = rightUserCount
+              ? userColorMap.get(rightUserCount.userId) ?? USER_COLORS[1]
+              : USER_COLORS[1];
             return (
               <div key={item.choreId} className="space-y-1.5">
                 <div className="flex items-center gap-2">
@@ -396,34 +449,52 @@ export function StatsView({
                   </div>
                   <div className="relative h-3 flex-1 overflow-hidden rounded-md bg-[#F1F3F4]">
                     {barWidth > 0 ? (
-                      <div
-                        className="flex h-3 overflow-hidden rounded-md"
-                        style={{
-                          width: `${chartsAnimationReady ? barWidth : 0}%`,
-                          transition: "width 560ms cubic-bezier(0.22, 1, 0.36, 1)",
-                          transitionDelay: `${itemIdx * 64}ms`,
-                        }}
-                      >
-                        {item.userCounts.map((userCount, idx) => {
-                          if (userCount.count === 0) return null;
-                          const color =
-                            userColorMap.get(userCount.userId) ?? USER_COLORS[idx % USER_COLORS.length];
-                          return (
-                            <div
-                              key={`${item.choreId}-${userCount.userId}`}
-                              className="h-full"
-                              style={{
-                                flexGrow: userCount.count,
-                                backgroundColor: color,
-                                transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
-                                transformOrigin: idx % 2 === 0 ? "left center" : "right center",
-                                transition: "transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1)",
-                                transitionDelay: `${itemIdx * 64 + idx * 54}ms`,
-                              }}
-                            />
-                          );
-                        })}
-                      </div>
+                      <>
+                        <div
+                          className="absolute left-0 top-0 h-full rounded-md bg-[#80868B]"
+                          style={{
+                            width: `${chartsAnimationReady ? barWidth : 0}%`,
+                            transition: chartsAnimationReady
+                              ? `width ${BAR_BASE_ANIMATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+                              : "none",
+                            transitionDelay: chartsAnimationReady ? `${itemIdx * 64}ms` : "0ms",
+                          }}
+                        />
+                        {leftUserCount && leftWidth > 0 ? (
+                          <div
+                            className="absolute left-0 top-0 h-full rounded-l-md"
+                            style={{
+                              width: `${leftWidth}%`,
+                              backgroundColor: leftColor,
+                              transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
+                              transformOrigin: "left center",
+                              transition: chartsAnimationReady
+                                ? "transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1)"
+                                : "none",
+                              transitionDelay: chartsAnimationReady
+                                ? `${itemIdx * 64 + BAR_OVERLAY_START_OFFSET_MS}ms`
+                                : "0ms",
+                            }}
+                          />
+                        ) : null}
+                        {rightUserCount && rightWidth > 0 ? (
+                          <div
+                            className="absolute right-0 top-0 h-full rounded-r-md"
+                            style={{
+                              width: `${rightWidth}%`,
+                              backgroundColor: rightColor,
+                              transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
+                              transformOrigin: "right center",
+                              transition: chartsAnimationReady
+                                ? "transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1)"
+                                : "none",
+                              transitionDelay: chartsAnimationReady
+                                ? `${itemIdx * 64 + BAR_OVERLAY_START_OFFSET_MS + 54}ms`
+                                : "0ms",
+                            }}
+                          />
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                   <p className="w-8 text-right text-[15px] font-bold text-[#202124]">{item.count}</p>

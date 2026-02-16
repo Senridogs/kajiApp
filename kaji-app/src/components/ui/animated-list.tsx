@@ -29,6 +29,7 @@ export interface AnimatedListProps extends ComponentPropsWithoutRef<"div"> {
   children: React.ReactNode
   delay?: number
   reverse?: boolean
+  disabled?: boolean
 }
 
 export const AnimatedList = React.memo(
@@ -37,6 +38,7 @@ export const AnimatedList = React.memo(
     className,
     delay = 1000,
     reverse = true,
+    disabled = false,
     ...props
   }: AnimatedListProps) => {
     const [index, setIndex] = useState(0)
@@ -46,6 +48,7 @@ export const AnimatedList = React.memo(
     )
 
     useEffect(() => {
+      if (disabled) return
       if (index < childrenArray.length - 1) {
         const timeout = setTimeout(() => {
           setIndex((prevIndex) => (prevIndex + 1) % childrenArray.length)
@@ -53,26 +56,31 @@ export const AnimatedList = React.memo(
 
         return () => clearTimeout(timeout)
       }
-    }, [index, delay, childrenArray.length])
+    }, [index, delay, childrenArray.length, disabled])
 
     const itemsToShow = useMemo(() => {
+      if (disabled) return childrenArray
       const visibleChildren = childrenArray.slice(0, index + 1)
       const result = reverse ? [...visibleChildren].reverse() : visibleChildren
       return result
-    }, [index, childrenArray, reverse])
+    }, [index, childrenArray, reverse, disabled])
 
     return (
       <div
         className={cn(`flex flex-col items-center gap-4`, className)}
         {...props}
       >
-        <AnimatePresence>
-          {itemsToShow.map((item) => (
-            <AnimatedListItem key={(item as React.ReactElement).key}>
-              {item}
-            </AnimatedListItem>
-          ))}
-        </AnimatePresence>
+        {disabled ? (
+          itemsToShow
+        ) : (
+          <AnimatePresence>
+            {itemsToShow.map((item) => (
+              <AnimatedListItem key={(item as React.ReactElement).key}>
+                {item}
+              </AnimatedListItem>
+            ))}
+          </AnimatePresence>
+        )}
       </div>
     )
   }

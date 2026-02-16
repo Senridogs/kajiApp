@@ -77,7 +77,6 @@ type CustomDateRange = { from: string; to: string };
 const CUSTOM_ICONS_STORAGE_KEY = "kaji_custom_icons";
 const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
 const APP_UPDATE_TARGET_TAB_STORAGE_KEY = "kaji_app_update_target_tab";
-const APP_STARTUP_UPDATE_DONE_STORAGE_KEY = "kaji_app_startup_update_done";
 type PendingSwipeDelete = {
   toastId: string;
   chore: ChoreWithComputed;
@@ -290,6 +289,9 @@ export function KajiApp() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [appUpdateLoading, setAppUpdateLoading] = useState(false);
+  const [appUpdateAvailable, setAppUpdateAvailable] = useState(false);
+  const [appReloading, setAppReloading] = useState(false);
+  const startupUpdateCheckedRef = useRef(false);
 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [assignmentMounted, setAssignmentMounted] = useState(false);
@@ -367,6 +369,7 @@ export function KajiApp() {
     transitionDurationMs: 220,
   });
   const assignmentTabSwipeActiveRef = useRef(false);
+  const assignmentBackSwipeActiveRef = useRef(false);
   const [assignments, setAssignments] = useState<ChoreAssignmentEntry[]>([]);
   const [visibleAssignDays, setVisibleAssignDays] = useState(14);
   const [, startTransition] = useTransition();
@@ -378,6 +381,7 @@ export function KajiApp() {
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
   const pullStartYRef = useRef(0);
   const pullStartXRef = useRef(0);
+  const pullStartScrollTopRef = useRef(0);
   const pullEligibleRef = useRef(false);
   const pullDraggingRef = useRef(false);
   const [pullDistance, setPullDistance] = useState(0);
@@ -511,48 +515,74 @@ export function KajiApp() {
     if (options?.targetTab) {
       window.sessionStorage.setItem(APP_UPDATE_TARGET_TAB_STORAGE_KEY, options.targetTab);
     }
-    window.location.reload();
+    setAppReloading(true);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(() => {
+          window.location.reload();
+        }, 120);
+      });
+    });
   }, []);
 
-  const updateServiceWorkerRegistration = useCallback(async () => {
-    if (!("serviceWorker" in navigator)) return;
+  const checkForServiceWorkerUpdate = useCallback(async () => {
+    if (!("serviceWorker" in navigator)) return false;
+
     const registration =
       (await navigator.serviceWorker.getRegistration()) ??
       (await navigator.serviceWorker.register("/sw.js"));
-    await registration.update();
-    registration.waiting?.postMessage({ type: "SKIP_WAITING" });
+
+    if (registration.waiting || registration.installing) {
+      return true;
+    }
+
+    const updateDetected = await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        registration.removeEventListener("updatefound", onUpdateFound);
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      };
+      const onUpdateFound = () => {
+        finish(true);
+      };
+      const timeoutId = window.setTimeout(() => finish(false), 1200);
+      registration.addEventListener("updatefound", onUpdateFound);
+      registration.update().catch(() => finish(false));
+    });
+
+    return updateDetected || Boolean(registration.waiting || registration.installing);
   }, []);
 
-  const runAppUpdate = useCallback(
-    async (reason: "manual" | "startup") => {
-      if (reason === "manual" && appUpdateLoading) return;
-      if (reason === "manual") {
+  const handleManualAppUpdate = useCallback(() => {
+    if (appUpdateLoading) return;
+
+    void (async () => {
+      try {
         setAppUpdateLoading(true);
         setError("");
         setInfoMessage("");
-      }
 
-      try {
-        await updateServiceWorkerRegistration();
-      } catch {
-        // SW更新に失敗した場合でも通常のリロードで最新化を試みる
-      } finally {
-        reloadAppForLatestUpdate(
-          reason === "manual"
-            ? { showNotice: true, targetTab: "settings" }
-            : { showNotice: false },
-        );
-        if (reason === "manual") {
-          setAppUpdateLoading(false);
+        const hasUpdate = appUpdateAvailable || (await checkForServiceWorkerUpdate());
+        setAppUpdateAvailable(hasUpdate);
+
+        if (!hasUpdate) {
+          setInfoMessage("あなたのアプリは最新です。");
+          return;
         }
-      }
-    },
-    [appUpdateLoading, reloadAppForLatestUpdate, updateServiceWorkerRegistration],
-  );
 
-  const handleManualAppUpdate = useCallback(() => {
-    void runAppUpdate("manual");
-  }, [runAppUpdate]);
+        const registration = await navigator.serviceWorker.getRegistration();
+        registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+        reloadAppForLatestUpdate({ showNotice: true, targetTab: "settings" });
+      } catch (err: unknown) {
+        setError((err as Error).message ?? "最新化に失敗しました。");
+      } finally {
+        setAppUpdateLoading(false);
+      }
+    })();
+  }, [appUpdateAvailable, appUpdateLoading, checkForServiceWorkerUpdate, reloadAppForLatestUpdate]);
 
   useEffect(() => {
     (async () => {
@@ -597,11 +627,26 @@ export function KajiApp() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.sessionStorage.getItem(APP_STARTUP_UPDATE_DONE_STORAGE_KEY) === "1") return;
-    window.sessionStorage.setItem(APP_STARTUP_UPDATE_DONE_STORAGE_KEY, "1");
-    void runAppUpdate("startup");
-  }, [runAppUpdate]);
+    if (startupUpdateCheckedRef.current) return;
+    startupUpdateCheckedRef.current = true;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const hasUpdate = await checkForServiceWorkerUpdate();
+        if (!cancelled) {
+          setAppUpdateAvailable(hasUpdate);
+        }
+      } catch {
+        if (!cancelled) {
+          setAppUpdateAvailable(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [checkForServiceWorkerUpdate]);
 
   useEffect(() => {
     if (!boot || boot.needsRegistration) return;
@@ -640,6 +685,53 @@ export function KajiApp() {
     if (!pullRefreshing) {
       setPullDistance(0);
     }
+  }, [assignmentOpen, pullRefreshing]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtmlOverscrollY = html.style.overscrollBehaviorY;
+    const previousBodyOverscrollY = body.style.overscrollBehaviorY;
+    const previousBodyOverflow = body.style.overflow;
+    html.style.overscrollBehaviorY = "none";
+    body.style.overscrollBehaviorY = "none";
+    body.style.overflow = "hidden";
+    return () => {
+      html.style.overscrollBehaviorY = previousHtmlOverscrollY;
+      body.style.overscrollBehaviorY = previousBodyOverscrollY;
+      body.style.overflow = previousBodyOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const scroller = mainScrollRef.current;
+    if (!scroller) return;
+
+    const handleNativeTouchMove = (event: globalThis.TouchEvent) => {
+      if (assignmentOpen || pullRefreshing) return;
+      if (!pullEligibleRef.current) return;
+
+      const touch = event.touches[0];
+      if (!touch) return;
+
+      const dx = touch.clientX - pullStartXRef.current;
+      const dy = touch.clientY - pullStartYRef.current;
+      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * 1.2;
+      const canRefreshBySwipe =
+        pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
+
+      if (dy > 0 && isMostlyVertical && canRefreshBySwipe) {
+        event.preventDefault();
+      }
+    };
+
+    scroller.addEventListener("touchmove", handleNativeTouchMove, {
+      passive: false,
+    });
+    return () => {
+      scroller.removeEventListener("touchmove", handleNativeTouchMove);
+    };
   }, [assignmentOpen, pullRefreshing]);
 
   useEffect(() => {
@@ -1008,10 +1100,11 @@ export function KajiApp() {
 
   const handleMainScrollTouchStart = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (pullRefreshing || assignmentOpen || activeTab !== "home") return;
+      if (pullRefreshing || assignmentOpen || activeTab === "settings") return;
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
       if (!touch || !scroller) return;
+      pullStartScrollTopRef.current = scroller.scrollTop;
       if (scroller.scrollTop > 0) {
         pullEligibleRef.current = false;
         pullDraggingRef.current = false;
@@ -1045,6 +1138,12 @@ export function KajiApp() {
 
       const dx = touch.clientX - pullStartXRef.current;
       const dy = touch.clientY - pullStartYRef.current;
+      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * 1.2;
+      const canRefreshBySwipe = pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
+
+      if (dy > 0 && isMostlyVertical && canRefreshBySwipe) {
+        event.preventDefault();
+      }
 
       if (!pullDraggingRef.current) {
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
@@ -1258,10 +1357,58 @@ export function KajiApp() {
   const pullRefreshProgress = Math.min(1, pullDistance / PULL_REFRESH_TRIGGER_PX);
   const showPullRefreshHint = pullRefreshing || pullDistance > 0;
   const pullRefreshMessage = pullRefreshing
-    ? "最新化しています..."
+    ? "読み込み中..."
     : pullRefreshProgress >= 1
-      ? "指を離して最新化"
-      : "下にスワイプして最新化";
+      ? "指を離して読み込み"
+      : "下にスワイプして読み込み";
+  const getPullAnimatedContentStyle = (tab: TabKey) =>
+    tab === activeTab && tab !== "settings"
+      ? {
+        transform: `translate3d(0, ${pullDistance}px, 0)`,
+        transition:
+          pullDragging || pullRefreshing ? "none" : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+      }
+      : undefined;
+  const renderInlinePullRefreshHint = (tab: TabKey) => {
+    if (tab === "settings") return null;
+    if (!showPullRefreshHint || tab !== activeTab) return null;
+    return (
+      <div className="rounded-2xl bg-white/95 px-3 py-2 shadow-[0_6px_18px_rgba(32,33,36,0.12)] backdrop-blur">
+        <div className="flex items-center justify-center gap-2">
+          {pullRefreshing ? (
+            <Loader2 size={14} className="animate-spin text-[#1A9BE8]" />
+          ) : (
+            <ChevronDown
+              size={14}
+              className="text-[#1A9BE8]"
+              style={{
+                transform: `translateY(${Math.round((1 - pullRefreshProgress) * -4)}px)`,
+              }}
+            />
+          )}
+          <p className="text-[12px] font-bold text-[#5F6368]">{pullRefreshMessage}</p>
+        </div>
+        {pullRefreshing || pullRefreshProgress >= 0.45 ? (
+          <AnimatedList
+            key={`pull-refresh-preview-${tab}-${pullRefreshing ? "active" : "ready"}-${refreshAnimationSeed}`}
+            delay={80}
+            reverse={false}
+            className="mt-2 items-stretch gap-1.5"
+          >
+            {Array.from({ length: 3 }, (_, index) => (
+              <div key={`pull-refresh-row-${tab}-${index}`} className="flex items-center gap-2 rounded-xl bg-[#F8F9FA] px-2.5 py-2">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: index % 2 === 0 ? "#33C28A" : "#4285F4" }}
+                />
+                <span className="h-2 w-full rounded-full bg-[#E8EAED]" />
+              </div>
+            ))}
+          </AnimatedList>
+        ) : null}
+      </div>
+    );
+  };
   const assignmentSwipeProgress = assignmentTabSwipe.visual.progress;
   const assignmentSwipeFromTabIndex = Math.max(
     0,
@@ -1374,80 +1521,84 @@ export function KajiApp() {
             </div>
           </div>
 
-          {hasAnyUpcomingChores ? (
-            <>
-              {homeSections.map((section) => (
-                <div key={section.key} className="space-y-[6px]">
-                  <div
-                    className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
-                    style={{ top: homeHeaderHeight }}
-                  >
-                    <HomeSectionTitle title={section.title} />
-                  </div>
-                  <AnimatedList
-                    key={`home-${section.key}-${refreshAnimationSeed}`}
-                    delay={45}
-                    reverse={false}
-                    className="items-stretch gap-2"
-                  >
-                    {section.chores.map((chore) => {
-                      const todayKey = toJstDateKey(startOfJstDay(new Date()));
-                      const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
-                      const bigDueDateKey = chore.dueAt
-                        ? toJstDateKey(startOfJstDay(new Date(chore.dueAt)))
-                        : todayKey;
-                      const sectionDateKey =
-                        section.key === "tomorrow"
-                          ? tomorrowKey
-                          : section.key === "big"
-                            ? bigDueDateKey
-                            : todayKey;
-                      const assignedEntry = assignments.find(
-                        (x) => x.choreId === chore.id && x.date === sectionDateKey,
-                      );
-                      const assigneeName = assignedEntry?.userName ?? null;
-                      const disableTomorrowDailyCheck =
-                        section.key === "tomorrow" && chore.intervalDays === 1;
-                      return (
-                        <HomeTaskRow
-                          key={chore.id}
-                          chore={
-                            section.key === "tomorrow" && chore.doneToday
-                              ? { ...chore, doneToday: false }
-                              : chore
-                          }
-                          onRecord={openMemo}
-                          onUndo={undoRecord}
-                          isUpdating={recordUpdatingIds.includes(chore.id)}
-                          recordDisabled={disableTomorrowDailyCheck}
-                          assigneeName={assigneeName}
-                          meta={
-                            section.key === "big"
-                              ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
-                              : undefined
-                          }
+          <div className="space-y-[10px]" style={getPullAnimatedContentStyle(tab)}>
+            {renderInlinePullRefreshHint(tab)}
+            {hasAnyUpcomingChores ? (
+              <>
+                {homeSections.map((section) => (
+                  <div key={section.key} className="space-y-[6px]">
+                    <div
+                      className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
+                      style={{ top: homeHeaderHeight }}
+                    >
+                      <HomeSectionTitle title={section.title} />
+                    </div>
+                    <AnimatedList
+                      key={`home-${section.key}-${refreshAnimationSeed}`}
+                      delay={45}
+                      reverse={false}
+                      disabled={isSwipeSheetMoving}
+                      className="items-stretch gap-2"
+                    >
+                      {section.chores.map((chore) => {
+                        const todayKey = toJstDateKey(startOfJstDay(new Date()));
+                        const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
+                        const bigDueDateKey = chore.dueAt
+                          ? toJstDateKey(startOfJstDay(new Date(chore.dueAt)))
+                          : todayKey;
+                        const sectionDateKey =
+                          section.key === "tomorrow"
+                            ? tomorrowKey
+                            : section.key === "big"
+                              ? bigDueDateKey
+                              : todayKey;
+                        const assignedEntry = assignments.find(
+                          (x) => x.choreId === chore.id && x.date === sectionDateKey,
+                        );
+                        const assigneeName = assignedEntry?.userName ?? null;
+                        const disableTomorrowDailyCheck =
+                          section.key === "tomorrow" && chore.intervalDays === 1;
+                        return (
+                          <HomeTaskRow
+                            key={chore.id}
+                            chore={
+                              section.key === "tomorrow" && chore.doneToday
+                                ? { ...chore, doneToday: false }
+                                : chore
+                            }
+                            onRecord={openMemo}
+                            onUndo={undoRecord}
+                            isUpdating={recordUpdatingIds.includes(chore.id)}
+                            recordDisabled={disableTomorrowDailyCheck}
+                            assigneeName={assigneeName}
+                            meta={
+                              section.key === "big"
+                                ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
+                                : undefined
+                            }
                           />
                         );
                       })}
-                  </AnimatedList>
-                </div>
-              ))}
-            </>
-          ) : (
-            <div className="rounded-[24px] border border-dashed border-[#CFD8E3] bg-white px-5 py-8 text-center">
-              <p className="text-[16px] font-bold text-[#202124]">近日実施するべきタスクはありません</p>
-              <p className="mt-2 text-[13px] font-medium text-[#5F6368]">
-                必要な家事を追加すると、ここに表示されます。
-              </p>
-              <button
-                type="button"
-                onClick={openAddChore}
-                className="mt-4 rounded-[12px] bg-[#1A9BE8] px-4 py-2 text-[14px] font-bold text-white"
-              >
-                家事を追加
-              </button>
-            </div>
-          )}
+                    </AnimatedList>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="rounded-[24px] border border-dashed border-[#CFD8E3] bg-white px-5 py-8 text-center">
+                <p className="text-[16px] font-bold text-[#202124]">近日実施するべきタスクはありません</p>
+                <p className="mt-2 text-[13px] font-medium text-[#5F6368]">
+                  必要な家事を追加すると、ここに表示されます。
+                </p>
+                <button
+                  type="button"
+                  onClick={openAddChore}
+                  className="mt-4 rounded-[12px] bg-[#1A9BE8] px-4 py-2 text-[14px] font-bold text-white"
+                >
+                  家事を追加
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       );
     }
@@ -1486,32 +1637,36 @@ export function KajiApp() {
               ) : null}
             </div>
           </div>
-          <AnimatedList
-            key={`list-${listSortKey}-${refreshAnimationSeed}`}
-            delay={45}
-            reverse={false}
-            className="items-stretch gap-2"
-          >
-            {listChores.map((chore) => {
-              const meta = chore.isBigTask
-                ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
-                } / ${dueInDaysLabel(chore)}`
-                : `${chore.intervalDays}日ごと / 前回:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "未設定"
-                }`;
-              return (
-                <SwipableListChoreRow
-                  key={chore.id}
-                  chore={chore}
-                  meta={meta}
-                  onOpenHistory={openHistory}
-                  onEdit={openEditChore}
-                  onSwipeDelete={handleSwipeDeleteChore}
-                  onDeleteSwipeActiveChange={handleListDeleteSwipeActiveChange}
-                  relaxedSwipeStart={pendingSwipeDeletes.length > 0}
-                />
-                );
-              })}
-          </AnimatedList>
+          <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
+            {renderInlinePullRefreshHint(tab)}
+            <AnimatedList
+              key={`list-${listSortKey}-${refreshAnimationSeed}`}
+              delay={45}
+              reverse={false}
+              disabled={isSwipeSheetMoving}
+              className="items-stretch gap-2"
+            >
+              {listChores.map((chore) => {
+                const meta = chore.isBigTask
+                  ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
+                  } / ${dueInDaysLabel(chore)}`
+                  : `${chore.intervalDays}日ごと / 前回:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "未設定"
+                  }`;
+                return (
+                  <SwipableListChoreRow
+                    key={chore.id}
+                    chore={chore}
+                    meta={meta}
+                    onOpenHistory={openHistory}
+                    onEdit={openEditChore}
+                    onSwipeDelete={handleSwipeDeleteChore}
+                    onDeleteSwipeActiveChange={handleListDeleteSwipeActiveChange}
+                    relaxedSwipeStart={pendingSwipeDeletes.length > 0}
+                  />
+                  );
+                })}
+            </AnimatedList>
+          </div>
         </div>
       );
     }
@@ -1522,35 +1677,38 @@ export function KajiApp() {
           <div className="sticky top-0 z-20 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
             <ScreenTitle title="統計" />
           </div>
-          <StatsView
-            stats={stats}
-            activePeriod={statsPeriod}
-            isLoading={statsLoading}
-            animationSeed={statsAnimationSeed}
-            customDateRange={customDateRange}
-            userColors={(() => {
-              const map = new Map<string, string>();
-              for (const u of boot.users) {
-                if (u.color) map.set(u.id, u.color);
-              }
-              return map;
-            })()}
-            onChangePeriod={async (period) => {
-              try {
-                setError("");
-                if (period === "custom") {
-                  await applyCustomDateRange(customDateRange);
-                  return;
+          <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
+            {renderInlinePullRefreshHint(tab)}
+            <StatsView
+              stats={stats}
+              activePeriod={statsPeriod}
+              isLoading={statsLoading}
+              animationSeed={statsAnimationSeed}
+              customDateRange={customDateRange}
+              userColors={(() => {
+                const map = new Map<string, string>();
+                for (const u of boot.users) {
+                  if (u.color) map.set(u.id, u.color);
                 }
-                await loadStats(period);
-              } catch (err: unknown) {
-                setError((err as Error).message ?? "統計の読み込みに失敗しました。");
-              }
-            }}
-            onChangeCustomDateRange={setCustomDateRange}
-            onApplyCustomDateRange={applyCustomDateRange}
-            onBalanceSwipeActiveChange={setBalanceSwipeActive}
-          />
+                return map;
+              })()}
+              onChangePeriod={async (period) => {
+                try {
+                  setError("");
+                  if (period === "custom") {
+                    await applyCustomDateRange(customDateRange);
+                    return;
+                  }
+                  await loadStats(period);
+                } catch (err: unknown) {
+                  setError((err as Error).message ?? "統計の読み込みに失敗しました。");
+                }
+              }}
+              onChangeCustomDateRange={setCustomDateRange}
+              onApplyCustomDateRange={applyCustomDateRange}
+              onBalanceSwipeActiveChange={setBalanceSwipeActive}
+            />
+          </div>
         </div>
       );
     }
@@ -1560,12 +1718,7 @@ export function KajiApp() {
         <div className="sticky top-0 z-20 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
           <ScreenTitle title="設定" />
         </div>
-        <AnimatedList
-          key="settings"
-          delay={0}
-          reverse={false}
-          className="items-stretch gap-4"
-        >
+        <div className="space-y-4">
           <SettingToggleRow
             title="期限当日通知"
             subtitle="朝8時・夕方18時に通知"
@@ -1677,16 +1830,17 @@ export function KajiApp() {
 
           <div className="rounded-[14px] bg-white p-4">
             <p className="text-[17px] font-bold text-[#202124]">アプリ更新</p>
-            <p className="mt-1 text-[12px] font-medium text-[#9AA0A6]">
-              最新の修正を取り込むため、アプリを再読み込みします。
-            </p>
             <button
               type="button"
               onClick={handleManualAppUpdate}
               disabled={appUpdateLoading}
               className="mt-3 w-full rounded-[12px] bg-[#1A9BE8] px-3 py-2 text-[14.4px] font-bold text-white disabled:opacity-60"
             >
-              {appUpdateLoading ? "最新化しています..." : "バージョンアップデート"}
+              {appUpdateLoading
+                ? "更新を確認中..."
+                : appUpdateAvailable
+                  ? "更新を適用"
+                  : "バージョンアップデート"}
             </button>
           </div>
 
@@ -1706,15 +1860,15 @@ export function KajiApp() {
               ログアウト
             </button>
           </div>
-        </AnimatedList>
+        </div>
       </div>
     );
   };
 
   return (
-    <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-hidden bg-[#F8F9FA]">
+    <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-hidden overscroll-y-none bg-[#F8F9FA]">
       <section
-        className="relative flex-1 overflow-hidden"
+        className="relative flex-1 overflow-hidden overscroll-y-none"
         onTouchStart={(e) => {
           swipe.onTouchStart(e);
           assignmentEdgeSwipe.onTouchStart(e);
@@ -1733,51 +1887,11 @@ export function KajiApp() {
         }}
       >
         <div className="relative h-full overflow-hidden">
-          {showPullRefreshHint ? (
-            <div className="pointer-events-none absolute left-5 right-5 top-2 z-40">
-              <div className="rounded-2xl bg-white/95 px-3 py-2 shadow-[0_6px_18px_rgba(32,33,36,0.12)] backdrop-blur">
-                <div className="flex items-center justify-center gap-2">
-                  {pullRefreshing ? (
-                    <Loader2 size={14} className="animate-spin text-[#1A9BE8]" />
-                  ) : (
-                    <ChevronDown
-                      size={14}
-                      className="text-[#1A9BE8]"
-                      style={{
-                        transform: `translateY(${Math.round((1 - pullRefreshProgress) * -4)}px)`,
-                      }}
-                    />
-                  )}
-                  <p className="text-[12px] font-bold text-[#5F6368]">{pullRefreshMessage}</p>
-                </div>
-                {pullRefreshing || pullRefreshProgress >= 0.45 ? (
-                  <AnimatedList
-                    key={`pull-refresh-preview-${pullRefreshing ? "active" : "ready"}-${refreshAnimationSeed}`}
-                    delay={80}
-                    reverse={false}
-                    className="mt-2 items-stretch gap-1.5"
-                  >
-                    {Array.from({ length: 3 }, (_, index) => (
-                      <div key={`pull-refresh-row-${index}`} className="flex items-center gap-2 rounded-xl bg-[#F8F9FA] px-2.5 py-2">
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: index % 2 === 0 ? "#33C28A" : "#4285F4" }}
-                        />
-                        <span className="h-2 w-full rounded-full bg-[#E8EAED]" />
-                      </div>
-                    ))}
-                  </AnimatedList>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
           <div
             ref={mainScrollRef}
-            className="h-full overflow-auto px-5 pb-28"
+            className="h-full overflow-auto overscroll-y-contain px-5 pb-28"
             style={{
-              transform: pullDistance > 0 ? `translate3d(0, ${pullDistance}px, 0)` : undefined,
-              transition:
-                pullDragging || pullRefreshing ? "none" : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+              overscrollBehaviorY: "contain",
             }}
             onTouchStart={handleMainScrollTouchStart}
             onTouchMove={handleMainScrollTouchMove}
@@ -1866,24 +1980,52 @@ export function KajiApp() {
                     const shouldPreferBackSwipe = assignmentTab === "daily" && startsFromLeftEdge;
 
                     assignmentTabSwipeActiveRef.current = !shouldPreferBackSwipe;
-                    if (shouldPreferBackSwipe) return;
+                    assignmentBackSwipeActiveRef.current = shouldPreferBackSwipe;
+                    if (shouldPreferBackSwipe) {
+                      e.stopPropagation();
+                      assignmentEdgeSwipe.onTouchStart(e);
+                      return;
+                    }
 
                     e.stopPropagation();
                     assignmentTabSwipe.onTouchStart(e);
                   }}
                   onTouchMove={(e) => {
-                    if (!assignmentTabSwipeActiveRef.current) return;
+                    if (assignmentBackSwipeActiveRef.current) {
+                      e.stopPropagation();
+                      assignmentEdgeSwipe.onTouchMove(e);
+                      return;
+                    }
+                    if (!assignmentTabSwipeActiveRef.current) {
+                      return;
+                    }
                     e.stopPropagation();
                     assignmentTabSwipe.onTouchMove(e);
                   }}
                   onTouchEnd={(e) => {
-                    if (!assignmentTabSwipeActiveRef.current) return;
+                    if (assignmentBackSwipeActiveRef.current) {
+                      e.stopPropagation();
+                      assignmentEdgeSwipe.onTouchEnd(e);
+                      assignmentBackSwipeActiveRef.current = false;
+                      return;
+                    }
+                    if (!assignmentTabSwipeActiveRef.current) {
+                      return;
+                    }
                     e.stopPropagation();
                     assignmentTabSwipe.onTouchEnd(e);
                     assignmentTabSwipeActiveRef.current = false;
                   }}
                   onTouchCancel={(e) => {
-                    if (!assignmentTabSwipeActiveRef.current) return;
+                    if (assignmentBackSwipeActiveRef.current) {
+                      e.stopPropagation();
+                      assignmentEdgeSwipe.onTouchCancel();
+                      assignmentBackSwipeActiveRef.current = false;
+                      return;
+                    }
+                    if (!assignmentTabSwipeActiveRef.current) {
+                      return;
+                    }
                     e.stopPropagation();
                     assignmentTabSwipe.onTouchCancel();
                     assignmentTabSwipeActiveRef.current = false;
@@ -1925,27 +2067,38 @@ export function KajiApp() {
       ))}
 
       {infoMessage ? (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/35 px-6 backdrop-blur-[1px]">
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/35 px-6 backdrop-blur-[1px]"
+          style={{
+            paddingTop: "max(env(safe-area-inset-top), 16px)",
+            paddingBottom: "max(env(safe-area-inset-bottom), 16px)",
+          }}
+        >
           <div
             role="dialog"
             aria-modal="true"
             aria-label="更新完了"
-            className="w-full max-w-[320px] rounded-[20px] border border-[#DADCE0] bg-white px-5 py-5 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
+            className="w-full max-w-[288px] rounded-[18px] border border-[#DADCE0] bg-white px-4 py-4 shadow-[0_18px_44px_rgba(0,0,0,0.26)]"
           >
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#E8F3FD]">
-              <span className="material-symbols-rounded text-[24px] text-[#1A9BE8]">check_circle</span>
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F3FD]">
+              <span className="material-symbols-rounded text-[22px] text-[#1A9BE8]">check_circle</span>
             </div>
-            <p className="mt-3 text-center text-[16px] font-bold text-[#202124]">{infoMessage}</p>
+            <p className="mt-2.5 text-center text-[15px] font-bold text-[#202124]">{infoMessage}</p>
             <button
               type="button"
               onClick={() => setInfoMessage("")}
-              className="mt-4 w-full rounded-xl border border-[#1A9BE8] bg-[#1A9BE8] px-3 py-2 text-[14px] font-bold text-white shadow-[0_4px_12px_rgba(26,155,232,0.35)]"
+              className="mt-3.5 w-full rounded-xl border border-[#1A9BE8] bg-[#1A9BE8] px-3 py-2 text-[14px] font-bold text-white shadow-[0_4px_12px_rgba(26,155,232,0.35)]"
             >
               OK
             </button>
           </div>
         </div>
       ) : null}
+
+      <div
+        aria-hidden
+        className={`pointer-events-none fixed inset-0 z-[10010] bg-[#F8F9FA] transition-opacity duration-200 ${appReloading ? "opacity-100" : "opacity-0"}`}
+      />
 
       <nav className="fixed bottom-4 left-0 right-0 z-30 mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
