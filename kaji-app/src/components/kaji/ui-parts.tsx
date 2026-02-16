@@ -44,7 +44,7 @@ export function ColorDot({
     <button
       type="button"
       onClick={onClick}
-      className={`h-[22px] w-[22px] rounded-full ${selected ? "ring-2 ring-[#1A9BE8] ring-offset-1" : ""}`}
+      className={`h-[28px] w-[28px] rounded-full ${selected ? "ring-2 ring-[#1A9BE8] ring-offset-1" : ""}`}
       style={{ backgroundColor: color, border: color === "#FFFFFF" ? "1px solid #DADCE0" : "none" }}
       aria-label={color}
     />
@@ -121,12 +121,12 @@ export function HomeTaskRow({
         }
         aria-pressed={done}
         className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${isUpdating
-            ? "border-[#DADCE0] bg-[#F1F3F4]"
-            : done
-              ? "border-[#33C28A] bg-[#33C28A]"
-              : disableRecordAction
-                ? "border-[#DADCE0] bg-[#F1F3F4]"
-                : "border-[#C0C6CC] bg-white hover:border-[#1A9BE8]"
+          ? "border-[#DADCE0] bg-[#F1F3F4]"
+          : done
+            ? "border-[#33C28A] bg-[#33C28A]"
+            : disableRecordAction
+              ? "border-[#DADCE0] bg-[#F1F3F4]"
+              : "border-[#C0C6CC] bg-white hover:border-[#1A9BE8]"
           }`}
       >
         {isUpdating ? (
