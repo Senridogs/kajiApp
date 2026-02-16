@@ -66,7 +66,7 @@ const ASSIGNMENT_BACK_SWIPE_EDGE_PX = 72;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PULL_REFRESH_TRIGGER_PX = 74;
 const PULL_REFRESH_MAX_PX = 128;
-const PULL_REFRESH_HOLD_PX = 56;
+const PULL_REFRESH_HOLD_PX = 28;
 
 type TabKey = "home" | "list" | "stats" | "settings";
 const TAB_ORDER: readonly TabKey[] = ["home", "list", "stats", "settings"] as const;
@@ -378,6 +378,12 @@ export function KajiApp() {
   const [listSortOpen, setListSortOpen] = useState(true);
   const [homeHeaderHeight, setHomeHeaderHeight] = useState(HOME_SECTION_STICKY_FALLBACK_TOP);
   const homeHeaderRef = useRef<HTMLDivElement | null>(null);
+  const listHeaderRef = useRef<HTMLDivElement | null>(null);
+  const statsHeaderRef = useRef<HTMLDivElement | null>(null);
+  const settingsHeaderRef = useRef<HTMLDivElement | null>(null);
+  const [listHeaderHeight, setListHeaderHeight] = useState(0);
+  const [statsHeaderHeight, setStatsHeaderHeight] = useState(0);
+  const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(0);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
   const pullStartYRef = useRef(0);
   const pullStartXRef = useRef(0);
@@ -676,6 +682,27 @@ export function KajiApp() {
     observer.observe(node);
     return () => observer.disconnect();
   }, [activeTab, boot?.users.length]);
+
+  useEffect(() => {
+    const entries: Array<[React.RefObject<HTMLDivElement | null>, React.Dispatch<React.SetStateAction<number>>]> = [
+      [listHeaderRef, setListHeaderHeight],
+      [statsHeaderRef, setStatsHeaderHeight],
+      [settingsHeaderRef, setSettingsHeaderHeight],
+    ];
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      for (const [ref, setter] of entries) {
+        const el = ref.current;
+        if (!el) continue;
+        const h = Math.ceil(el.getBoundingClientRect().height);
+        if (Number.isFinite(h) && h > 0) setter((prev) => (prev === h ? prev : h));
+      }
+    });
+    for (const [ref] of entries) {
+      if (ref.current) observer.observe(ref.current);
+    }
+    return () => observer.disconnect();
+  }, [activeTab]);
 
   useEffect(() => {
     if (!assignmentOpen) return;
@@ -1388,39 +1415,8 @@ export function KajiApp() {
     if (tab === "settings") return null;
     if (!showPullRefreshHint || tab !== activeTab) return null;
     return (
-      <div className="rounded-2xl bg-white/95 px-3 py-2 shadow-[0_6px_18px_rgba(32,33,36,0.12)] backdrop-blur">
-        <div className="flex items-center justify-center gap-2">
-          {pullRefreshing ? (
-            <Loader2 size={14} className="animate-spin text-[#1A9BE8]" />
-          ) : (
-            <ChevronDown
-              size={14}
-              className="text-[#1A9BE8]"
-              style={{
-                transform: `translateY(${Math.round((1 - pullRefreshProgress) * -4)}px)`,
-              }}
-            />
-          )}
-          <p className="text-[12px] font-bold text-[#5F6368]">{pullRefreshMessage}</p>
-        </div>
-        {pullRefreshing || pullRefreshProgress >= 0.45 ? (
-          <AnimatedList
-            key={`pull-refresh-preview-${tab}-${pullRefreshing ? "active" : "ready"}-${refreshAnimationSeed}`}
-            delay={80}
-            reverse={false}
-            className="mt-2 items-stretch gap-1.5"
-          >
-            {Array.from({ length: 3 }, (_, index) => (
-              <div key={`pull-refresh-row-${tab}-${index}`} className="flex items-center gap-2 rounded-xl bg-[#F8F9FA] px-2.5 py-2">
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: index % 2 === 0 ? "#33C28A" : "#4285F4" }}
-                />
-                <span className="h-2 w-full rounded-full bg-[#E8EAED]" />
-              </div>
-            ))}
-          </AnimatedList>
-        ) : null}
+      <div className="py-2 text-center">
+        <p className="text-[12px] font-bold text-[#5F6368]">{pullRefreshMessage}</p>
       </div>
     );
   };
@@ -1512,29 +1508,83 @@ export function KajiApp() {
     );
   };
 
+  const renderTabHeader = (tab: TabKey) => {
+    if (tab === "home") {
+      return (
+        <div ref={homeHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+          <div className="flex items-center justify-between">
+            <p className="text-[48px] font-bold leading-none text-[#5F6368]">{formatTopDate()}</p>
+            {boot.users.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  openAssignment();
+                  if (!assignmentUser && boot.users.length > 0) {
+                    setAssignmentUser(boot.users[0].id);
+                  }
+                }}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF3FF]"
+              >
+                <Users size={20} color="#1A9BE8" />
+              </button>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+    if (tab === "list") {
+      return (
+        <div ref={listHeaderRef} className="space-y-1.5 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+          <ScreenTitle title="家事一覧" />
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[13.2px] font-bold text-[#5F6368]">並び替え</p>
+              <button
+                type="button"
+                onClick={() => setListSortOpen((prev) => !prev)}
+                aria-expanded={listSortOpen}
+                aria-controls="list-sort-options"
+                className="rounded-lg p-1 text-[#5F6368]"
+              >
+                {listSortOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+            </div>
+            {listSortOpen ? (
+              <div id="list-sort-options" className="flex flex-wrap gap-1.5">
+                {LIST_SORT_ITEMS.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setListSortKey(item.key)}
+                    className={`rounded-xl px-3 py-1.5 text-[12.5px] font-bold ${listSortKey === item.key ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+    if (tab === "stats") {
+      return (
+        <div ref={statsHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+          <ScreenTitle title="統計" />
+        </div>
+      );
+    }
+    return (
+      <div ref={settingsHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+        <ScreenTitle title="設定" />
+      </div>
+    );
+  };
+
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
       return (
-        <div className="space-y-[10px]">
-          <div ref={homeHeaderRef} className="sticky top-0 z-30 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-            <div className="flex items-center justify-between">
-              <p className="text-[48px] font-bold leading-none text-[#5F6368]">{formatTopDate()}</p>
-              {boot.users.length > 1 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    openAssignment();
-                    if (!assignmentUser && boot.users.length > 0) {
-                      setAssignmentUser(boot.users[0].id);
-                    }
-                  }}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF3FF]"
-                >
-                  <Users size={20} color="#1A9BE8" />
-                </button>
-              ) : null}
-            </div>
-          </div>
+        <div className="space-y-[10px]" style={{ paddingTop: homeHeaderHeight }}>
 
           <div className="space-y-[10px]" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
@@ -1544,7 +1594,7 @@ export function KajiApp() {
                   <div key={section.key} className="space-y-[6px]">
                     <div
                       className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
-                      style={{ top: homeHeaderHeight }}
+                      style={{ top: 0 }}
                     >
                       <HomeSectionTitle title={section.title} />
                     </div>
@@ -1614,38 +1664,7 @@ export function KajiApp() {
 
     if (tab === "list") {
       return (
-        <div className="space-y-4">
-          <div className="sticky top-0 z-20 -mx-5 space-y-1.5 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-            <ScreenTitle title="家事一覧" />
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <p className="text-[13.2px] font-bold text-[#5F6368]">並び替え</p>
-                <button
-                  type="button"
-                  onClick={() => setListSortOpen((prev) => !prev)}
-                  aria-expanded={listSortOpen}
-                  aria-controls="list-sort-options"
-                  className="rounded-lg p-1 text-[#5F6368]"
-                >
-                  {listSortOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </button>
-              </div>
-              {listSortOpen ? (
-                <div id="list-sort-options" className="flex flex-wrap gap-1.5">
-                  {LIST_SORT_ITEMS.map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setListSortKey(item.key)}
-                      className={`rounded-xl px-3 py-1.5 text-[12.5px] font-bold ${listSortKey === item.key ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
+        <div className="space-y-4" style={{ paddingTop: listHeaderHeight }}>
           <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             <div className="flex flex-col items-stretch gap-2">
@@ -1676,10 +1695,7 @@ export function KajiApp() {
 
     if (tab === "stats") {
       return (
-        <div className="space-y-5">
-          <div className="sticky top-0 z-20 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-            <ScreenTitle title="統計" />
-          </div>
+        <div className="space-y-5" style={{ paddingTop: statsHeaderHeight }}>
           <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             <StatsView
@@ -1717,10 +1733,7 @@ export function KajiApp() {
     }
 
     return (
-      <div className="space-y-6">
-        <div className="sticky top-0 z-20 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-          <ScreenTitle title="設定" />
-        </div>
+      <div className="space-y-6" style={{ paddingTop: settingsHeaderHeight }}>
         <div className="space-y-4">
           <SettingToggleRow
             title="期限当日通知"
@@ -1890,6 +1903,9 @@ export function KajiApp() {
         }}
       >
         <div className="relative h-full overflow-hidden">
+          <div className="absolute left-0 right-0 top-0 z-30">
+            {renderTabHeader(activeTab)}
+          </div>
           <div
             ref={mainScrollRef}
             className="h-full overflow-auto overscroll-y-contain px-5 pb-28"
