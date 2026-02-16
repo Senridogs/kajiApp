@@ -30,5 +30,21 @@ export async function resolve(specifier, context, nextResolve) {
   if (resolvedAlias) {
     return nextResolve(resolvedAlias, context);
   }
+
+  // Rewrite .js → .ts/.tsx for relative/absolute file imports
+  if (specifier.endsWith(".js")) {
+    const parentURL = context.parentURL;
+    if (parentURL) {
+      const parentDir = path.dirname(fileURLToPath(parentURL));
+      const resolved = path.resolve(parentDir, specifier);
+      const base = resolved.slice(0, -3); // strip .js
+      const tsCandidates = [`${base}.ts`, `${base}.tsx`];
+      const tsFile = tsCandidates.find((c) => fs.existsSync(c));
+      if (tsFile) {
+        return nextResolve(pathToFileURL(tsFile).href, context);
+      }
+    }
+  }
+
   return nextResolve(specifier, context);
 }

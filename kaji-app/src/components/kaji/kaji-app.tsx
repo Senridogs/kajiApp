@@ -1004,12 +1004,33 @@ export function KajiApp() {
     const previousBoot = boot;
     setRecordUpdating(chore.id, true);
 
+    // Recalculate due-date flags from the pre-check dueAt.
+    // submitRecord shifted dueAt forward by intervalDays, so we reverse it.
+    const origDueAt = chore.lastPerformedAt
+      ? addDays(new Date(chore.lastPerformedAt), chore.intervalDays).toISOString()
+      : chore.dueAt;
+    const todayStart = startOfJstDay(new Date());
+    const tomorrowStart = addDays(todayStart, 1);
+    const dayAfterTomorrow = addDays(todayStart, 2);
+    const dueTime = origDueAt ? new Date(origDueAt).getTime() : null;
+
+    const restoredIsDueToday =
+      dueTime !== null && dueTime >= todayStart.getTime() && dueTime < tomorrowStart.getTime();
+    const restoredIsDueTomorrow =
+      dueTime !== null && dueTime >= tomorrowStart.getTime() && dueTime < dayAfterTomorrow.getTime();
+    const restoredIsOverdue = dueTime !== null && dueTime < todayStart.getTime();
+
     updateBootChoreOptimistically(chore.id, (current) => ({
       ...current,
       doneToday: false,
       lastRecordId: null,
-      isDueToday: true,
-      isDueTomorrow: false,
+      dueAt: origDueAt,
+      isDueToday: restoredIsDueToday,
+      isDueTomorrow: restoredIsDueTomorrow,
+      isOverdue: restoredIsOverdue,
+      overdueDays: restoredIsOverdue && dueTime !== null
+        ? Math.floor((todayStart.getTime() - dueTime) / (24 * 60 * 60 * 1000))
+        : 0,
     }));
 
     try {
@@ -1565,8 +1586,44 @@ export function KajiApp() {
     }
     if (tab === "stats") {
       return (
-        <div ref={statsHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+        <div ref={statsHeaderRef} className="space-y-2 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
           <ScreenTitle title="統計" />
+          <div className="flex flex-wrap gap-1">
+            {([
+              { key: "week" as const, label: "1週間" },
+              { key: "month" as const, label: "1か月" },
+              { key: "half" as const, label: "半年" },
+              { key: "year" as const, label: "1年" },
+              { key: "all" as const, label: "全期間" },
+              { key: "custom" as const, label: "カスタム", accent: true as const },
+            ] as const).map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={async () => {
+                  try {
+                    setError("");
+                    setStatsAnimationSeed((prev) => prev + 1);
+                    if (item.key === "custom") {
+                      await applyCustomDateRange(customDateRange);
+                      return;
+                    }
+                    await loadStats(item.key);
+                  } catch (err: unknown) {
+                    setError((err as Error).message ?? "統計の読み込みに失敗しました。");
+                  }
+                }}
+                className={`inline-flex items-center gap-1 rounded-[11px] px-2 py-1.5 text-[13.2px] font-bold ${statsPeriod === item.key
+                  ? "bg-[#1A9BE8] text-white"
+                  : "accent" in item && item.accent
+                    ? "bg-[#EEF3FF] text-[#4D8BFF]"
+                    : "bg-[#F1F3F4] text-[#5F6368]"
+                  }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
       );
     }
@@ -1707,18 +1764,6 @@ export function KajiApp() {
                 }
                 return map;
               })()}
-              onChangePeriod={async (period) => {
-                try {
-                  setError("");
-                  if (period === "custom") {
-                    await applyCustomDateRange(customDateRange);
-                    return;
-                  }
-                  await loadStats(period);
-                } catch (err: unknown) {
-                  setError((err as Error).message ?? "統計の読み込みに失敗しました。");
-                }
-              }}
               onChangeCustomDateRange={setCustomDateRange}
               onApplyCustomDateRange={applyCustomDateRange}
               onBalanceSwipeActiveChange={setBalanceSwipeActive}
@@ -1897,7 +1942,7 @@ export function KajiApp() {
         }}
       >
         <div className="relative h-full overflow-hidden">
-          <div className="absolute left-0 right-0 top-0 z-30 overflow-hidden">
+          <div className="absolute left-0 right-0 top-0 z-30 overflow-hidden" style={isSwipeSheetMoving ? undefined : { height: activeTab === "home" ? homeHeaderHeight : activeTab === "list" ? listHeaderHeight : activeTab === "stats" ? statsHeaderHeight : settingsHeaderHeight }}>
             <div
               className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
               style={{

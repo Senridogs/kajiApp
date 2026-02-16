@@ -9,14 +9,7 @@ import { StatsPeriodKey, StatsResponse, StatsUserCount } from "@/lib/types";
 
 const JA_COLLATOR = new Intl.Collator("ja");
 
-const PERIOD_ITEMS: Array<{ key: StatsPeriodKey; label: string; accent?: boolean }> = [
-  { key: "week", label: "1週間" },
-  { key: "month", label: "1か月" },
-  { key: "half", label: "半年" },
-  { key: "year", label: "1年" },
-  { key: "all", label: "全期間" },
-  { key: "custom", label: "カスタム", accent: true },
-];
+
 
 const USER_COLORS = ["#4285F4", "#EA4335", "#33C28A", "#FBBC05", "#A142F4", "#00ACC1"];
 
@@ -103,7 +96,6 @@ export function StatsView({
   customDateRange,
   animationSeed = 0,
   userColors,
-  onChangePeriod,
   onChangeCustomDateRange,
   onApplyCustomDateRange,
   onBalanceSwipeActiveChange,
@@ -114,12 +106,11 @@ export function StatsView({
   customDateRange: CustomDateRange;
   animationSeed?: number;
   userColors?: Map<string, string>;
-  onChangePeriod: (period: StatsPeriodKey) => void;
   onChangeCustomDateRange: (range: CustomDateRange) => void;
   onApplyCustomDateRange: (range: CustomDateRange) => void | Promise<void>;
   onBalanceSwipeActiveChange?: (active: boolean) => void;
 }) {
-  const [customEditorOpen, setCustomEditorOpen] = useState(false);
+
   const [balanceTab, setBalanceTab] = useState<BalanceTabKey>("all");
   const [balanceAnimationReady, setBalanceAnimationReady] = useState(false);
   const [balanceAnimationTrigger, setBalanceAnimationTrigger] = useState(0);
@@ -131,12 +122,7 @@ export function StatsView({
     setBalanceAnimationTrigger((prev) => prev + 1);
   }, []);
 
-  const triggerAllAnimation = useCallback(() => {
-    setBalanceAnimationReady(false);
-    setBalanceAnimationTrigger((prev) => prev + 1);
-    setChoreAnimationReady(false);
-    setChoreAnimationTrigger((prev) => prev + 1);
-  }, []);
+
 
   const users = stats?.userCounts ?? [];
   const bigTaskUsers = stats?.bigTaskUserCounts ?? [];
@@ -248,29 +234,8 @@ export function StatsView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-1">
-        {PERIOD_ITEMS.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => {
-              triggerAllAnimation();
-              onChangePeriod(item.key);
-              setCustomEditorOpen(item.key === "custom");
-            }}
-            className={`inline-flex items-center gap-1 rounded-[11px] px-2 py-1.5 text-[13.2px] font-bold ${activePeriod === item.key
-                ? "bg-[#1A9BE8] text-white"
-                : item.accent
-                  ? "bg-[#EEF3FF] text-[#4D8BFF]"
-                  : "bg-[#F1F3F4] text-[#5F6368]"
-              }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
 
-      {activePeriod === "custom" && customEditorOpen ? (
+      {activePeriod === "custom" ? (
         <div className="space-y-2 rounded-2xl border border-[#DADCE0] bg-white p-4">
           <p className="text-[14px] font-bold text-[#202124]">カスタム期間</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-center">
@@ -303,7 +268,6 @@ export function StatsView({
               type="button"
               onClick={async () => {
                 await onApplyCustomDateRange(customDateRange);
-                setCustomEditorOpen(false);
               }}
               className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-[10px] bg-[#1A9BE8] px-2.5 text-[13px] font-bold leading-none text-white [writing-mode:horizontal-tb]"
             >
@@ -350,8 +314,8 @@ export function StatsView({
                 setBalanceTab(tab.key);
               }}
               className={`rounded-[10px] px-3 py-1.5 text-[12px] font-bold ${balanceTab === tab.key
-                  ? "bg-[#1A9BE8] text-white"
-                  : "bg-[#F1F3F4] text-[#5F6368]"
+                ? "bg-[#1A9BE8] text-white"
+                : "bg-[#F1F3F4] text-[#5F6368]"
                 }`}
             >
               {tab.label}
