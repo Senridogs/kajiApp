@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "set \"DATABASE_URL=postgresql://ieApp:ieApp@localhost:5432/kaji_app?schema=public\" && next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
@@ -11,6 +12,14 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "node --experimental-loader ./test/support/alias-loader.mjs --experimental-strip-types --test \"test/unit/**/*.test.mts\"",
     "test:integration": "powershell -ExecutionPolicy Bypass -File ./test/integration/run-api-flow.ps1",
+    "db:up": "docker compose -f docker-compose.local-db.yml up -d",
+    "db:down": "docker compose -f docker-compose.local-db.yml down",
+    "db:down:volumes": "docker compose -f docker-compose.local-db.yml down -v",
+    "db:logs": "docker compose -f docker-compose.local-db.yml logs -f postgres",
+    "db:init": "node ./scripts/db-init-local.mjs",
+    "db:init:local": "node ./scripts/db-init-local.mjs",
+    "db:init:current-env": "npm run prisma:generate && npm run prisma:push",
+    "db:seed:senri": "node ./scripts/seed-local-senri-nozomi.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push --skip-generate"

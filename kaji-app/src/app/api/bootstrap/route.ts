@@ -86,8 +86,8 @@ export async function GET() {
 
   return NextResponse.json({
     needsRegistration: false,
-    sessionUser: { id: sessionUser.id, name: sessionUser.name },
-    users: household.users.map((u) => ({ id: u.id, name: u.name })),
+    sessionUser: { id: sessionUser.id, name: sessionUser.name, color: sessionUser.color ?? null },
+    users: household.users.map((u) => ({ id: u.id, name: u.name, color: u.color ?? null })),
     chores: computed,
     todayChores: homeSplit.todayChores,
     tomorrowChores: homeSplit.tomorrowChores,

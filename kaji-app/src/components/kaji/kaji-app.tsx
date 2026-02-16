@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { FormEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -18,7 +18,7 @@ import {
   type ChoreForm,
   type CustomIconOption,
 } from "@/components/kaji/chore-editor";
-import { PRIMARY_COLOR } from "@/components/kaji/constants";
+import { PRIMARY_COLOR, USER_COLOR_PALETTE } from "@/components/kaji/constants";
 import {
   apiFetch,
   dueInDaysLabel,
@@ -63,9 +63,14 @@ const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
 const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
 const ASSIGNMENT_SHEET_SLIDE_MS = 240;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const PULL_REFRESH_TRIGGER_PX = 74;
+const PULL_REFRESH_MAX_PX = 128;
+const PULL_REFRESH_HOLD_PX = 56;
 
 type TabKey = "home" | "list" | "stats" | "settings";
 const TAB_ORDER: readonly TabKey[] = ["home", "list", "stats", "settings"] as const;
+type AssignmentTabKey = "daily" | "big";
+const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily", "big"] as const;
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
 const CUSTOM_ICONS_STORAGE_KEY = "kaji_custom_icons";
@@ -89,6 +94,10 @@ function defaultCustomDateRange(now = new Date()): CustomDateRange {
 function defaultLastPerformedAt(now = new Date()) {
   const previousDay = addDays(now, -1);
   return previousDay.toISOString();
+}
+
+function applyPullResistance(distance: number) {
+  return Math.min(PULL_REFRESH_MAX_PX, Math.max(0, distance) * 0.5);
 }
 
 function scheduledDayOffset(
@@ -137,6 +146,29 @@ function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
     });
 
   return { todayChores, tomorrowChores, upcomingBigChores };
+}
+
+function compareCompletionThenKana(
+  aDone: boolean,
+  bDone: boolean,
+  aTitle: string,
+  bTitle: string,
+) {
+  if (aDone !== bDone) {
+    return aDone ? -1 : 1;
+  }
+  return JA_COLLATOR.compare(aTitle, bTitle);
+}
+
+function sortHomeSectionChores(
+  sectionKey: "today" | "tomorrow" | "big",
+  chores: ChoreWithComputed[],
+) {
+  return [...chores].sort((a, b) => {
+    const aDone = sectionKey === "tomorrow" ? false : a.doneToday;
+    const bDone = sectionKey === "tomorrow" ? false : b.doneToday;
+    return compareCompletionThenKana(aDone, bDone, a.title, b.title);
+  });
 }
 
 function removeChoreFromBootstrap(
@@ -219,6 +251,7 @@ export function KajiApp() {
 
   const [registerName, setRegisterName] = useState("");
   const [registerInviteCode, setRegisterInviteCode] = useState("");
+  const [registerColor, setRegisterColor] = useState(USER_COLOR_PALETTE[0]);
   const [registerLoading, setRegisterLoading] = useState(false);
 
   const [choreEditorOpen, setChoreEditorOpen] = useState(false);
@@ -248,6 +281,7 @@ export function KajiApp() {
   const [assignmentSlideIn, setAssignmentSlideIn] = useState(false);
   const assignmentCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [listDeleteSwipeActive, setListDeleteSwipeActive] = useState(false);
+  const [balanceSwipeActive, setBalanceSwipeActive] = useState(false);
   const clearAssignmentCloseTimer = useCallback(() => {
     if (!assignmentCloseTimerRef.current) return;
     clearTimeout(assignmentCloseTimerRef.current);
@@ -283,8 +317,8 @@ export function KajiApp() {
   const swipe = useSwipeTab({
     tabs: TAB_ORDER,
     activeTab,
-    onChangeTab: (tab) => { closeAssignment(); setActiveTab(tab); },
-    disabled: assignmentOpen || listDeleteSwipeActive,
+    onChangeTab: (tab) => { closeAssignment(); setActiveTab(tab); if (tab === "home") setRefreshAnimationSeed((p) => p + 1); },
+    disabled: assignmentOpen || listDeleteSwipeActive || balanceSwipeActive,
     threshold: 78,
     dominanceRatio: 1.4,
     lockDistance: 14,
@@ -307,7 +341,15 @@ export function KajiApp() {
     threshold: 80,
   });
   const [assignmentUser, setAssignmentUser] = useState<string | null>(null);
-  const [assignmentTab, setAssignmentTab] = useState<"daily" | "big">("daily");
+  const [assignmentTab, setAssignmentTab] = useState<AssignmentTabKey>("daily");
+  const assignmentTabSwipe = useSwipeTab<AssignmentTabKey>({
+    tabs: ASSIGNMENT_TAB_ORDER,
+    activeTab: assignmentTab,
+    onChangeTab: setAssignmentTab,
+    threshold: 56,
+    dominanceRatio: 1.15,
+    lockDistance: 12,
+  });
   const [assignments, setAssignments] = useState<ChoreAssignmentEntry[]>([]);
   const [visibleAssignDays, setVisibleAssignDays] = useState(14);
   const [, startTransition] = useTransition();
@@ -316,6 +358,15 @@ export function KajiApp() {
   const [listSortOpen, setListSortOpen] = useState(true);
   const [homeHeaderHeight, setHomeHeaderHeight] = useState(HOME_SECTION_STICKY_FALLBACK_TOP);
   const homeHeaderRef = useRef<HTMLDivElement | null>(null);
+  const mainScrollRef = useRef<HTMLDivElement | null>(null);
+  const pullStartYRef = useRef(0);
+  const pullStartXRef = useRef(0);
+  const pullEligibleRef = useRef(false);
+  const pullDraggingRef = useRef(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [pullDragging, setPullDragging] = useState(false);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const [refreshAnimationSeed, setRefreshAnimationSeed] = useState(0);
 
   const sessionUser = boot?.sessionUser ?? null;
   const chores = boot?.chores ?? [];
@@ -490,6 +541,16 @@ export function KajiApp() {
     return () => observer.disconnect();
   }, [activeTab, boot?.users.length]);
 
+  useEffect(() => {
+    if (!assignmentOpen) return;
+    pullEligibleRef.current = false;
+    pullDraggingRef.current = false;
+    setPullDragging(false);
+    if (!pullRefreshing) {
+      setPullDistance(0);
+    }
+  }, [assignmentOpen, pullRefreshing]);
+
   const setRecordUpdating = useCallback((choreId: string, isUpdating: boolean) => {
     setRecordUpdatingIds((prev) => {
       if (isUpdating) {
@@ -527,6 +588,7 @@ export function KajiApp() {
         method: "POST",
         body: JSON.stringify({
           name: registerName,
+          color: registerColor,
           ...(registerInviteCode.trim() ? { inviteCode: registerInviteCode.trim() } : {}),
         }),
       });
@@ -829,6 +891,127 @@ export function KajiApp() {
     }
   };
 
+  const executePullRefresh = useCallback(async () => {
+    if (pullRefreshing) return;
+    setPullRefreshing(true);
+    setPullDistance(PULL_REFRESH_HOLD_PX);
+    setError("");
+    try {
+      await refreshAll(statsPeriod);
+      setRefreshAnimationSeed((prev) => prev + 1);
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "最新化に失敗しました。");
+    } finally {
+      pullEligibleRef.current = false;
+      pullDraggingRef.current = false;
+      setPullDragging(false);
+      setPullRefreshing(false);
+      setPullDistance(0);
+    }
+  }, [pullRefreshing, refreshAll, statsPeriod]);
+
+  const handleMainScrollTouchStart = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      if (pullRefreshing || assignmentOpen || activeTab !== "home") return;
+      const touch = event.touches[0];
+      const scroller = mainScrollRef.current;
+      if (!touch || !scroller) return;
+      if (scroller.scrollTop > 0) {
+        pullEligibleRef.current = false;
+        pullDraggingRef.current = false;
+        setPullDragging(false);
+        return;
+      }
+
+      pullEligibleRef.current = true;
+      pullDraggingRef.current = false;
+      setPullDragging(false);
+      pullStartYRef.current = touch.clientY;
+      pullStartXRef.current = touch.clientX;
+    },
+    [activeTab, assignmentOpen, pullRefreshing],
+  );
+
+  const handleMainScrollTouchMove = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      if (!pullEligibleRef.current || pullRefreshing) return;
+      const touch = event.touches[0];
+      const scroller = mainScrollRef.current;
+      if (!touch || !scroller) return;
+
+      if (scroller.scrollTop > 0) {
+        pullEligibleRef.current = false;
+        pullDraggingRef.current = false;
+        setPullDragging(false);
+        setPullDistance(0);
+        return;
+      }
+
+      const dx = touch.clientX - pullStartXRef.current;
+      const dy = touch.clientY - pullStartYRef.current;
+
+      if (!pullDraggingRef.current) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * 0.9) {
+          pullEligibleRef.current = false;
+          pullDraggingRef.current = false;
+          setPullDragging(false);
+          setPullDistance(0);
+          return;
+        }
+        pullDraggingRef.current = true;
+        setPullDragging(true);
+      }
+
+      if (dy <= 0) {
+        setPullDistance(0);
+        return;
+      }
+
+      setPullDistance(applyPullResistance(dy));
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [pullRefreshing],
+  );
+
+  const endMainScrollPullGesture = useCallback(() => {
+    const shouldHandle = pullDraggingRef.current || pullDistance > 0;
+    pullEligibleRef.current = false;
+
+    if (!shouldHandle) return;
+
+    pullDraggingRef.current = false;
+    setPullDragging(false);
+
+    if (pullDistance >= PULL_REFRESH_TRIGGER_PX) {
+      void executePullRefresh();
+      return;
+    }
+
+    setPullDistance(0);
+  }, [executePullRefresh, pullDistance]);
+
+  const handleMainScrollTouchEnd = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      if (pullDraggingRef.current || pullDistance > 0) {
+        event.stopPropagation();
+      }
+      endMainScrollPullGesture();
+    },
+    [endMainScrollPullGesture, pullDistance],
+  );
+
+  const handleMainScrollTouchCancel = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      if (pullDraggingRef.current || pullDistance > 0) {
+        event.stopPropagation();
+      }
+      endMainScrollPullGesture();
+    },
+    [endMainScrollPullGesture, pullDistance],
+  );
+
   const historyUsers = useMemo(() => boot?.users ?? [], [boot?.users]);
   const historyFilters = useMemo(() => {
     const items = [{ key: "all", label: "全履歴" }];
@@ -888,6 +1071,28 @@ export function KajiApp() {
             />
             <div className="h-px bg-[#E8EAED]" />
             <div className="space-y-2">
+              <p className="text-[15px] font-bold text-[#202124]">マイカラー</p>
+              <div className="flex flex-wrap gap-2">
+                {USER_COLOR_PALETTE.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setRegisterColor(c)}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-transform ${registerColor === c ? "scale-110 ring-2 ring-[#202124] ring-offset-2" : ""}`}
+                    style={{ backgroundColor: c }}
+                    aria-label={c}
+                  >
+                    {registerColor === c ? (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M2.5 7L5.5 10L11.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="h-px bg-[#E8EAED]" />
+            <div className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <span className="text-[14px] text-[#5F6368]">🎟️</span>
                 <p className="text-[15px] font-bold text-[#202124]">家族コード</p>
@@ -932,17 +1137,17 @@ export function KajiApp() {
     {
       key: "today" as const,
       title: "今日",
-      chores: [...boot.todayChores].sort((a, b) => JA_COLLATOR.compare(a.title, b.title)),
+      chores: sortHomeSectionChores("today", boot.todayChores),
     },
     {
       key: "tomorrow" as const,
       title: "明日",
-      chores: [...boot.tomorrowChores].sort((a, b) => JA_COLLATOR.compare(a.title, b.title)),
+      chores: sortHomeSectionChores("tomorrow", boot.tomorrowChores),
     },
     {
       key: "big" as const,
       title: "大仕事",
-      chores: [...boot.upcomingBigChores],
+      chores: sortHomeSectionChores("big", boot.upcomingBigChores),
     },
   ].filter((section) => section.chores.length > 0);
   const hasAnyUpcomingChores = homeSections.length > 0;
@@ -953,9 +1158,14 @@ export function KajiApp() {
     swipe.visual.isDragging || swipe.visual.isAnimating || Math.abs(swipeProgress) > 0.0001;
   const swipeTrackTransitionStyle = swipe.visual.isDragging
     ? "none"
-    : swipe.visual.isAnimating
-      ? "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)"
-      : "none";
+    : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
+  const pullRefreshProgress = Math.min(1, pullDistance / PULL_REFRESH_TRIGGER_PX);
+  const showPullRefreshHint = pullRefreshing || pullDistance > 0;
+  const pullRefreshMessage = pullRefreshing
+    ? "最新化しています..."
+    : pullRefreshProgress >= 1
+      ? "指を離して最新化"
+      : "下にスワイプして最新化";
 
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
@@ -991,7 +1201,12 @@ export function KajiApp() {
                   >
                     <HomeSectionTitle title={section.title} />
                   </div>
-                  <div className="flex flex-col gap-2">
+                  <AnimatedList
+                    key={`home-${section.key}-${refreshAnimationSeed}`}
+                    delay={45}
+                    reverse={false}
+                    className="items-stretch gap-2"
+                  >
                     {section.chores.map((chore) => {
                       const todayKey = toJstDateKey(startOfJstDay(new Date()));
                       const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
@@ -1028,10 +1243,10 @@ export function KajiApp() {
                               ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
                               : undefined
                           }
-                        />
-                      );
-                    })}
-                  </div>
+                          />
+                        );
+                      })}
+                  </AnimatedList>
                 </div>
               ))}
             </>
@@ -1088,7 +1303,12 @@ export function KajiApp() {
               ) : null}
             </div>
           </div>
-          <div className="space-y-2">
+          <AnimatedList
+            key={`list-${listSortKey}-${refreshAnimationSeed}`}
+            delay={45}
+            reverse={false}
+            className="items-stretch gap-2"
+          >
             {listChores.map((chore) => {
               const meta = chore.isBigTask
                 ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
@@ -1106,9 +1326,9 @@ export function KajiApp() {
                   onDeleteSwipeActiveChange={handleListDeleteSwipeActiveChange}
                   relaxedSwipeStart={pendingSwipeDeletes.length > 0}
                 />
-              );
-            })}
-          </div>
+                );
+              })}
+          </AnimatedList>
         </div>
       );
     }
@@ -1124,6 +1344,13 @@ export function KajiApp() {
             activePeriod={statsPeriod}
             isLoading={statsLoading}
             customDateRange={customDateRange}
+            userColors={(() => {
+              const map = new Map<string, string>();
+              for (const u of boot.users) {
+                if (u.color) map.set(u.id, u.color);
+              }
+              return map;
+            })()}
             onChangePeriod={async (period) => {
               try {
                 setError("");
@@ -1138,6 +1365,7 @@ export function KajiApp() {
             }}
             onChangeCustomDateRange={setCustomDateRange}
             onApplyCustomDateRange={applyCustomDateRange}
+            onBalanceSwipeActiveChange={setBalanceSwipeActive}
           />
         </div>
       );
@@ -1148,7 +1376,12 @@ export function KajiApp() {
         <div className="sticky top-0 z-20 -mx-5 bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
           <ScreenTitle title="設定" />
         </div>
-        <div className="space-y-4">
+        <AnimatedList
+          key="settings"
+          delay={0}
+          reverse={false}
+          className="items-stretch gap-4"
+        >
           <SettingToggleRow
             title="期限当日通知"
             subtitle="朝8時・夕方18時に通知"
@@ -1175,6 +1408,50 @@ export function KajiApp() {
               updateNotificationSettings({ ...notificationSettings, notifyCompletion: next });
             }}
           />
+
+          <div className="rounded-[14px] bg-white p-4">
+            <p className="text-[15px] font-bold text-[#202124]">マイカラー</p>
+            <p className="mt-1 text-[12px] font-medium text-[#9AA0A6]">分担バランスのグラフに使う色</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {USER_COLOR_PALETTE.map((c) => {
+                const isActive = (sessionUser.color ?? USER_COLOR_PALETTE[0]) === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        setError("");
+                        await apiFetch("/api/user", {
+                          method: "PATCH",
+                          body: JSON.stringify({ color: c }),
+                        });
+                        setBoot((prev) => {
+                          if (!prev || prev.needsRegistration) return prev;
+                          return {
+                            ...prev,
+                            sessionUser: prev.sessionUser ? { ...prev.sessionUser, color: c } : prev.sessionUser,
+                            users: prev.users.map((u) => (u.id === sessionUser.id ? { ...u, color: c } : u)),
+                          };
+                        });
+                      } catch (err: unknown) {
+                        setError((err as Error).message ?? "カラーの変更に失敗しました。");
+                      }
+                    }}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-transform ${isActive ? "scale-110 ring-2 ring-[#202124] ring-offset-2" : ""}`}
+                    style={{ backgroundColor: c }}
+                    aria-label={c}
+                  >
+                    {isActive ? (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M2.5 7L5.5 10L11.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <FamilyCodeCard
             inviteCode={boot.householdInviteCode}
@@ -1230,7 +1507,7 @@ export function KajiApp() {
               ログアウト
             </button>
           </div>
-        </div>
+        </AnimatedList>
       </div>
     );
   };
@@ -1257,7 +1534,57 @@ export function KajiApp() {
         }}
       >
         <div className="relative h-full overflow-hidden">
-          <div className="h-full overflow-auto px-5 pb-28">
+          {showPullRefreshHint ? (
+            <div className="pointer-events-none absolute left-5 right-5 top-2 z-40">
+              <div className="rounded-2xl bg-white/95 px-3 py-2 shadow-[0_6px_18px_rgba(32,33,36,0.12)] backdrop-blur">
+                <div className="flex items-center justify-center gap-2">
+                  {pullRefreshing ? (
+                    <Loader2 size={14} className="animate-spin text-[#1A9BE8]" />
+                  ) : (
+                    <ChevronDown
+                      size={14}
+                      className="text-[#1A9BE8]"
+                      style={{
+                        transform: `translateY(${Math.round((1 - pullRefreshProgress) * -4)}px)`,
+                      }}
+                    />
+                  )}
+                  <p className="text-[12px] font-bold text-[#5F6368]">{pullRefreshMessage}</p>
+                </div>
+                {pullRefreshing || pullRefreshProgress >= 0.45 ? (
+                  <AnimatedList
+                    key={`pull-refresh-preview-${pullRefreshing ? "active" : "ready"}-${refreshAnimationSeed}`}
+                    delay={80}
+                    reverse={false}
+                    className="mt-2 items-stretch gap-1.5"
+                  >
+                    {Array.from({ length: 3 }, (_, index) => (
+                      <div key={`pull-refresh-row-${index}`} className="flex items-center gap-2 rounded-xl bg-[#F8F9FA] px-2.5 py-2">
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: index % 2 === 0 ? "#33C28A" : "#4285F4" }}
+                        />
+                        <span className="h-2 w-full rounded-full bg-[#E8EAED]" />
+                      </div>
+                    ))}
+                  </AnimatedList>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          <div
+            ref={mainScrollRef}
+            className="h-full overflow-auto px-5 pb-28"
+            style={{
+              transform: pullDistance > 0 ? `translate3d(0, ${pullDistance}px, 0)` : undefined,
+              transition:
+                pullDragging || pullRefreshing ? "none" : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+            }}
+            onTouchStart={handleMainScrollTouchStart}
+            onTouchMove={handleMainScrollTouchMove}
+            onTouchEnd={handleMainScrollTouchEnd}
+            onTouchCancel={handleMainScrollTouchCancel}
+          >
             {error ? <div className="mb-4 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
             <div className="relative min-h-full overflow-x-hidden">
               <div
@@ -1329,7 +1656,25 @@ export function KajiApp() {
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div
+                  className="space-y-3"
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    assignmentTabSwipe.onTouchStart(e);
+                  }}
+                  onTouchMove={(e) => {
+                    e.stopPropagation();
+                    assignmentTabSwipe.onTouchMove(e);
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                    assignmentTabSwipe.onTouchEnd(e);
+                  }}
+                  onTouchCancel={(e) => {
+                    e.stopPropagation();
+                    assignmentTabSwipe.onTouchCancel();
+                  }}
+                >
                   {assignmentDays.slice(0, visibleAssignDays).map(({ date, dateKey, dayChores }) => (
                     <div key={dateKey} className="space-y-1">
                       <p className="text-[13px] font-bold text-[#5F6368]">
@@ -1419,7 +1764,7 @@ export function KajiApp() {
 
       <nav className="fixed bottom-4 left-0 right-0 z-30 mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
-          <button type="button" onClick={() => { closeAssignment(); setActiveTab("home"); }} className="flex h-10 w-10 items-center justify-center">
+          <button type="button" onClick={() => { closeAssignment(); setActiveTab("home"); setRefreshAnimationSeed((p) => p + 1); }} className="flex h-10 w-10 items-center justify-center">
             <span className="material-symbols-rounded text-[24px]" style={{ color: !assignmentOpen && activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>home</span>
           </button>
           <button type="button" onClick={() => { closeAssignment(); setActiveTab("list"); }} className="flex h-10 w-10 items-center justify-center">
@@ -1584,4 +1929,3 @@ export function KajiApp() {
     </main >
   );
 }
-

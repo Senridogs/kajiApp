@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kaji-app-postgres-local
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ieApp
+      POSTGRES_PASSWORD: ieApp
+      POSTGRES_DB: kaji_app
+    volumes:
+      - kaji-app-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ieApp -d kaji_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  kaji-app-postgres-data:

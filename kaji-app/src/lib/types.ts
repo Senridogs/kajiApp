@@ -1,6 +1,7 @@
 export type AppUser = {
   id: string;
   name: string;
+  color: string | null;
 };
 
 export type ChoreWithComputed = {

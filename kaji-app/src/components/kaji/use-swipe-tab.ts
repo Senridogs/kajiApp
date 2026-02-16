@@ -40,6 +40,7 @@ export type SwipeTabVisualState<T extends string> = {
 type TrackingState<T extends string> = {
   active: boolean;
   horizontalLocked: boolean;
+  verticalLocked: boolean;
   startTab: T | null;
   startAt: number;
   width: number;
@@ -70,6 +71,7 @@ export function useSwipeTab<T extends string>({
   const tracking = useRef<TrackingState<T>>({
     active: false,
     horizontalLocked: false,
+    verticalLocked: false,
     startTab: null,
     startAt: 0,
     width: 1,
@@ -104,6 +106,14 @@ export function useSwipeTab<T extends string>({
   );
 
   useEffect(() => () => clearSettleTimer(), [clearSettleTimer]);
+
+  useEffect(() => {
+    if (disabled && tracking.current.active) {
+      tracking.current.active = false;
+      clearSettleTimer();
+      resetVisual(activeTab);
+    }
+  }, [disabled, activeTab, clearSettleTimer, resetVisual]);
 
   const getTargetTab = useCallback(
     (fromTab: T, dx: number) => {
@@ -180,6 +190,7 @@ export function useSwipeTab<T extends string>({
       startY.current = touch.clientY;
       tracking.current.active = true;
       tracking.current.horizontalLocked = false;
+      tracking.current.verticalLocked = false;
       tracking.current.startTab = activeTab;
       tracking.current.startAt = Date.now();
       tracking.current.width = Math.max(1, rect.width || e.currentTarget.clientWidth);
@@ -208,16 +219,22 @@ export function useSwipeTab<T extends string>({
       const absDx = Math.abs(dx);
       const absDy = Math.abs(dy);
 
+      if (tracking.current.verticalLocked) {
+        return;
+      }
+
       if (!tracking.current.horizontalLocked) {
         if (absDx < lockDistance && absDy < lockDistance) {
           return;
         }
-        if (absDx < absDy * dominanceRatio) {
+        if (absDx >= absDy) {
+          tracking.current.horizontalLocked = true;
+        } else {
+          tracking.current.verticalLocked = true;
           tracking.current.active = false;
           resetVisual(fromTab);
           return;
         }
-        tracking.current.horizontalLocked = true;
       }
 
       if (!isStartAllowedForDirection(dx, tracking.current.startLocalX, tracking.current.width)) {
@@ -239,7 +256,7 @@ export function useSwipeTab<T extends string>({
         isAnimating: false,
       });
     },
-    [disabled, dominanceRatio, getTargetTab, lockDistance, resetVisual],
+    [disabled, getTargetTab, lockDistance, resetVisual],
   );
 
   const onTouchEnd = useCallback(
@@ -253,14 +270,11 @@ export function useSwipeTab<T extends string>({
       }
 
       const dx = touch.clientX - startX.current;
-      const dy = touch.clientY - startY.current;
       const absDx = Math.abs(dx);
-      const absDy = Math.abs(dy);
       const dt = Math.max(1, Date.now() - tracking.current.startAt);
       const velocity = absDx / dt;
 
       const targetTab = getTargetTab(fromTab, dx);
-      const horizontalDominant = absDx >= absDy * dominanceRatio;
       const startAllowed = isStartAllowedForDirection(
         dx,
         tracking.current.startLocalX,
@@ -271,7 +285,7 @@ export function useSwipeTab<T extends string>({
       const shouldCommit =
         Boolean(targetTab) &&
         startAllowed &&
-        horizontalDominant &&
+        tracking.current.horizontalLocked &&
         (distanceEnough || flickEnough);
 
       tracking.current.active = false;
@@ -297,7 +311,6 @@ export function useSwipeTab<T extends string>({
     },
     [
       disabled,
-      dominanceRatio,
       getTargetTab,
       isStartAllowedForDirection,
       minFlickDistance,

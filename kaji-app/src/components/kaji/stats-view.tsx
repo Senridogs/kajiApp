@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { maxCount } from "@/components/kaji/helpers";
@@ -27,6 +27,7 @@ const BALANCE_TABS = [
 ] as const;
 
 type BalanceTabKey = (typeof BALANCE_TABS)[number]["key"];
+const BALANCE_SWIPE_TRANSITION_MS = 220;
 const BALANCE_TAB_KEYS: readonly BalanceTabKey[] = BALANCE_TABS.map((tab) => tab.key);
 
 type CustomDateRange = {
@@ -62,17 +63,23 @@ export function StatsView({
   activePeriod,
   isLoading = false,
   customDateRange,
+  animationSeed: _animationSeed = 0,
+  userColors,
   onChangePeriod,
   onChangeCustomDateRange,
   onApplyCustomDateRange,
+  onBalanceSwipeActiveChange,
 }: {
   stats: StatsResponse | null;
   activePeriod: StatsPeriodKey;
   isLoading?: boolean;
   customDateRange: CustomDateRange;
+  animationSeed?: number;
+  userColors?: Map<string, string>;
   onChangePeriod: (period: StatsPeriodKey) => void;
   onChangeCustomDateRange: (range: CustomDateRange) => void;
   onApplyCustomDateRange: (range: CustomDateRange) => void | Promise<void>;
+  onBalanceSwipeActiveChange?: (active: boolean) => void;
 }) {
   const [customEditorOpen, setCustomEditorOpen] = useState(false);
   const [balanceTab, setBalanceTab] = useState<BalanceTabKey>("all");
@@ -90,19 +97,53 @@ export function StatsView({
 
   const userColorMap = new Map<string, string>();
   users.forEach((user, idx) => {
-    userColorMap.set(user.userId, USER_COLORS[idx % USER_COLORS.length]);
+    userColorMap.set(
+      user.userId,
+      userColors?.get(user.userId) ?? USER_COLORS[idx % USER_COLORS.length],
+    );
   });
 
-  const balanceUsers =
-    balanceTab === "big" ? bigTaskUsers : balanceTab === "normal" ? normalTaskUsers : users;
-  const balanceTotal = balanceUsers.reduce((sum, user) => sum + user.count, 0);
-  const balancePie = buildPieData(balanceUsers, userColorMap);
   const choreMax = maxCount(choreCounts);
   const balanceSwipe = useSwipeTab<BalanceTabKey>({
     tabs: BALANCE_TAB_KEYS,
     activeTab: balanceTab,
     onChangeTab: setBalanceTab,
+    threshold: 56,
+    dominanceRatio: 1.15,
+    lockDistance: 12,
+    transitionDurationMs: BALANCE_SWIPE_TRANSITION_MS,
   });
+  const balanceDragging = balanceSwipe.visual.isDragging;
+  useEffect(() => {
+    onBalanceSwipeActiveChange?.(balanceDragging);
+  }, [balanceDragging, onBalanceSwipeActiveChange]);
+
+  const balanceByTab: Record<BalanceTabKey, { total: number; pie: PieSlice[] }> = {
+    all: {
+      total: users.reduce((sum, user) => sum + user.count, 0),
+      pie: buildPieData(users, userColorMap),
+    },
+    normal: {
+      total: normalTaskUsers.reduce((sum, user) => sum + user.count, 0),
+      pie: buildPieData(normalTaskUsers, userColorMap),
+    },
+    big: {
+      total: bigTaskUsers.reduce((sum, user) => sum + user.count, 0),
+      pie: buildPieData(bigTaskUsers, userColorMap),
+    },
+  };
+  const balanceSwipeProgress = balanceSwipe.visual.progress;
+  const balanceSwipeFromTabIndex = Math.max(0, BALANCE_TAB_KEYS.indexOf(balanceSwipe.visual.fromTab));
+  const balanceSwipeTrackTranslatePercent = (-balanceSwipeFromTabIndex + balanceSwipeProgress) * 100;
+  const isBalanceSwipeMoving =
+    balanceSwipe.visual.isDragging ||
+    balanceSwipe.visual.isAnimating ||
+    Math.abs(balanceSwipeProgress) > 0.0001;
+  const balanceSwipeTrackTransitionStyle = balanceSwipe.visual.isDragging
+    ? "none"
+    : balanceSwipe.visual.isAnimating
+      ? `transform ${BALANCE_SWIPE_TRANSITION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+      : "none";
 
   return (
     <div className="space-y-4">
@@ -184,9 +225,17 @@ export function StatsView({
           e.stopPropagation();
           balanceSwipe.onTouchStart(e);
         }}
+        onTouchMove={(e) => {
+          e.stopPropagation();
+          balanceSwipe.onTouchMove(e);
+        }}
         onTouchEnd={(e) => {
           e.stopPropagation();
           balanceSwipe.onTouchEnd(e);
+        }}
+        onTouchCancel={(e) => {
+          e.stopPropagation();
+          balanceSwipe.onTouchCancel();
         }}
       >
         <h3 className="text-[19px] font-bold text-[#202124]">分担バランス</h3>
@@ -206,35 +255,52 @@ export function StatsView({
             </button>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-3">
-          <svg viewBox="0 0 42 42" className="h-[120px] w-[120px] -rotate-90">
-            <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E8EAED" strokeWidth="10" />
-            {balancePie.map((slice) => (
-              <circle
-                key={`${balanceTab}-${slice.userId}`}
-                cx="21"
-                cy="21"
-                r="15.915"
-                fill="none"
-                stroke={slice.color}
-                strokeWidth="10"
-                strokeDasharray={`${slice.ratio * 100} ${100 - slice.ratio * 100}`}
-                strokeDashoffset={`${-slice.start * 100}`}
-              />
-            ))}
-          </svg>
-          <div className="w-full space-y-2">
-            {balancePie.map((slice) => {
-              const percent = balanceTotal > 0 ? Math.round((slice.count / balanceTotal) * 100) : 0;
+        <div className="relative mt-3 overflow-hidden">
+          <div
+            className={`flex ${isBalanceSwipeMoving ? "will-change-transform" : ""}`}
+            style={{
+              transform: `translate3d(${balanceSwipeTrackTranslatePercent}%, 0, 0)`,
+              transition: balanceSwipeTrackTransitionStyle,
+            }}
+          >
+            {BALANCE_TAB_KEYS.map((tabKey) => {
+              const tabData = balanceByTab[tabKey];
               return (
-                <div key={`${balanceTab}-row-${slice.userId}`} className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
-                    <p className="text-base font-bold text-[#202124]">{slice.name}</p>
+                <div key={tabKey} className="w-full shrink-0">
+                  <div className="flex items-center gap-3">
+                    <svg viewBox="0 0 42 42" className="h-[120px] w-[120px] -rotate-90">
+                      <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E8EAED" strokeWidth="10" />
+                      {tabData.pie.map((slice) => (
+                        <circle
+                          key={`${tabKey}-${slice.userId}`}
+                          cx="21"
+                          cy="21"
+                          r="15.915"
+                          fill="none"
+                          stroke={slice.color}
+                          strokeWidth="10"
+                          strokeDasharray={`${slice.ratio * 100} ${100 - slice.ratio * 100}`}
+                          strokeDashoffset={`${-slice.start * 100}`}
+                        />
+                      ))}
+                    </svg>
+                    <div className="w-full space-y-2">
+                      {tabData.pie.map((slice) => {
+                        const percent = tabData.total > 0 ? Math.round((slice.count / tabData.total) * 100) : 0;
+                        return (
+                          <div key={`${tabKey}-row-${slice.userId}`} className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
+                              <p className="text-base font-bold text-[#202124]">{slice.name}</p>
+                            </div>
+                            <p className="text-[16px] font-bold text-[#202124]">
+                              {percent}% ({slice.count}回)
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <p className="text-[16px] font-bold text-[#202124]">
-                    {percent}% ({slice.count}回)
-                  </p>
                 </div>
               );
             })}

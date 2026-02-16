@@ -3,7 +3,10 @@
     "allow": [
       "Bash(node -e:*)",
       "Bash(npx vitest:*)",
-      "Bash(node --import tsx:*)"
+      "Bash(node --import tsx:*)",
+      "Bash(npx prisma:*)",
+      "Bash(git checkout:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

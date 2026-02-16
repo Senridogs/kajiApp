@@ -66,10 +66,11 @@ function registerErrorResponse(error: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const body = await readJsonBody<{ name?: string; inviteCode?: string }>(request);
+    const body = await readJsonBody<{ name?: string; inviteCode?: string; color?: string }>(request);
     if (!body) return badRequest("リクエスト形式が不正です。");
     const name = body?.name?.trim();
     const inviteCodeInput = body?.inviteCode?.trim().toUpperCase();
+    const color = body?.color && /^#[0-9A-Fa-f]{6}$/.test(body.color) ? body.color : undefined;
 
     if (!name) return badRequest("ユーザー名を入力してください。");
     if (name.length > 24) return badRequest("ユーザー名は24文字以内で入力してください。");
@@ -112,6 +113,7 @@ export async function POST(request: Request) {
       data: {
         name,
         householdId: household.id,
+        ...(color ? { color } : {}),
       },
     });
 

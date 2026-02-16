@@ -30,6 +30,18 @@ export const BG_COLOR_PALETTE = [
   "#EEE8FF",
 ];
 
+export const USER_COLOR_PALETTE = [
+  "#7CB9E8",
+  "#F4A6A0",
+  "#82D9A5",
+  "#F6D57E",
+  "#B8A9E8",
+  "#7ED4D8",
+  "#F9B97A",
+  "#F2A5C4",
+  "#A8C4D6",
+];
+
 export const ICONS_PER_PAGE = 24;
 export const ICON_PAGE_COUNT = 6;
 
