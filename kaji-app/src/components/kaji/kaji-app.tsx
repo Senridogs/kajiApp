@@ -1097,9 +1097,59 @@ export function KajiApp() {
       if (previousBoot) {
         setBoot(previousBoot);
       }
-      setError((err as Error).message ?? "Failed to save record.");
+      setError((err as Error).message ?? "スキップに失敗しました。");
     } finally {
       setRecordUpdating(targetId, false);
+      setMemoTarget(null);
+    }
+  };
+
+  const submitSkip = async () => {
+    if (!memoTarget) return;
+    const targetId = memoTarget.id;
+    const previousBoot = boot;
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    setMemoOpen(false);
+    setRecordUpdating(targetId, true);
+
+    if (sessionUser) {
+      updateBootChoreOptimistically(targetId, (chore) => ({
+        ...chore,
+        doneToday: true,
+        lastPerformedAt: nowIso,
+        lastPerformerName: sessionUser.name,
+        lastRecordId: chore.lastRecordId ?? `optimistic-skip-${now.getTime()}`,
+        dueAt: addDays(now, chore.intervalDays).toISOString(),
+        isDueToday: false,
+        isDueTomorrow: chore.intervalDays === 1,
+        isOverdue: false,
+        overdueDays: 0,
+        daysSinceLast: 0,
+      }));
+    }
+
+    try {
+      const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
+        method: "POST",
+        body: JSON.stringify({ memo, skipped: true }),
+      });
+      if (result?.record?.id) {
+        updateBootChoreOptimistically(targetId, (chore) => ({
+          ...chore,
+          lastRecordId: result.record.id,
+        }));
+      }
+      void Promise.all([loadStats(statsPeriod), loadHistory()]);
+    } catch (err: unknown) {
+      if (previousBoot) {
+        setBoot(previousBoot);
+      }
+      setError((err as Error).message ?? "スキップに失敗しました。");
+    } finally {
+      setRecordUpdating(targetId, false);
+      setMemoTarget(null);
     }
   };
 
@@ -2452,6 +2502,13 @@ export function KajiApp() {
             className="w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[15.6px] font-bold text-white"
           >
             記録する
+          </button>
+          <button
+            type="button"
+            onClick={submitSkip}
+            className="mt-3 w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15.6px] font-bold text-[#5F6368]"
+          >
+            スキップ
           </button>
         </div>
       </BottomSheet>

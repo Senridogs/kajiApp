@@ -8,6 +8,7 @@ import { touchHousehold } from "@/lib/sync";
 type Body = {
   memo?: string;
   performedAt?: string;
+  skipped?: boolean;
 };
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -38,6 +39,8 @@ export async function POST(request: Request, { params }: RouteParams) {
     return badRequest("メモは500文字以内で入力してください。");
   }
 
+  const skipped = body.skipped ?? false;
+
   const record = await prisma.choreRecord.create({
     data: {
       householdId: session.householdId,
@@ -45,13 +48,15 @@ export async function POST(request: Request, { params }: RouteParams) {
       userId: user.id,
       memo,
       performedAt,
+      isSkipped: skipped,
     },
   });
 
   // Notify other devices about the change
   await touchHousehold(session.householdId);
 
-  if (canSendPush()) {
+  // Skip notification if skipped
+  if (!skipped && canSendPush()) {
     const [household, subs] = await Promise.all([
       prisma.household.findUnique({
         where: { id: session.householdId },

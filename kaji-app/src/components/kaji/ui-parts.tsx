@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy, Flame, KeyRound, Loader2, Pencil, Ticket, Trash2, Undo2, User, Users } from "lucide-react";
 
-import { iconByName } from "@/components/kaji/helpers";
+import { darkenColor, iconByName } from "@/components/kaji/helpers";
 import { useSwipeDelete } from "@/components/kaji/use-swipe-delete";
 import { ChoreWithComputed } from "@/lib/types";
 
@@ -85,6 +85,11 @@ export function HomeTaskRow({
   const actorName = done ? (chore.lastPerformerName ?? assigneeName ?? null) : assigneeName;
   const actorLabel = done ? "実施者" : "担当者";
   const actorColor = done ? "#1A9BE8" : (assigneeColor ?? "#BDC1C6");
+  const actorTextColor = done
+    ? "#1A9BE8"
+    : assigneeColor
+      ? darkenColor(assigneeColor, 0.4)
+      : "#BDC1C6";
 
   return (
     <div
@@ -102,11 +107,11 @@ export function HomeTaskRow({
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <p className={`truncate text-[11px] font-semibold ${actorName ? "" : "text-[#BDC1C6]"}`} style={actorName ? { color: actorColor } : {}}>
+          <p className={`truncate text-[11px] font-semibold ${actorName ? "" : "text-[#BDC1C6]"}`} style={actorName ? { color: actorTextColor } : {}}>
             {actorLabel}:
           </p>
           {actorName ? (
-            <div className="flex items-center gap-0.5" style={{ color: actorColor }}>
+            <div className="flex items-center gap-0.5" style={{ color: actorTextColor }}>
               <span className="truncate text-[11px] font-bold">
                 {actorName}
               </span>

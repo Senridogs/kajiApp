@@ -10,7 +10,7 @@ import {
   QUICK_ICON_PRESETS,
   getIconPages,
 } from "@/components/kaji/constants";
-import { iconByName } from "@/components/kaji/helpers";
+import { darkenColor, iconByName } from "@/components/kaji/helpers";
 import { ColorDot, IconBadge } from "@/components/kaji/ui-parts";
 
 export type ChoreForm = {
@@ -294,6 +294,7 @@ export function ChoreEditor({
                         value.bgColor === option.bgColor;
                       const showDeleteMark =
                         option.source === "custom" && deleteArmedCustomIconId === option.id;
+                      const displayColor = darkenColor(option.iconColor, 0.4);
                       return (
                         <div key={option.id} className="relative">
                           <button
@@ -304,8 +305,8 @@ export function ChoreEditor({
                               : "border-[#DADCE0] bg-[#F8F9FA]"
                               }`}
                           >
-                            <Icon size={14} color={option.iconColor} />
-                            <span className="truncate text-[13.2px] font-bold" style={{ color: option.iconColor }}>
+                            <Icon size={14} color={displayColor} />
+                            <span className="truncate text-[13.2px] font-bold" style={{ color: displayColor }}>
                               {option.label}
                             </span>
                           </button>

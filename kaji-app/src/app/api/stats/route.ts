@@ -22,10 +22,11 @@ export async function GET(request: Request) {
 
   const where =
     range.start === undefined
-      ? { householdId: session.householdId, isInitial: false }
+      ? { householdId: session.householdId, isInitial: false, isSkipped: false }
       : {
         householdId: session.householdId,
         isInitial: false,
+        isSkipped: false,
         performedAt: {
           gte: range.start,
           lte: range.end,

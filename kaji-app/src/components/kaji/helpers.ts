@@ -129,3 +129,27 @@ export function urlBase64ToUint8Array(base64String: string) {
   for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
   return outputArray;
 }
+
+export function darkenColor(color: string, amount: number): string {
+  if (!color.startsWith("#")) return color;
+
+  const hex = color.slice(1);
+  const num = parseInt(hex, 16);
+  if (Number.isNaN(num)) return color;
+
+  let r = (num >> 16) & 255;
+  let g = (num >> 8) & 255;
+  let b = num & 255;
+
+  // Darken
+  r = Math.max(0, Math.min(255, r - (r * amount)));
+  g = Math.max(0, Math.min(255, g - (g * amount)));
+  b = Math.max(0, Math.min(255, b - (b * amount)));
+
+  // Convert back to hex
+  const rHex = Math.round(r).toString(16).padStart(2, "0");
+  const gHex = Math.round(g).toString(16).padStart(2, "0");
+  const bHex = Math.round(b).toString(16).padStart(2, "0");
+
+  return `#${rHex}${gHex}${bHex}`;
+}
