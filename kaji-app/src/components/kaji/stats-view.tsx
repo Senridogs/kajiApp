@@ -121,12 +121,21 @@ export function StatsView({
 }) {
   const [customEditorOpen, setCustomEditorOpen] = useState(false);
   const [balanceTab, setBalanceTab] = useState<BalanceTabKey>("all");
-  const [chartsAnimationReady, setChartsAnimationReady] = useState(false);
-  const [chartsAnimationTrigger, setChartsAnimationTrigger] = useState(0);
+  const [balanceAnimationReady, setBalanceAnimationReady] = useState(false);
+  const [balanceAnimationTrigger, setBalanceAnimationTrigger] = useState(0);
+  const [choreAnimationReady, setChoreAnimationReady] = useState(false);
+  const [choreAnimationTrigger, setChoreAnimationTrigger] = useState(0);
 
-  const triggerChartsAnimation = useCallback(() => {
-    setChartsAnimationReady(false);
-    setChartsAnimationTrigger((prev) => prev + 1);
+  const triggerBalanceAnimation = useCallback(() => {
+    setBalanceAnimationReady(false);
+    setBalanceAnimationTrigger((prev) => prev + 1);
+  }, []);
+
+  const triggerAllAnimation = useCallback(() => {
+    setBalanceAnimationReady(false);
+    setBalanceAnimationTrigger((prev) => prev + 1);
+    setChoreAnimationReady(false);
+    setChoreAnimationTrigger((prev) => prev + 1);
   }, []);
 
   const users = stats?.userCounts ?? [];
@@ -154,7 +163,7 @@ export function StatsView({
     tabs: BALANCE_TAB_KEYS,
     activeTab: balanceTab,
     onChangeTab: (tab) => {
-      triggerChartsAnimation();
+      triggerBalanceAnimation();
       setBalanceTab(tab);
     },
     threshold: 56,
@@ -167,13 +176,13 @@ export function StatsView({
     onBalanceSwipeActiveChange?.(balanceDragging);
   }, [balanceDragging, onBalanceSwipeActiveChange]);
   useLayoutEffect(() => {
-    setChartsAnimationReady(false);
+    setBalanceAnimationReady(false);
     let frame2: number | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const frame1 = requestAnimationFrame(() => {
       frame2 = requestAnimationFrame(() => {
         timer = setTimeout(() => {
-          setChartsAnimationReady(true);
+          setBalanceAnimationReady(true);
         }, CHARTS_ZERO_HOLD_MS);
       });
     });
@@ -186,7 +195,29 @@ export function StatsView({
         clearTimeout(timer);
       }
     };
-  }, [stats, activePeriod, balanceTab, animationSeed, chartsAnimationTrigger]);
+  }, [stats, activePeriod, balanceTab, animationSeed, balanceAnimationTrigger]);
+
+  useLayoutEffect(() => {
+    setChoreAnimationReady(false);
+    let frame2: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => {
+        timer = setTimeout(() => {
+          setChoreAnimationReady(true);
+        }, CHARTS_ZERO_HOLD_MS);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(frame1);
+      if (frame2 !== null) {
+        cancelAnimationFrame(frame2);
+      }
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    };
+  }, [stats, activePeriod, animationSeed, choreAnimationTrigger]);
 
   const balanceByTab: Record<BalanceTabKey, { total: number; pie: PieSlice[] }> = {
     all: {
@@ -223,17 +254,16 @@ export function StatsView({
             key={item.key}
             type="button"
             onClick={() => {
-              triggerChartsAnimation();
+              triggerAllAnimation();
               onChangePeriod(item.key);
               setCustomEditorOpen(item.key === "custom");
             }}
-            className={`inline-flex items-center gap-1 rounded-[11px] px-2 py-1.5 text-[13.2px] font-bold ${
-              activePeriod === item.key
+            className={`inline-flex items-center gap-1 rounded-[11px] px-2 py-1.5 text-[13.2px] font-bold ${activePeriod === item.key
                 ? "bg-[#1A9BE8] text-white"
                 : item.accent
                   ? "bg-[#EEF3FF] text-[#4D8BFF]"
                   : "bg-[#F1F3F4] text-[#5F6368]"
-            }`}
+              }`}
           >
             {item.label}
           </button>
@@ -316,14 +346,13 @@ export function StatsView({
               key={tab.key}
               type="button"
               onClick={() => {
-                triggerChartsAnimation();
+                triggerBalanceAnimation();
                 setBalanceTab(tab.key);
               }}
-              className={`rounded-[10px] px-3 py-1.5 text-[12px] font-bold ${
-                balanceTab === tab.key
+              className={`rounded-[10px] px-3 py-1.5 text-[12px] font-bold ${balanceTab === tab.key
                   ? "bg-[#1A9BE8] text-white"
                   : "bg-[#F1F3F4] text-[#5F6368]"
-              }`}
+                }`}
             >
               {tab.label}
             </button>
@@ -345,7 +374,7 @@ export function StatsView({
                     <svg viewBox="0 0 42 42" className="h-[120px] w-[120px]">
                       <circle cx="21" cy="21" r="15.915" fill="none" stroke="#F1F3F4" strokeWidth="10" />
                       {tabData.pie.map((slice, sliceIdx) => {
-                        const pieAnimated = tabKey === balanceTab ? chartsAnimationReady : true;
+                        const pieAnimated = tabKey === balanceTab ? balanceAnimationReady : true;
                         const pieAnim = buildPieAnimationState(
                           slice,
                           sliceIdx,
@@ -459,14 +488,14 @@ export function StatsView({
                               style={{
                                 flexGrow: userCount.count,
                                 backgroundColor: color,
-                                transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
+                                transform: `scaleX(${choreAnimationReady ? 1 : 0})`,
                                 transformOrigin: "left center",
-                                transitionProperty: chartsAnimationReady ? "transform" : "none",
-                                transitionDuration: chartsAnimationReady ? "420ms" : "0ms",
-                                transitionTimingFunction: chartsAnimationReady
+                                transitionProperty: choreAnimationReady ? "transform" : "none",
+                                transitionDuration: choreAnimationReady ? "420ms" : "0ms",
+                                transitionTimingFunction: choreAnimationReady
                                   ? "cubic-bezier(0.2, 0.8, 0.2, 1)"
                                   : "linear",
-                                transitionDelay: chartsAnimationReady
+                                transitionDelay: choreAnimationReady
                                   ? `${itemIdx * 64 + idx * 54}ms`
                                   : "0ms",
                               }}

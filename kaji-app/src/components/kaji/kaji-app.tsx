@@ -571,24 +571,20 @@ export function KajiApp() {
         setError("");
         setInfoMessage("");
 
-        const hasUpdate = appUpdateAvailable || (await checkForServiceWorkerUpdate());
-        setAppUpdateAvailable(hasUpdate);
-
-        if (!hasUpdate) {
-          setInfoMessage("あなたのアプリは最新です。");
-          return;
+        // waiting 状態の SW があれば activate させる
+        if ("serviceWorker" in navigator) {
+          const registration = await navigator.serviceWorker.getRegistration();
+          registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
         }
 
-        const registration = await navigator.serviceWorker.getRegistration();
-        registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+        // 常にリロードして最新のアプリコードを取得する
         reloadAppForLatestUpdate({ showNotice: true, targetTab: "settings" });
       } catch (err: unknown) {
         setError((err as Error).message ?? "最新化に失敗しました。");
-      } finally {
         setAppUpdateLoading(false);
       }
     })();
-  }, [appUpdateAvailable, appUpdateLoading, checkForServiceWorkerUpdate, reloadAppForLatestUpdate]);
+  }, [appUpdateLoading, reloadAppForLatestUpdate]);
 
   useEffect(() => {
     (async () => {
@@ -1852,11 +1848,9 @@ export function KajiApp() {
               disabled={appUpdateLoading}
               className="mt-3 w-full rounded-[12px] bg-[#1A9BE8] px-3 py-2 text-[14.4px] font-bold text-white disabled:opacity-60"
             >
-              {appUpdateLoading
-                ? "更新を確認中..."
-                : appUpdateAvailable
-                  ? "更新を適用"
-                  : "バージョンアップデート"}
+              {appUpdateLoading || appReloading
+                ? "最新化中..."
+                : "最新化"}
             </button>
           </div>
 
@@ -1903,8 +1897,20 @@ export function KajiApp() {
         }}
       >
         <div className="relative h-full overflow-hidden">
-          <div className="absolute left-0 right-0 top-0 z-30">
-            {renderTabHeader(activeTab)}
+          <div className="absolute left-0 right-0 top-0 z-30 overflow-hidden">
+            <div
+              className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
+              style={{
+                transform: `translate3d(${swipeTrackTranslatePercent}%, 0, 0)`,
+                transition: swipeTrackTransitionStyle,
+              }}
+            >
+              {TAB_ORDER.map((tab) => (
+                <div key={tab} className="w-full shrink-0">
+                  {renderTabHeader(tab)}
+                </div>
+              ))}
+            </div>
           </div>
           <div
             ref={mainScrollRef}
