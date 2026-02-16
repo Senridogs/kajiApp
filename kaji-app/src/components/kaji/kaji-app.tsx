@@ -424,16 +424,25 @@ export function KajiApp() {
   );
 
   const assignmentDaysByTab = useMemo(() => {
+    const today = startOfJstDay(new Date());
+    const todayKey = toJstDateKey(today);
     const days = Array.from({ length: 365 }, (_, i) => {
-      const d = addDays(startOfJstDay(new Date()), i);
+      const d = addDays(today, i);
       return { date: d, key: toJstDateKey(d) };
     });
-    const mapDays = (filtered: typeof chores) =>
+    const mapDays = (filtered: typeof chores, mergeOverdueToToday: boolean) =>
       days
         .map(({ date, key: dateKey }) => {
-          const dayChores = filtered.filter((c) => isScheduledOnDate(c, date));
-          if (dayChores.length === 0) return null;
-          return { date, dateKey, dayChores };
+          const scheduled = filtered.filter((c) => isScheduledOnDate(c, date));
+          // 今日の日付なら期限超過タスクもまとめて含める
+          if (mergeOverdueToToday && dateKey === todayKey) {
+            const overdueChores = filtered.filter((c) => c.isOverdue && !scheduled.some((s) => s.id === c.id));
+            const dayChores = [...scheduled, ...overdueChores];
+            if (dayChores.length === 0) return null;
+            return { date, dateKey, dayChores };
+          }
+          if (scheduled.length === 0) return null;
+          return { date, dateKey, dayChores: scheduled };
         })
         .filter(Boolean) as Array<{ date: Date; dateKey: string; dayChores: typeof chores }>;
 
@@ -441,8 +450,8 @@ export function KajiApp() {
     const bigFiltered = chores.filter((c) => c.isBigTask);
 
     return {
-      daily: mapDays(dailyFiltered),
-      big: mapDays(bigFiltered),
+      daily: mapDays(dailyFiltered, true),
+      big: mapDays(bigFiltered, true),
     };
   }, [chores, priorityHomeChoreIds]);
 
