@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { badRequest, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { touchHousehold } from "@/lib/sync";
 import { startOfJstDay } from "@/lib/time";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -23,6 +24,9 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   }
 
   await prisma.choreRecord.delete({ where: { id } });
+
+  // Notify other devices about the change
+  await touchHousehold(session.householdId);
 
   return NextResponse.json({ ok: true });
 }

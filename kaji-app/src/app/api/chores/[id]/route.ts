@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { computeChore } from "@/lib/dashboard";
 import { prisma } from "@/lib/prisma";
+import { touchHousehold } from "@/lib/sync";
 
 type UpdateChoreBody = {
   title?: string;
@@ -60,6 +61,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     },
   });
 
+  await touchHousehold(session.householdId);
+
   return NextResponse.json({ chore: computeChore(updated) });
 }
 
@@ -78,6 +81,8 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     where: { id },
     data: { archived: true },
   });
+
+  await touchHousehold(session.householdId);
 
   return NextResponse.json({ ok: true });
 }

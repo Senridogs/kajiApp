@@ -514,6 +514,77 @@ export function KajiApp() {
     [loadBootstrap, loadHistory, loadStats],
   );
 
+  // ── Real-time sync polling ──────────────────────────────────
+  const syncTokenRef = useRef<string | null>(null);
+  const syncBusyRef = useRef(false);
+  const statsPeriodRef = useRef(statsPeriod);
+  useEffect(() => { statsPeriodRef.current = statsPeriod; }, [statsPeriod]);
+
+  const syncCheck = useCallback(async () => {
+    // Don't sync while busy with another operation
+    if (syncBusyRef.current) return;
+    syncBusyRef.current = true;
+
+    try {
+      const res = await fetch("/api/sync", { cache: "no-store" });
+      if (!res.ok) return;
+      const { token } = (await res.json()) as { token: string | null };
+      if (!token) return;
+
+      // First call: just store the token
+      if (syncTokenRef.current === null) {
+        syncTokenRef.current = token;
+        return;
+      }
+
+      // No change
+      if (token === syncTokenRef.current) return;
+
+      // Change detected from another device — refresh data silently
+      syncTokenRef.current = token;
+      await loadBootstrap();
+      await loadStats(statsPeriodRef.current).catch(() => { });
+      await loadHistory().catch(() => { });
+    } catch {
+      // Silently ignore network errors during polling
+    } finally {
+      syncBusyRef.current = false;
+    }
+  }, [loadBootstrap, loadStats, loadHistory]);
+
+  useEffect(() => {
+    const SYNC_INTERVAL_MS = 3_000;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const startPolling = () => {
+      if (intervalId) return;
+      intervalId = setInterval(syncCheck, SYNC_INTERVAL_MS);
+    };
+    const stopPolling = () => {
+      if (!intervalId) return;
+      clearInterval(intervalId);
+      intervalId = null;
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        // Immediately check on return, then resume periodic polling
+        syncCheck();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    startPolling();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [syncCheck]);
+  // ── End real-time sync ─────────────────────────────────────
+
   const reloadAppForLatestUpdate = useCallback((options?: { showNotice?: boolean; targetTab?: TabKey }) => {
     if (typeof window === "undefined") return;
     if (options?.showNotice) {

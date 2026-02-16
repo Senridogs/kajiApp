@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { badRequest, readJsonBody } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { setSession } from "@/lib/session";
+import { touchHousehold } from "@/lib/sync";
 
 function generateInviteCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -121,6 +122,11 @@ export async function POST(request: Request) {
       { userId: user.id, householdId: household.id },
       { secure: isHttpsRequest(request) },
     );
+
+    // If a partner joined via invite code, notify existing devices
+    if (inviteCodeInput) {
+      await touchHousehold(household.id);
+    }
 
     return NextResponse.json({
       user: { id: user.id, name: user.name },

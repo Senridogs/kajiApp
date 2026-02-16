@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { computeChore } from "@/lib/dashboard";
 import { prisma } from "@/lib/prisma";
+import { touchHousehold } from "@/lib/sync";
 
 type CreateChoreBody = {
   title?: string;
@@ -99,6 +100,8 @@ export async function POST(request: Request) {
   });
 
   if (!chore) return badRequest("Failed to create chore.", 500);
+
+  await touchHousehold(session.householdId);
 
   return NextResponse.json({ chore: computeChore(chore) });
 }

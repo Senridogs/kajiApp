@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { touchHousehold } from "@/lib/sync";
 
 type AssignmentBody = {
     choreId: string;
@@ -24,9 +25,9 @@ export async function POST(request: Request) {
         }),
         body.userId
             ? prisma.user.findFirst({
-                  where: { id: body.userId, householdId: session.householdId },
-                  select: { id: true, name: true },
-              })
+                where: { id: body.userId, householdId: session.householdId },
+                select: { id: true, name: true },
+            })
             : Promise.resolve(null),
     ]);
     if (!chore) return badRequest("家事が見つかりません。", 404);
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
         await prisma.choreAssignment.deleteMany({
             where: { choreId: body.choreId, date: body.date },
         });
+        await touchHousehold(session.householdId);
         return NextResponse.json({ ok: true, deleted: true });
     }
 
@@ -52,6 +54,8 @@ export async function POST(request: Request) {
         },
         include: { user: { select: { id: true, name: true } } },
     });
+
+    await touchHousehold(session.householdId);
 
     return NextResponse.json({
         ok: true,

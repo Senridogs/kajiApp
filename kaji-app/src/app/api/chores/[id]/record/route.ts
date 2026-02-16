@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { buildCompletionPayload, canSendPush, sendWebPush } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import { touchHousehold } from "@/lib/sync";
 
 type Body = {
   memo?: string;
@@ -46,6 +47,9 @@ export async function POST(request: Request, { params }: RouteParams) {
       performedAt,
     },
   });
+
+  // Notify other devices about the change
+  await touchHousehold(session.householdId);
 
   if (canSendPush()) {
     const [household, subs] = await Promise.all([
