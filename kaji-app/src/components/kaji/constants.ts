@@ -46,12 +46,12 @@ export const ICONS_PER_PAGE = 20;
 export const ICON_PAGE_COUNT = 8;
 
 export const QUICK_ICON_PRESETS = [
-  { icon: "sparkles", label: "掃除", iconColor: "#B97700", bgColor: "#FFF6E3" },
+  { icon: "recycle", label: "ごみ捨て", iconColor: "#B97700", bgColor: "#FFF6E3" },
   { icon: "droplets", label: "水まわり", iconColor: "#4D8BFF", bgColor: "#EEF3FF" },
   { icon: "cooking-pot", label: "キッチン", iconColor: "#33C28A", bgColor: "#EAF7EF" },
   { icon: "shirt", label: "洗濯", iconColor: "#7A6FF0", bgColor: "#EFEAFE" },
-  { icon: "desk", label: "リビング", iconColor: "#D17C3F", bgColor: "#FFF4E8" },
-  { icon: "wind", label: "換気", iconColor: "#26A0A8", bgColor: "#E8F5F6" },
+  { icon: "sofa", label: "リビング", iconColor: "#D17C3F", bgColor: "#FFF4E8" },
+  { icon: "bed", label: "布団", iconColor: "#26A0A8", bgColor: "#E8F5F6" },
 ] as const;
 
 function normalizeIconName(name: string) {
