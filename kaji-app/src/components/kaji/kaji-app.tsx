@@ -54,10 +54,11 @@ import {
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const JA_COLLATOR = new Intl.Collator("ja");
-type ListSortKey = "kana" | "due";
+type ListSortKey = "kana" | "due" | "icon";
 const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
   { key: "kana", label: "かな順" },
   { key: "due", label: "期日" },
+  { key: "icon", label: "カスタムアイコン" },
 ];
 
 const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
@@ -429,9 +430,25 @@ export function KajiApp() {
       case "due":
         arr.sort((a, b) => daysUntil(a) - daysUntil(b));
         break;
+
+      case "icon":
+        arr.sort((a, b) => {
+          const getIndex = (c: ChoreWithComputed) => {
+            const idx = customIcons.findIndex(
+              (ci) =>
+                ci.icon === c.icon && ci.iconColor === c.iconColor && ci.bgColor === c.bgColor,
+            );
+            return idx === -1 ? 999999 : idx;
+          };
+          const idxA = getIndex(a);
+          const idxB = getIndex(b);
+          if (idxA !== idxB) return idxA - idxB;
+          return JA_COLLATOR.compare(a.title, b.title);
+        });
+        break;
     }
     return arr;
-  }, [chores, listSortKey]);
+  }, [chores, listSortKey, customIcons]);
   const priorityHomeChoreIds = useMemo(
     () => new Set([...(boot?.todayChores ?? []), ...(boot?.tomorrowChores ?? [])].map((chore) => chore.id)),
     [boot?.todayChores, boot?.tomorrowChores],

@@ -85,8 +85,8 @@ export function HomeTaskRow({
   const title = chore.title;
   const disableRecordAction = isUpdating || (!done && recordDisabled);
   const actorName = done ? (chore.lastPerformerName ?? assigneeName ?? null) : assigneeName;
-  const actorLabel = done ? "実施者" : "担当者";
-  const actorColor = done ? (performerColor ?? "#1A9BE8") : (assigneeColor ?? "#BDC1C6");
+  const actorLabel = done ? (skipped ? null : "実施者") : "担当者";
+  const actorColor = done ? (skipped ? "#BDC1C6" : (performerColor ?? "#1A9BE8")) : (assigneeColor ?? "#BDC1C6");
 
   // Determine styles based on state
   let containerStyle: React.CSSProperties = { backgroundColor: "#FFFFFF", borderColor: "#E5EAF0" };
@@ -96,7 +96,7 @@ export function HomeTaskRow({
   if (done) {
     if (skipped) {
       // Skipped: Gray theme
-      containerStyle = { backgroundColor: "#F8F9FA", borderColor: "#DADCE0" };
+      containerStyle = { backgroundColor: "#F1F3F4", borderColor: "#DADCE0" };
       titleColor = "#5F6368";
       checkboxStyle = { backgroundColor: "#BDC1C6", borderColor: "#BDC1C6" };
     } else {
@@ -131,9 +131,11 @@ export function HomeTaskRow({
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <p className={`truncate text-[11px] font-semibold ${actorName ? "" : "text-[#BDC1C6]"}`} style={actorName ? { color: actorColor } : {}}>
-            {actorLabel}:
-          </p>
+          {actorLabel && (
+            <p className={`truncate text-[11px] font-semibold ${actorName ? "" : "text-[#BDC1C6]"}`} style={actorName ? { color: actorColor } : {}}>
+              {actorLabel}:
+            </p>
+          )}
           {actorName ? (
             <div className="flex items-center gap-0.5" style={{ color: actorColor }}>
               <span className="truncate text-[11px] font-bold">
