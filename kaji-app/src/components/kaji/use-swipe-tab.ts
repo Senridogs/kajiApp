@@ -152,15 +152,17 @@ export function useSwipeTab<T extends string>({
     (dx: number, startLocalX: number, width: number) => {
       if (!requireDirectionalHalfStart || dx === 0) return true;
       const clampedRatio = clamp(centerDeadZoneRatio, 0, 0.9);
-      const center = width / 2;
+      const oneThird = width / 3;
+      const twoThirds = (width * 2) / 3;
       const deadZoneHalf = (width * clampedRatio) / 2;
+      const center = width / 2;
       if (startLocalX > center - deadZoneHalf && startLocalX < center + deadZoneHalf) {
         return false;
       }
       if (dx < 0) {
-        return startLocalX >= center + deadZoneHalf;
+        return startLocalX >= oneThird + deadZoneHalf;
       }
-      return startLocalX <= center - deadZoneHalf;
+      return startLocalX <= twoThirds - deadZoneHalf;
     },
     [centerDeadZoneRatio, requireDirectionalHalfStart],
   );
