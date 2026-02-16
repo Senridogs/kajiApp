@@ -483,7 +483,12 @@ export function UndoToast({
   offsetY?: number;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onDismissRef = useRef(onDismiss);
   const [progress, setProgress] = useState(100);
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
 
   useEffect(() => {
     const startTime = Date.now();
@@ -495,14 +500,14 @@ export function UndoToast({
 
     timerRef.current = setTimeout(() => {
       clearInterval(interval);
-      onDismiss();
+      onDismissRef.current();
     }, UNDO_TOAST_DURATION);
 
     return () => {
       clearInterval(interval);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [onDismiss]);
+  }, []);
 
   const handleUndo = () => {
     if (timerRef.current) clearTimeout(timerRef.current);

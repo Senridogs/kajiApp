@@ -20,8 +20,8 @@ type SwipeTabOptions<T extends string> = {
   transitionDurationMs?: number;
   /**
    * If true, swipe is accepted only when:
-   * - left swipe starts from the right side
-   * - right swipe starts from the left side
+   * - left swipe starts from the right 2/3
+   * - right swipe starts from the left 2/3
    */
   requireDirectionalHalfStart?: boolean;
   /** Dead-zone width ratio around center (0..0.9). Default: 0 */
@@ -160,11 +160,12 @@ export function useSwipeTab<T extends string>({
       const leftSwipeMax = twoThirds - deadZoneHalf;
       const rightSwipeMin = oneThird + deadZoneHalf;
 
-      // Keep directional restriction, but allow crossing-center zone.
+      // "Swipe left" (dx < 0) requires starting from right 2/3.
       if (dx < 0) {
-        return startLocalX <= leftSwipeMax;
+        return startLocalX >= rightSwipeMin;
       }
-      return startLocalX >= rightSwipeMin;
+      // "Swipe right" (dx > 0) requires starting from left 2/3.
+      return startLocalX <= leftSwipeMax;
     },
     [centerDeadZoneRatio, requireDirectionalHalfStart],
   );

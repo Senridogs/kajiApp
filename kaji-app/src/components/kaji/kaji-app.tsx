@@ -1079,7 +1079,9 @@ export function KajiApp() {
     }
   };
 
+  const pullRefreshEnabled = false;
   const executePullRefresh = useCallback(async () => {
+    if (!pullRefreshEnabled) return;
     if (pullRefreshing) return;
     setPullRefreshing(true);
     setPullDistance(PULL_REFRESH_HOLD_PX);
@@ -1096,10 +1098,11 @@ export function KajiApp() {
       setPullRefreshing(false);
       setPullDistance(0);
     }
-  }, [pullRefreshing, refreshAll, statsPeriod]);
+  }, [pullRefreshing, refreshAll, statsPeriod, pullRefreshEnabled]);
 
   const handleMainScrollTouchStart = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
+      if (!pullRefreshEnabled) return;
       if (pullRefreshing || assignmentOpen || activeTab === "settings") return;
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
@@ -1123,6 +1126,7 @@ export function KajiApp() {
 
   const handleMainScrollTouchMove = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
+      if (!pullRefreshEnabled) return;
       if (!pullEligibleRef.current || pullRefreshing) return;
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
@@ -1171,6 +1175,7 @@ export function KajiApp() {
   );
 
   const endMainScrollPullGesture = useCallback(() => {
+    if (!pullRefreshEnabled) return;
     const shouldHandle = pullDraggingRef.current || pullDistance > 0;
     pullEligibleRef.current = false;
 
@@ -1185,10 +1190,11 @@ export function KajiApp() {
     }
 
     setPullDistance(0);
-  }, [executePullRefresh, pullDistance]);
+  }, [executePullRefresh, pullDistance, pullRefreshEnabled]);
 
   const handleMainScrollTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
+      if (!pullRefreshEnabled) return;
       if (pullDraggingRef.current || pullDistance > 0) {
         event.stopPropagation();
       }
@@ -1199,6 +1205,7 @@ export function KajiApp() {
 
   const handleMainScrollTouchCancel = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
+      if (!pullRefreshEnabled) return;
       if (pullDraggingRef.current || pullDistance > 0) {
         event.stopPropagation();
       }
@@ -1355,14 +1362,14 @@ export function KajiApp() {
     ? "none"
     : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
   const pullRefreshProgress = Math.min(1, pullDistance / PULL_REFRESH_TRIGGER_PX);
-  const showPullRefreshHint = pullRefreshing || pullDistance > 0;
+  const showPullRefreshHint = pullRefreshEnabled && (pullRefreshing || pullDistance > 0);
   const pullRefreshMessage = pullRefreshing
     ? "読み込み中..."
     : pullRefreshProgress >= 1
       ? "指を離して読み込み"
       : "下にスワイプして読み込み";
   const getPullAnimatedContentStyle = (tab: TabKey) =>
-    tab === activeTab && tab !== "settings"
+    pullRefreshEnabled && tab === activeTab && tab !== "settings"
       ? {
         transform: `translate3d(0, ${pullDistance}px, 0)`,
         transition:
@@ -1370,6 +1377,7 @@ export function KajiApp() {
       }
       : undefined;
   const renderInlinePullRefreshHint = (tab: TabKey) => {
+    if (!pullRefreshEnabled) return null;
     if (tab === "settings") return null;
     if (!showPullRefreshHint || tab !== activeTab) return null;
     return (
