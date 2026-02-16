@@ -403,6 +403,37 @@ export function StatsView({
                           />
                         );
                       })}
+                      {/* 2分割の場合、始点と終点の重なりを対称にするためのオーバーレイ (始点の色で終点を上書き) */}
+                      {tabData.pie.length === 2 && (() => {
+                        const slice0 = tabData.pie[0];
+                        const overlayAnimated = tabKey === balanceTab ? balanceAnimationReady : true;
+                        const startOffset = -PIE_TOP_START;
+                        const endOffset = startOffset - slice0.ratio * 100;
+                        const currentOffset = overlayAnimated ? endOffset : startOffset;
+
+                        return (
+                          <circle
+                            key={`${tabKey}-overlay`}
+                            cx="21"
+                            cy="21"
+                            r="15.915"
+                            fill="none"
+                            stroke={slice0.color}
+                            strokeWidth="10"
+                            strokeLinecap="round"
+                            style={{
+                              strokeDasharray: "0 100",
+                              strokeDashoffset: `${currentOffset}`,
+                              transitionProperty: overlayAnimated ? "stroke-dashoffset" : "none",
+                              transitionDuration: overlayAnimated ? "560ms" : "0ms",
+                              transitionTimingFunction: overlayAnimated
+                                ? "cubic-bezier(0.22, 1, 0.36, 1)"
+                                : "linear",
+                              transitionDelay: overlayAnimated ? "0ms" : "0ms",
+                            }}
+                          />
+                        );
+                      })()}
                     </svg>
                     <div className="w-full space-y-2">
                       {tabData.pie.map((slice) => {

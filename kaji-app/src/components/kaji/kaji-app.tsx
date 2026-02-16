@@ -1731,6 +1731,11 @@ export function KajiApp() {
                       }).catch(() => setError("担当の保存に失敗しました。"));
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[#F1F3F4]" : ""}`}
+                    style={{
+                      backgroundColor: effectiveUserId
+                        ? lightenColor(effectiveColor, 0.95)
+                        : "transparent",
+                    }}
                   >
                     <span
                       className="material-symbols-rounded text-[20px]"
@@ -2250,15 +2255,10 @@ export function KajiApp() {
           {assignmentMounted ? (
             <div
               className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-20 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
-              style={{
-                backgroundColor: sessionUser?.color
-                  ? lightenColor(sessionUser.color, 0.90)
-                  : "#F8F9FA",
-              }}
             >
               {error ? <div className="mb-4 mt-5 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
               <div className={`space-y-4 ${error ? "pt-2" : "pt-5"}`}>
-                <div className="sticky top-0 z-30 -mx-5 space-y-3 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-white/50">
+                <div className="sticky top-0 z-30 -mx-5 space-y-3 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
                   <div className="flex items-center justify-between">
                     <button
                       type="button"
