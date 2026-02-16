@@ -2254,7 +2254,7 @@ export function KajiApp() {
 
           {assignmentMounted ? (
             <div
-              className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-20 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
+              className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-8 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
             >
               {error ? <div className="mb-4 mt-5 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
               <div className={`space-y-4 ${error ? "pt-2" : "pt-5"}`}>
