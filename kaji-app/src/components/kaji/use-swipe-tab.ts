@@ -107,14 +107,6 @@ export function useSwipeTab<T extends string>({
 
   useEffect(() => () => clearSettleTimer(), [clearSettleTimer]);
 
-  useEffect(() => {
-    if (disabled && tracking.current.active) {
-      tracking.current.active = false;
-      clearSettleTimer();
-      resetVisual(activeTab);
-    }
-  }, [disabled, activeTab, clearSettleTimer, resetVisual]);
-
   const getTargetTab = useCallback(
     (fromTab: T, dx: number) => {
       if (dx === 0) return null;
@@ -162,17 +154,22 @@ export function useSwipeTab<T extends string>({
     (dx: number, startLocalX: number, width: number) => {
       if (!requireDirectionalHalfStart || dx === 0) return true;
       const clampedRatio = clamp(centerDeadZoneRatio, 0, 0.9);
-      const oneThird = width / 3;
-      const twoThirds = (width * 2) / 3;
       const deadZoneHalf = (width * clampedRatio) / 2;
       const center = width / 2;
-      if (startLocalX > center - deadZoneHalf && startLocalX < center + deadZoneHalf) {
+      const leftEdgeMax = center - deadZoneHalf;
+      const rightEdgeMin = center + deadZoneHalf;
+
+      if (startLocalX > leftEdgeMax && startLocalX < rightEdgeMin) {
         return false;
       }
+
+      // Reverse-side start rule:
+      // swipe left  => start from left edge zone
+      // swipe right => start from right edge zone
       if (dx < 0) {
-        return startLocalX >= oneThird + deadZoneHalf;
+        return startLocalX <= leftEdgeMax;
       }
-      return startLocalX <= twoThirds - deadZoneHalf;
+      return startLocalX >= rightEdgeMin;
     },
     [centerDeadZoneRatio, requireDirectionalHalfStart],
   );
@@ -227,12 +224,14 @@ export function useSwipeTab<T extends string>({
         if (absDx < lockDistance && absDy < lockDistance) {
           return;
         }
-        if (absDx >= absDy) {
+        if (absDx >= absDy * dominanceRatio) {
           tracking.current.horizontalLocked = true;
-        } else {
+        } else if (absDy > absDx * dominanceRatio) {
           tracking.current.verticalLocked = true;
           tracking.current.active = false;
           resetVisual(fromTab);
+          return;
+        } else {
           return;
         }
       }
@@ -256,7 +255,14 @@ export function useSwipeTab<T extends string>({
         isAnimating: false,
       });
     },
-    [disabled, getTargetTab, lockDistance, resetVisual],
+    [
+      disabled,
+      dominanceRatio,
+      getTargetTab,
+      isStartAllowedForDirection,
+      lockDistance,
+      resetVisual,
+    ],
   );
 
   const onTouchEnd = useCallback(

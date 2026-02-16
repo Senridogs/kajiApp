@@ -62,6 +62,7 @@ const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
 
 const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
 const ASSIGNMENT_SHEET_SLIDE_MS = 240;
+const ASSIGNMENT_BACK_SWIPE_EDGE_PX = 28;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PULL_REFRESH_TRIGGER_PX = 74;
 const PULL_REFRESH_MAX_PX = 128;
@@ -74,6 +75,8 @@ const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily", "big"] as co
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
 const CUSTOM_ICONS_STORAGE_KEY = "kaji_custom_icons";
+const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
+const APP_STARTUP_UPDATE_DONE_STORAGE_KEY = "kaji_app_startup_update_done";
 type PendingSwipeDelete = {
   toastId: string;
   chore: ChoreWithComputed;
@@ -238,6 +241,7 @@ export function KajiApp() {
   const statsRequestIdRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [infoMessage, setInfoMessage] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("home");
 
   const [records, setRecords] = useState<
@@ -276,6 +280,7 @@ export function KajiApp() {
   );
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const [appUpdateLoading, setAppUpdateLoading] = useState(false);
 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [assignmentMounted, setAssignmentMounted] = useState(false);
@@ -350,7 +355,9 @@ export function KajiApp() {
     threshold: 56,
     dominanceRatio: 1.15,
     lockDistance: 12,
+    transitionDurationMs: 220,
   });
+  const assignmentTabSwipeActiveRef = useRef(false);
   const [assignments, setAssignments] = useState<ChoreAssignmentEntry[]>([]);
   const [visibleAssignDays, setVisibleAssignDays] = useState(14);
   const [, startTransition] = useTransition();
@@ -396,24 +403,28 @@ export function KajiApp() {
     [boot?.todayChores, boot?.tomorrowChores],
   );
 
-  const assignmentDays = useMemo(() => {
-    const allFiltered = (chores ?? []).filter((c) =>
-      assignmentTab === "daily"
-        ? !c.isBigTask
-        : c.isBigTask && !priorityHomeChoreIds.has(c.id),
-    );
+  const assignmentDaysByTab = useMemo(() => {
     const days = Array.from({ length: 365 }, (_, i) => {
       const d = addDays(startOfJstDay(new Date()), i);
       return { date: d, key: toJstDateKey(d) };
     });
-    return days
-      .map(({ date, key: dateKey }) => {
-        const dayChores = allFiltered.filter((c) => isScheduledOnDate(c, date));
-        if (dayChores.length === 0) return null;
-        return { date, dateKey, dayChores };
-      })
-      .filter(Boolean) as Array<{ date: Date; dateKey: string; dayChores: typeof chores }>;
-  }, [chores, assignmentTab, priorityHomeChoreIds]);
+    const mapDays = (filtered: typeof chores) =>
+      days
+        .map(({ date, key: dateKey }) => {
+          const dayChores = filtered.filter((c) => isScheduledOnDate(c, date));
+          if (dayChores.length === 0) return null;
+          return { date, dateKey, dayChores };
+        })
+        .filter(Boolean) as Array<{ date: Date; dateKey: string; dayChores: typeof chores }>;
+
+    const dailyFiltered = chores.filter((c) => !c.isBigTask);
+    const bigFiltered = chores.filter((c) => c.isBigTask && !priorityHomeChoreIds.has(c.id));
+
+    return {
+      daily: mapDays(dailyFiltered),
+      big: mapDays(bigFiltered),
+    };
+  }, [chores, priorityHomeChoreIds]);
 
   useEffect(() => {
     customDateRangeRef.current = customDateRange;
@@ -483,6 +494,48 @@ export function KajiApp() {
     [loadBootstrap, loadHistory, loadStats],
   );
 
+  const reloadAppForLatestUpdate = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.setItem(APP_UPDATE_NOTICE_STORAGE_KEY, "1");
+    window.location.reload();
+  }, []);
+
+  const updateServiceWorkerRegistration = useCallback(async () => {
+    if (!("serviceWorker" in navigator)) return;
+    const registration =
+      (await navigator.serviceWorker.getRegistration()) ??
+      (await navigator.serviceWorker.register("/sw.js"));
+    await registration.update();
+    registration.waiting?.postMessage({ type: "SKIP_WAITING" });
+  }, []);
+
+  const runAppUpdate = useCallback(
+    async (reason: "manual" | "startup") => {
+      if (reason === "manual" && appUpdateLoading) return;
+      if (reason === "manual") {
+        setAppUpdateLoading(true);
+        setError("");
+        setInfoMessage("");
+      }
+
+      try {
+        await updateServiceWorkerRegistration();
+      } catch {
+        // SW更新に失敗した場合でも通常のリロードで最新化を試みる
+      } finally {
+        reloadAppForLatestUpdate();
+        if (reason === "manual") {
+          setAppUpdateLoading(false);
+        }
+      }
+    },
+    [appUpdateLoading, reloadAppForLatestUpdate, updateServiceWorkerRegistration],
+  );
+
+  const handleManualAppUpdate = useCallback(() => {
+    void runAppUpdate("manual");
+  }, [runAppUpdate]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -513,6 +566,20 @@ export function KajiApp() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(CUSTOM_ICONS_STORAGE_KEY, JSON.stringify(customIcons));
   }, [customIcons]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.sessionStorage.getItem(APP_UPDATE_NOTICE_STORAGE_KEY) !== "1") return;
+    window.sessionStorage.removeItem(APP_UPDATE_NOTICE_STORAGE_KEY);
+    setInfoMessage("あなたのアプリは最新です。");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.sessionStorage.getItem(APP_STARTUP_UPDATE_DONE_STORAGE_KEY) === "1") return;
+    window.sessionStorage.setItem(APP_STARTUP_UPDATE_DONE_STORAGE_KEY, "1");
+    void runAppUpdate("startup");
+  }, [runAppUpdate]);
 
   useEffect(() => {
     if (!boot || boot.needsRegistration) return;
@@ -1168,6 +1235,93 @@ export function KajiApp() {
     : pullRefreshProgress >= 1
       ? "指を離して最新化"
       : "下にスワイプして最新化";
+  const assignmentSwipeProgress = assignmentTabSwipe.visual.progress;
+  const assignmentSwipeFromTabIndex = Math.max(
+    0,
+    ASSIGNMENT_TAB_ORDER.indexOf(assignmentTabSwipe.visual.fromTab),
+  );
+  const assignmentSwipeTrackTranslatePercent =
+    (-assignmentSwipeFromTabIndex + assignmentSwipeProgress) * 100;
+  const isAssignmentSwipeSheetMoving =
+    assignmentTabSwipe.visual.isDragging ||
+    assignmentTabSwipe.visual.isAnimating ||
+    Math.abs(assignmentSwipeProgress) > 0.0001;
+  const assignmentSwipeTrackTransitionStyle = assignmentTabSwipe.visual.isDragging
+    ? "none"
+    : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
+
+  const renderAssignmentTabContent = (tab: AssignmentTabKey) => {
+    const days = assignmentDaysByTab[tab];
+    return (
+      <div className="space-y-3">
+        {days.slice(0, visibleAssignDays).map(({ date, dateKey, dayChores }) => (
+          <div key={`${tab}-${dateKey}`} className="space-y-1">
+            <p className="text-[13px] font-bold text-[#5F6368]">
+              {formatMonthDay(date.toISOString())}
+            </p>
+            <div className="rounded-[14px] bg-white">
+              {dayChores.map((chore, idx) => {
+                const entry = assignments.find(
+                  (x) => x.choreId === chore.id && x.date === dateKey,
+                );
+                const isAssigned = assignmentUser
+                  ? entry?.userId === assignmentUser
+                  : false;
+                const currentAssigneeName = entry?.userName ?? null;
+                return (
+                  <button
+                    key={chore.id}
+                    type="button"
+                    onClick={() => {
+                      if (!assignmentUser) return;
+                      const newUserId = isAssigned ? null : assignmentUser;
+                      startTransition(() => {
+                        setAssignments((prev) => {
+                          const filtered = prev.filter((x) => !(x.choreId === chore.id && x.date === dateKey));
+                          if (newUserId) {
+                            const userName = boot?.users.find((u) => u.id === newUserId)?.name ?? "";
+                            filtered.push({ choreId: chore.id, userId: newUserId, userName, date: dateKey });
+                          }
+                          return filtered;
+                        });
+                      });
+                      apiFetch("/api/assignments", {
+                        method: "POST",
+                        body: JSON.stringify({ choreId: chore.id, userId: newUserId, date: dateKey }),
+                      }).catch(() => setError("担当の保存に失敗しました。"));
+                    }}
+                    className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[#F1F3F4]" : ""}`}
+                  >
+                    <span className={`material-symbols-rounded text-[20px] ${isAssigned ? "text-[#1A9BE8]" : "text-[#DADCE0]"}`}>
+                      {isAssigned ? "check_box" : "check_box_outline_blank"}
+                    </span>
+                    <span className="flex-1 text-[13.5px] font-medium text-[#202124]">{chore.title}</span>
+                    {currentAssigneeName && !isAssigned ? (
+                      <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {currentAssigneeName}</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {visibleAssignDays < days.length ? (
+          <div
+            ref={assignmentTab === tab ? assignSentinelRef : undefined}
+            className="flex justify-center py-3"
+          >
+            <button
+              type="button"
+              onClick={() => setVisibleAssignDays((prev) => Math.min(prev + 30, days.length))}
+              className="rounded-xl bg-white px-4 py-2 text-[13px] font-bold text-[#5F6368] shadow-sm"
+            >
+              もっと見る
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
@@ -1495,6 +1649,21 @@ export function KajiApp() {
           </div>
 
           <div className="rounded-[14px] bg-white p-4">
+            <p className="text-[17px] font-bold text-[#202124]">アプリ更新</p>
+            <p className="mt-1 text-[12px] font-medium text-[#9AA0A6]">
+              最新の修正を取り込むため、アプリを再読み込みします。
+            </p>
+            <button
+              type="button"
+              onClick={handleManualAppUpdate}
+              disabled={appUpdateLoading}
+              className="mt-3 w-full rounded-[12px] bg-[#1A9BE8] px-3 py-2 text-[14.4px] font-bold text-white disabled:opacity-60"
+            >
+              {appUpdateLoading ? "最新化しています..." : "バージョンアップデート"}
+            </button>
+          </div>
+
+          <div className="rounded-[14px] bg-white p-4">
             <button
               type="button"
               onClick={async () => {
@@ -1588,6 +1757,7 @@ export function KajiApp() {
             onTouchEnd={handleMainScrollTouchEnd}
             onTouchCancel={handleMainScrollTouchCancel}
           >
+            {infoMessage ? <div className="mb-4 rounded-xl bg-[#E6F4EA] px-3 py-2 text-sm text-[#137333]">{infoMessage}</div> : null}
             {error ? <div className="mb-4 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
             <div className="relative min-h-full overflow-x-hidden">
               <div
@@ -1610,6 +1780,7 @@ export function KajiApp() {
             <div
               className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-28 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
             >
+              {infoMessage ? <div className="mb-4 mt-5 rounded-xl bg-[#E6F4EA] px-3 py-2 text-sm text-[#137333]">{infoMessage}</div> : null}
               {error ? <div className="mb-4 mt-5 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
               <div className={`space-y-4 ${error ? "pt-2" : "pt-5"}`}>
                 <div className="sticky top-0 z-30 -mx-5 space-y-3 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
@@ -1660,89 +1831,50 @@ export function KajiApp() {
                 </div>
 
                 <div
-                  className="space-y-3"
+                  className="relative overflow-x-hidden"
                   onTouchStart={(e) => {
+                    const touch = e.touches[0];
+                    const startsFromLeftEdge =
+                      touch !== undefined && touch.clientX <= ASSIGNMENT_BACK_SWIPE_EDGE_PX;
+                    const shouldPreferBackSwipe = assignmentTab === "daily" && startsFromLeftEdge;
+
+                    assignmentTabSwipeActiveRef.current = !shouldPreferBackSwipe;
+                    if (shouldPreferBackSwipe) return;
+
                     e.stopPropagation();
                     assignmentTabSwipe.onTouchStart(e);
                   }}
                   onTouchMove={(e) => {
+                    if (!assignmentTabSwipeActiveRef.current) return;
                     e.stopPropagation();
                     assignmentTabSwipe.onTouchMove(e);
                   }}
                   onTouchEnd={(e) => {
+                    if (!assignmentTabSwipeActiveRef.current) return;
                     e.stopPropagation();
                     assignmentTabSwipe.onTouchEnd(e);
+                    assignmentTabSwipeActiveRef.current = false;
                   }}
                   onTouchCancel={(e) => {
+                    if (!assignmentTabSwipeActiveRef.current) return;
                     e.stopPropagation();
                     assignmentTabSwipe.onTouchCancel();
+                    assignmentTabSwipeActiveRef.current = false;
                   }}
                 >
-                  {assignmentDays.slice(0, visibleAssignDays).map(({ date, dateKey, dayChores }) => (
-                    <div key={dateKey} className="space-y-1">
-                      <p className="text-[13px] font-bold text-[#5F6368]">
-                        {formatMonthDay(date.toISOString())}
-                      </p>
-                      <div className="rounded-[14px] bg-white">
-                        {dayChores.map((chore, idx) => {
-                          const entry = assignments.find(
-                            (x) => x.choreId === chore.id && x.date === dateKey,
-                          );
-                          const isAssigned = assignmentUser
-                            ? entry?.userId === assignmentUser
-                            : false;
-                          const currentAssigneeName = entry?.userName ?? null;
-                          return (
-                            <button
-                              key={chore.id}
-                              type="button"
-                              onClick={() => {
-                                if (!assignmentUser) return;
-                                const newUserId = isAssigned ? null : assignmentUser;
-                                startTransition(() => {
-                                  setAssignments((prev) => {
-                                    const filtered = prev.filter((x) => !(x.choreId === chore.id && x.date === dateKey));
-                                    if (newUserId) {
-                                      const userName = boot?.users.find((u) => u.id === newUserId)?.name ?? "";
-                                      filtered.push({ choreId: chore.id, userId: newUserId, userName, date: dateKey });
-                                    }
-                                    return filtered;
-                                  });
-                                });
-                                apiFetch("/api/assignments", {
-                                  method: "POST",
-                                  body: JSON.stringify({ choreId: chore.id, userId: newUserId, date: dateKey }),
-                                }).catch(() => setError("担当の保存に失敗しました。"));
-                              }}
-                              className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[#F1F3F4]" : ""}`}
-                            >
-                              <span className={`material-symbols-rounded text-[20px] ${isAssigned ? "text-[#1A9BE8]" : "text-[#DADCE0]"}`}>
-                                {isAssigned ? "check_box" : "check_box_outline_blank"}
-                              </span>
-                              <span className="flex-1 text-[13.5px] font-medium text-[#202124]">{chore.title}</span>
-                              {currentAssigneeName && !isAssigned ? (
-                                <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {currentAssigneeName}</span>
-                              ) : null}
-                            </button>
-                          );
-                        })}
+                  <div
+                    className={`flex ${isAssignmentSwipeSheetMoving ? "will-change-transform" : ""}`}
+                    style={{
+                      transform: `translate3d(${assignmentSwipeTrackTranslatePercent}%, 0, 0)`,
+                      transition: assignmentSwipeTrackTransitionStyle,
+                    }}
+                  >
+                    {ASSIGNMENT_TAB_ORDER.map((tab) => (
+                      <div key={tab} className="w-full shrink-0">
+                        {renderAssignmentTabContent(tab)}
                       </div>
-                    </div>
-                  ))}
-                  {visibleAssignDays < assignmentDays.length && (
-                    <div
-                      ref={assignSentinelRef}
-                      className="flex justify-center py-3"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setVisibleAssignDays((prev) => Math.min(prev + 30, assignmentDays.length))}
-                        className="rounded-xl bg-white px-4 py-2 text-[13px] font-bold text-[#5F6368] shadow-sm"
-                      >
-                        もっと見る
-                      </button>
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

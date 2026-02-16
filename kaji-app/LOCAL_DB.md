@@ -51,5 +51,5 @@ npm run db:seed:senri
 
 - `db:down:volumes`: DBデータのボリュームも削除します。
 - `db:init`: 安全なローカル初期化モードです（`db:init:local` と同じ）。
-- `db:init:current-env`: 現在の `DATABASE_URL` をそのまま使います。
+- `db:init:current-env`: 現在の `DATABASE_URL` を使いますが、非ローカルURLの場合は安全のため実行を拒否します。
 - `db:seed:senri`: 既存 `senri` を基準に `nozomi` と家事/履歴ダミーデータを追加します。

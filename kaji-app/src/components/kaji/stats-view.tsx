@@ -41,6 +41,11 @@ type PieSlice = StatsUserCount & {
   color: string;
 };
 
+type PieAnimationState = {
+  dasharray: string;
+  dashoffset: string;
+};
+
 function buildPieData(users: StatsUserCount[], userColorMap: Map<string, string>): PieSlice[] {
   const total = users.reduce((sum, user) => sum + user.count, 0);
   let acc = 0;
@@ -56,6 +61,25 @@ function buildPieData(users: StatsUserCount[], userColorMap: Map<string, string>
     acc += ratio;
     return item;
   });
+}
+
+function buildPieAnimationState(slice: PieSlice, sliceIdx: number, animated: boolean): PieAnimationState {
+  const fullLength = slice.ratio * 100;
+  const currentLength = animated ? fullLength : 0;
+
+  if (sliceIdx % 2 === 0) {
+    return {
+      dasharray: `${currentLength} ${100 - currentLength}`,
+      dashoffset: `${-slice.start * 100}`,
+    };
+  }
+
+  // Alternate slices grow from the opposite edge, so the arc expands in reverse direction.
+  const reverseStart = slice.start * 100 + (fullLength - currentLength);
+  return {
+    dasharray: `${currentLength} ${100 - currentLength}`,
+    dashoffset: `${-reverseStart}`,
+  };
 }
 
 export function StatsView({
@@ -278,26 +302,27 @@ export function StatsView({
                   <div className="flex items-center gap-3">
                     <svg viewBox="0 0 42 42" className="h-[120px] w-[120px] -rotate-90">
                       <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E8EAED" strokeWidth="10" />
-                      {tabData.pie.map((slice, sliceIdx) => (
-                        <circle
-                          key={`${tabKey}-${slice.userId}`}
-                          cx="21"
-                          cy="21"
-                          r="15.915"
-                          fill="none"
-                          stroke={slice.color}
-                          strokeWidth="10"
-                          style={{
-                            strokeDasharray: `${
-                              chartsAnimationReady ? slice.ratio * 100 : 0
-                            } ${100 - (chartsAnimationReady ? slice.ratio * 100 : 0)}`,
-                            strokeDashoffset: `${-slice.start * 100}`,
-                            transition:
-                              "stroke-dasharray 520ms cubic-bezier(0.22, 1, 0.36, 1), stroke-dashoffset 520ms cubic-bezier(0.22, 1, 0.36, 1)",
-                            transitionDelay: `${sliceIdx * 48}ms`,
-                          }}
-                        />
-                      ))}
+                      {tabData.pie.map((slice, sliceIdx) => {
+                        const pieAnim = buildPieAnimationState(slice, sliceIdx, chartsAnimationReady);
+                        return (
+                          <circle
+                            key={`${tabKey}-${slice.userId}`}
+                            cx="21"
+                            cy="21"
+                            r="15.915"
+                            fill="none"
+                            stroke={slice.color}
+                            strokeWidth="10"
+                            style={{
+                              strokeDasharray: pieAnim.dasharray,
+                              strokeDashoffset: pieAnim.dashoffset,
+                              transition:
+                                "stroke-dasharray 560ms cubic-bezier(0.22, 1, 0.36, 1), stroke-dashoffset 560ms cubic-bezier(0.22, 1, 0.36, 1)",
+                              transitionDelay: `${sliceIdx * 72}ms`,
+                            }}
+                          />
+                        );
+                      })}
                     </svg>
                     <div className="w-full space-y-2">
                       {tabData.pie.map((slice) => {
@@ -360,8 +385,8 @@ export function StatsView({
                         className="flex h-3 overflow-hidden rounded-md"
                         style={{
                           width: `${chartsAnimationReady ? barWidth : 0}%`,
-                          transition: "width 520ms cubic-bezier(0.22, 1, 0.36, 1)",
-                          transitionDelay: `${itemIdx * 42}ms`,
+                          transition: "width 560ms cubic-bezier(0.22, 1, 0.36, 1)",
+                          transitionDelay: `${itemIdx * 64}ms`,
                         }}
                       >
                         {item.userCounts.map((userCount, idx) => {
@@ -375,6 +400,10 @@ export function StatsView({
                               style={{
                                 flexGrow: userCount.count,
                                 backgroundColor: color,
+                                transform: `scaleX(${chartsAnimationReady ? 1 : 0})`,
+                                transformOrigin: idx % 2 === 0 ? "left center" : "right center",
+                                transition: "transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                                transitionDelay: `${itemIdx * 64 + idx * 54}ms`,
                               }}
                             />
                           );
