@@ -88,20 +88,42 @@ export function HomeTaskRow({
   const actorLabel = done ? "実施者" : "担当者";
   const actorColor = done ? (performerColor ?? "#1A9BE8") : (assigneeColor ?? "#BDC1C6");
 
+  // Determine styles based on state
+  let containerStyle: React.CSSProperties = { backgroundColor: "#FFFFFF", borderColor: "#E5EAF0" };
+  let titleColor = chore.isOverdue ? "#D93025" : "#202124";
+  let checkboxStyle: React.CSSProperties = { borderColor: "#C0C6CC", backgroundColor: "white" };
+
+  if (done) {
+    if (skipped) {
+      // Skipped: Gray theme
+      containerStyle = { backgroundColor: "#F8F9FA", borderColor: "#DADCE0" };
+      titleColor = "#5F6368";
+      checkboxStyle = { backgroundColor: "#BDC1C6", borderColor: "#BDC1C6" };
+    } else {
+      // Done: Actor color theme (light background)
+      containerStyle = {
+        backgroundColor: `${actorColor}14`, // ~8% opacity
+        borderColor: `${actorColor}4D`, // ~30% opacity
+      };
+      titleColor = darkenColor(actorColor, 20);
+      checkboxStyle = { backgroundColor: actorColor, borderColor: actorColor };
+    }
+  } else if (assigneeColor) {
+    checkboxStyle = { borderColor: assigneeColor, backgroundColor: "white" };
+  }
+
   return (
     <div
-      className={`flex w-full items-center gap-[15px] rounded-xl border px-[10px] py-[8px] text-left ${done ? "border-[#CFEAD8] bg-[#F2FAF5]" : "border-[#E5EAF0] bg-white"
-        }`}
+      className="flex w-full items-center gap-[15px] rounded-xl border px-[10px] py-[8px] text-left"
+      style={containerStyle}
     >
       <IconBadge icon={chore.icon} iconColor={chore.iconColor} bgColor={chore.bgColor} size={42} iconSize={21} />
       <div className="min-w-0 flex-1 space-y-[2px]">
         <div className="flex items-center gap-1">
-          <p className={`truncate text-[15.2px] font-bold leading-tight ${done
-            ? "text-[#2C6E49]"
-            : chore.isOverdue
-              ? "text-[#D93025]"
-              : "text-[#202124]"
-            }`}>
+          <p
+            className="truncate text-[15.2px] font-bold leading-tight"
+            style={{ color: titleColor }}
+          >
             {title}
           </p>
           {chore.isOverdue && !done && (
@@ -152,21 +174,9 @@ export function HomeTaskRow({
             ? "text-white"
             : disableRecordAction
               ? "border-[#DADCE0] bg-[#F1F3F4]"
-              : assigneeColor
-                ? "bg-white hover:opacity-80" // Border handled by style
-                : "border-[#C0C6CC] bg-white hover:border-[#1A9BE8]"
+              : "hover:border-[#1A9BE8]"
           }`}
-        style={
-          isUpdating
-            ? undefined
-            : done
-              ? skipped
-                ? { backgroundColor: "#D93025", borderColor: actorColor }
-                : { backgroundColor: actorColor, borderColor: actorColor }
-              : assigneeColor
-                ? { borderColor: assigneeColor }
-                : undefined
-        }
+        style={isUpdating ? undefined : checkboxStyle}
       >
         {isUpdating ? (
           <Loader2 size={14} className="animate-spin text-[#5F6368]" />

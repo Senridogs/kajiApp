@@ -8,7 +8,6 @@ import {
   Loader2,
   Plus,
   User,
-  Flame,
   Users,
 } from "lucide-react";
 
@@ -154,7 +153,7 @@ function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
 /** Assignee priority: self=0 > partner=1 > none=2 */
 function assigneePriority(assigneeId: string | null, sessionUserId: string | null): number {
   if (!assigneeId) return 2;
-  if (assigneeId === sessionUserId) return 0;
+  if (sessionUserId && assigneeId === sessionUserId) return 0;
   return 1;
 }
 
@@ -169,14 +168,20 @@ function sortHomeSectionChores(
     const bDone = sectionKey === "tomorrow" ? false : b.doneToday;
     // 1. done last (completed items at the bottom)
     if (aDone !== bDone) return aDone ? 1 : -1;
+
     // 2. assignee priority: self > partner > none
     const aAssignee = resolveAssigneeId(a.id);
     const bAssignee = resolveAssigneeId(b.id);
     const aPri = assigneePriority(aAssignee, sessionUserId);
     const bPri = assigneePriority(bAssignee, sessionUserId);
     if (aPri !== bPri) return aPri - bPri;
-    // 3. kana order
-    return JA_COLLATOR.compare(a.title, b.title);
+
+    // 3. kama order (50-on)
+    const titleDiff = a.title.localeCompare(b.title, "ja");
+    if (titleDiff !== 0) return titleDiff;
+
+    // 4. ID fallback for stability
+    return a.id.localeCompare(b.id);
   });
 }
 
@@ -1720,7 +1725,6 @@ export function KajiApp() {
                       style={{ color: effectiveUserId ? effectiveColor : "#202124" }}
                     >
                       <span className="truncate">{chore.title}</span>
-                      {chore.isOverdue && <Flame size={12} className="fill-orange-500 text-orange-500 flex-shrink-0" />}
                     </span>
                     {!effectiveUserId && (
                       <span className="shrink-0 rounded-full bg-[#BDC1C6] px-2 py-[2px] text-[10px] font-bold text-white">
