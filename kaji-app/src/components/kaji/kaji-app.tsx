@@ -846,10 +846,8 @@ export function KajiApp() {
     };
   }, [assignmentOpen, pullRefreshing]);
 
-  useEffect(() => {
-    if (activeTab !== "stats") return;
-    setStatsAnimationSeed((prev) => prev + 1);
-  }, [activeTab]);
+
+
 
   const setRecordUpdating = useCallback((choreId: string, isUpdating: boolean) => {
     setRecordUpdatingIds((prev) => {
@@ -1555,10 +1553,13 @@ export function KajiApp() {
                 const entry = assignments.find(
                   (x) => x.choreId === chore.id && x.date === dateKey,
                 );
+                const hasManualEntry = !!entry;
+                const effectiveUserId = entry?.userId ?? chore.defaultAssigneeId ?? null;
+                const effectiveUserName = entry?.userName ?? chore.defaultAssigneeName ?? null;
                 const isAssigned = assignmentUser
-                  ? entry?.userId === assignmentUser
+                  ? effectiveUserId === assignmentUser
                   : false;
-                const currentAssigneeName = entry?.userName ?? null;
+                const isDefaultOnly = !hasManualEntry && !!chore.defaultAssigneeId;
                 return (
                   <button
                     key={chore.id}
@@ -1583,12 +1584,15 @@ export function KajiApp() {
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[#F1F3F4]" : ""}`}
                   >
-                    <span className={`material-symbols-rounded text-[20px] ${isAssigned ? "text-[#1A9BE8]" : "text-[#DADCE0]"}`}>
+                    <span className={`material-symbols-rounded text-[20px] ${isAssigned ? (isDefaultOnly ? "text-[#93CDEE]" : "text-[#1A9BE8]") : "text-[#DADCE0]"}`}>
                       {isAssigned ? "check_box" : "check_box_outline_blank"}
                     </span>
                     <span className="flex-1 text-[13.5px] font-medium text-[#202124]">{chore.title}</span>
-                    {currentAssigneeName && !isAssigned ? (
-                      <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {currentAssigneeName}</span>
+                    {effectiveUserName && !isAssigned ? (
+                      <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {effectiveUserName}</span>
+                    ) : null}
+                    {isDefaultOnly && isAssigned ? (
+                      <span className="text-[10px] font-medium text-[#93CDEE]">デフォルト</span>
                     ) : null}
                   </button>
                 );
