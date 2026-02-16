@@ -437,7 +437,7 @@ export function KajiApp() {
         .filter(Boolean) as Array<{ date: Date; dateKey: string; dayChores: typeof chores }>;
 
     const dailyFiltered = chores.filter((c) => !c.isBigTask);
-    const bigFiltered = chores.filter((c) => c.isBigTask && !priorityHomeChoreIds.has(c.id));
+    const bigFiltered = chores.filter((c) => c.isBigTask);
 
     return {
       daily: mapDays(dailyFiltered),
@@ -1553,13 +1553,12 @@ export function KajiApp() {
                 const entry = assignments.find(
                   (x) => x.choreId === chore.id && x.date === dateKey,
                 );
-                const hasManualEntry = !!entry;
                 const effectiveUserId = entry?.userId ?? chore.defaultAssigneeId ?? null;
                 const effectiveUserName = entry?.userName ?? chore.defaultAssigneeName ?? null;
                 const isAssigned = assignmentUser
                   ? effectiveUserId === assignmentUser
                   : false;
-                const isDefaultOnly = !hasManualEntry && !!chore.defaultAssigneeId;
+                const isDefaultOnly = !entry && !!chore.defaultAssigneeId;
                 return (
                   <button
                     key={chore.id}
@@ -1591,8 +1590,10 @@ export function KajiApp() {
                     {effectiveUserName && !isAssigned ? (
                       <span className="text-[11px] font-medium text-[#9AA0A6]">👤 {effectiveUserName}</span>
                     ) : null}
-                    {isDefaultOnly && isAssigned ? (
-                      <span className="text-[10px] font-medium text-[#93CDEE]">デフォルト</span>
+                    {isDefaultOnly && effectiveUserName ? (
+                      <span className="text-[11px] font-medium text-[#9AA0A6]">
+                        <span className="text-[10px] text-[#93CDEE]">デフォルト </span>👤 {effectiveUserName}
+                      </span>
                     ) : null}
                   </button>
                 );
