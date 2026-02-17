@@ -2025,7 +2025,7 @@ export function KajiApp() {
             {latestTodayRecord && (
               <div className="space-y-[6px]">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-[22px] font-bold leading-none text-[#202124]">きろく</h2>
+                  <h2 className="text-[22px] font-bold leading-none text-[#202124]">さいしんのきろく</h2>
                 </div>
                 <div className="flex items-center gap-2 rounded-[12px] bg-white px-3 py-[10px]">
                   <Check size={14} strokeWidth={3} className="shrink-0 text-[#33C28A]" />
