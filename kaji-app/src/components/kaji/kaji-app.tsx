@@ -2,6 +2,7 @@
 
 import { FormEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
@@ -35,6 +36,7 @@ import { useSwipeTab } from "@/components/kaji/use-swipe-tab";
 import {
   FamilyCodeCard,
   HomeSectionTitle,
+  HomeTaskChip,
   HomeTaskRow,
   JoinHouseholdCard,
   ScreenTitle,
@@ -1630,6 +1632,17 @@ export function KajiApp() {
     return null;
   };
 
+  // Latest today's record for きょうのきろく section
+  const latestTodayRecord = useMemo(() => {
+    const todayStart = startOfJstDay(new Date());
+    const todayEnd = addDays(todayStart, 1);
+    return records.find((r) => {
+      if (r.isInitial) return false;
+      const at = new Date(r.performedAt);
+      return at >= todayStart && at < todayEnd;
+    }) ?? null;
+  }, [records]);
+
   const homeSections = [
     {
       key: "today" as const,
@@ -1943,9 +1956,9 @@ export function KajiApp() {
                       className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
                       style={{ top: 0 }}
                     >
-                      <HomeSectionTitle title={section.title} />
+                      <HomeSectionTitle title={section.title} count={section.chores.length} />
                     </div>
-                    <div className="flex flex-col items-stretch gap-2">
+                    <div className="grid grid-cols-2 gap-[6px]">
                       {section.chores.map((chore) => {
                         const todayKey = toJstDateKey(startOfJstDay(new Date()));
                         const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
@@ -1971,7 +1984,7 @@ export function KajiApp() {
                         const performerUser = chore.lastPerformerId ? boot.users.find((u) => u.id === chore.lastPerformerId) : null;
                         const performerColor = performerUser?.color ?? null;
                         return (
-                          <HomeTaskRow
+                          <HomeTaskChip
                             key={chore.id}
                             chore={
                               section.key === "tomorrow" && chore.doneToday
@@ -1985,11 +1998,6 @@ export function KajiApp() {
                             assigneeName={assigneeName}
                             assigneeColor={assigneeColor}
                             performerColor={performerColor}
-                            meta={
-                              section.key === "big"
-                                ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
-                                : undefined
-                            }
                           />
                         );
                       })}
@@ -2010,6 +2018,37 @@ export function KajiApp() {
                 >
                   家事を追加
                 </button>
+              </div>
+            )}
+
+            {/* きょうのきろく — latest record today */}
+            {latestTodayRecord && (
+              <div className="space-y-[6px]">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-[22px] font-bold leading-none text-[#202124]">さいしんのきろく</h2>
+                </div>
+                <div className="flex items-center gap-2 rounded-[12px] bg-white px-3 py-[10px]">
+                  <Check size={14} strokeWidth={3} className="shrink-0 text-[#33C28A]" />
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-[#202124]">
+                    {latestTodayRecord.chore.title}
+                  </span>
+                  <span className="shrink-0 text-[12px] font-semibold text-[#5F6368]">
+                    {latestTodayRecord.user.name}
+                  </span>
+                  <span className="shrink-0 text-[11px] font-medium text-[#9AA0A6]">
+                    {new Intl.DateTimeFormat("ja-JP", {
+                      timeZone: "Asia/Tokyo",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hourCycle: "h23",
+                    }).format(new Date(latestTodayRecord.performedAt))}
+                  </span>
+                </div>
+                {latestTodayRecord.memo && (
+                  <p className="px-3 text-[12px] font-medium text-[#5F6368]">
+                    「{latestTodayRecord.memo}」
+                  </p>
+                )}
               </div>
             )}
           </div>

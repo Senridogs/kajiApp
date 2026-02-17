@@ -55,8 +55,15 @@ export function ScreenTitle({ title }: { title: string }) {
   return <h1 className="text-[26px] font-bold leading-none text-[#202124]">{title}</h1>;
 }
 
-export function HomeSectionTitle({ title }: { title: string }) {
-  return <h2 className="text-[22px] font-bold leading-none text-[#202124]">{title}</h2>;
+export function HomeSectionTitle({ title, count }: { title: string; count?: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <h2 className="text-[22px] font-bold leading-none text-[#202124]">{title}</h2>
+      {count != null && (
+        <span className="text-[13px] font-bold text-[#9AA0A6]">{count}件</span>
+      )}
+    </div>
+  );
 }
 
 export function HomeTaskRow({
@@ -198,6 +205,138 @@ export function HomeTaskRow({
         )}
       </button>
     </div>
+  );
+}
+
+export function HomeTaskChip({
+  chore,
+  onRecord,
+  onUndo,
+  assigneeName,
+  assigneeColor,
+  performerColor,
+  recordDisabled = false,
+  isUpdating = false,
+}: {
+  chore: ChoreWithComputed;
+  onRecord: (chore: ChoreWithComputed) => void;
+  onUndo?: (chore: ChoreWithComputed) => void | Promise<void>;
+  assigneeName?: string | null;
+  assigneeColor?: string | null;
+  performerColor?: string | null;
+  recordDisabled?: boolean;
+  isUpdating?: boolean;
+}) {
+  const done = chore.doneToday;
+  const skipped = chore.lastRecordSkipped;
+  const disableAction = isUpdating || (!done && recordDisabled);
+  const actorName = done ? (chore.lastPerformerName ?? assigneeName ?? null) : null;
+  const actorColor = done ? (skipped ? "#BDC1C6" : (performerColor ?? "#1A9BE8")) : (assigneeColor ?? "#C0C6CC");
+
+  // Container + text styles by state
+  let containerStyle: React.CSSProperties;
+  let titleColor: string;
+  let checkBorderColor: string;
+
+  if (done) {
+    if (skipped) {
+      containerStyle = { backgroundColor: "#F1F3F4", borderColor: "#DADCE0" };
+      titleColor = "#9AA0A6";
+      checkBorderColor = "#BDC1C6";
+    } else {
+      containerStyle = {
+        backgroundColor: `${actorColor}14`,
+        borderColor: `${actorColor}4D`,
+      };
+      titleColor = darkenColor(actorColor, 20);
+      checkBorderColor = actorColor;
+    }
+  } else if (chore.isOverdue) {
+    containerStyle = { backgroundColor: "#FFF0EE", borderColor: "#FFCDD2" };
+    titleColor = "#D93025";
+    checkBorderColor = assigneeColor || "#C0C6CC";
+  } else {
+    containerStyle = { backgroundColor: "#FFFFFF", borderColor: "#E5EAF0" };
+    titleColor = "#202124";
+    checkBorderColor = assigneeColor || "#C0C6CC";
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={disableAction}
+      onClick={() => {
+        if (done) {
+          onUndo?.(chore);
+          return;
+        }
+        if (disableAction) return;
+        onRecord(chore);
+      }}
+      aria-label={
+        isUpdating
+          ? `${chore.title}を更新中`
+          : done
+            ? `${chore.title}の完了を取り消す`
+            : disableAction
+              ? `${chore.title}は記録できません`
+              : `${chore.title}を完了にする`
+      }
+      aria-pressed={done}
+      className="flex w-full items-center gap-[6px] rounded-[12px] border px-[8px] py-[7px] text-left transition-colors"
+      style={containerStyle}
+    >
+      {/* Icon or check mark */}
+      {done && !skipped ? (
+        <div
+          className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full motion-safe:animate-[checkPop_220ms_ease-out_both]"
+          style={{ backgroundColor: actorColor }}
+        >
+          <Check size={14} strokeWidth={3} className="text-white" />
+        </div>
+      ) : done && skipped ? (
+        <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-[#BDC1C6]">
+          <Minus size={13} strokeWidth={3} className="text-white" />
+        </div>
+      ) : (
+        <IconBadge icon={chore.icon} iconColor={chore.iconColor} bgColor={chore.bgColor} size={26} iconSize={13} />
+      )}
+
+      {/* Title */}
+      <span
+        className="min-w-0 flex-1 truncate text-[13px] font-bold leading-tight"
+        style={{ color: titleColor }}
+      >
+        {chore.title}
+      </span>
+
+      {/* Right side: performer name, loading spinner, overdue indicator, or empty checkbox */}
+      {isUpdating ? (
+        <Loader2 size={14} className="shrink-0 animate-spin text-[#5F6368]" />
+      ) : done && actorName ? (
+        <span
+          className="shrink-0 truncate text-[11px] font-bold"
+          style={{ color: actorColor }}
+        >
+          {actorName}
+        </span>
+      ) : done ? (
+        <Check size={12} strokeWidth={3} className="shrink-0" style={{ color: checkBorderColor }} />
+      ) : chore.isOverdue ? (
+        <div className="flex items-center gap-[2px]">
+          <Flame size={12} className="shrink-0 fill-[#D93025] text-[#D93025]" />
+          <div
+            className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-full border-[1.5px]"
+            style={{ borderColor: checkBorderColor }}
+          />
+        </div>
+      ) : (
+        <div
+          className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-full border-[1.5px]"
+          style={{ borderColor: checkBorderColor }}
+        />
+      )}
+    </button>
   );
 }
 
