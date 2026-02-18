@@ -2500,7 +2500,7 @@ export function KajiApp() {
 
   if (!boot || boot.needsRegistration || !sessionUser) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-[#F8F9FA] to-[#EEF3FD]">
+      <main className="min-h-screen overflow-y-auto bg-gradient-to-b from-[#F8F9FA] to-[#EEF3FD]">
         <form
           onSubmit={registerUser}
           className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col items-center justify-center gap-4 px-5 py-8"
@@ -2601,8 +2601,10 @@ export function KajiApp() {
         ? `https://ietasuku.vercel.app/?invite=${inviteCode}`
         : `${window.location.origin}/?invite=${inviteCode}`;
 
+    const hasChores = boot.chores.length > 0;
+
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col bg-[#F8F9FA] px-5 py-8">
+      <main className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col overflow-y-auto bg-[#F8F9FA] px-5 py-8">
         <div className="mt-8 space-y-5">
           <div className="text-center">
             <span className="material-symbols-rounded text-[42px] text-[#1A9BE8]">home</span>
@@ -2667,9 +2669,9 @@ export function KajiApp() {
                 setOnboardingOpen(false);
                 openAddChore();
               }}
-              className="w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[15px] font-bold text-white"
+              className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-bold text-[#1A9BE8]"
             >
-              ＋ 最初のタスクを追加しよう
+              ＋ タスクを追加
             </button>
             <button
               type="button"
@@ -2730,27 +2732,35 @@ export function KajiApp() {
                 </div>
               </div>
             ) : null}
-            {boot.chores.length > 0 ? (
+            {hasChores ? (
               <div className="rounded-[14px] border border-[#DADCE0] bg-white p-3">
-                <p className="text-[13px] font-bold text-[#5F6368]">登録済みの家事</p>
+                <p className="text-[13px] font-bold text-[#5F6368]">追加したタスク（{boot.chores.length}件）</p>
                 <div className="mt-2 space-y-1">
-                  {boot.chores.slice(0, 5).map((chore) => (
-                    <p key={`onboarding-chore-${chore.id}`} className="text-[13px] font-medium text-[#202124]">
-                      ・{chore.title}
-                    </p>
-                  ))}
+                  {boot.chores.map((chore) => {
+                    const ChoreIcon = iconByName(chore.icon || "sparkles");
+                    return (
+                      <div key={`onboarding-chore-${chore.id}`} className="flex items-center gap-2 rounded-[8px] bg-[#F8F9FA] px-3 py-1.5">
+                        <ChoreIcon size={16} style={{ color: chore.iconColor || "#5F6368" }} />
+                        <span className="text-[13px] font-medium text-[#202124]">{chore.title}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
-            <button
-              type="button"
-              onClick={finishOnboarding}
-              disabled={onboardingSubmitting}
-              className="w-full rounded-[14px] bg-[#F1F3F4] px-4 py-3 text-[14px] font-semibold text-[#5F6368] disabled:opacity-60"
-            >
-              あとで設定する
-            </button>
           </div>
+          <button
+            type="button"
+            onClick={finishOnboarding}
+            disabled={onboardingSubmitting}
+            className={
+              hasChores
+                ? "w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[16px] font-bold text-white disabled:opacity-60"
+                : "w-full rounded-[14px] bg-[#F1F3F4] px-4 py-3 text-[14px] font-semibold text-[#5F6368] disabled:opacity-60"
+            }
+          >
+            {hasChores ? "完了してホームへ" : "あとで設定する"}
+          </button>
           {error ? <p className="text-center text-sm text-[#C5221F]">{error}</p> : null}
         </div>
       </main>
@@ -2818,8 +2828,8 @@ export function KajiApp() {
         return resolveAssigneeForSort(choreId, "tomorrow", c);
       }, customIcons),
     },
-  ].filter((section) => section.chores.length > 0);
-  const hasAnyUpcomingChores = homeSections.length > 0;
+  ];
+  const hasAnyUpcomingChores = homeSections.some((section) => section.chores.length > 0);
   const swipeProgress = swipe.visual.progress;
   const swipeFromTabIndex = Math.max(0, TAB_ORDER.indexOf(swipe.visual.fromTab));
   const swipeTrackTranslatePercent = (-swipeFromTabIndex + swipeProgress) * 100;
@@ -3181,7 +3191,9 @@ export function KajiApp() {
                       ) : null}
                     </div>
                     <div className="flex flex-col items-stretch gap-2">
-                      {section.chores.map((chore) => {
+                      {section.chores.length === 0 ? (
+                        <p className="py-2 text-center text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
+                      ) : section.chores.map((chore) => {
                         const assignedEntry = assignments.find(
                           (x) => x.choreId === chore.id && x.date === sectionDateKey,
                         );
@@ -3196,6 +3208,8 @@ export function KajiApp() {
                         const doneYesterday =
                           !chore.doneToday &&
                           !!chore.lastPerformedAt &&
+                          !!chore.lastRecordId &&
+                          !chore.lastRecordSkipped &&
                           toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt))) === yesterdayKey;
                         const displayChore =
                           section.key === "yesterday" && doneYesterday
@@ -3301,7 +3315,7 @@ export function KajiApp() {
           chore.lastPerformedAt && !chore.lastRecordSkipped
             ? toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)))
             : null;
-        const isDone = performedDateKey === dateKey;
+        const isDone = performedDateKey === dateKey && dateKey < todayKey;
         const chipClass = isDone
           ? "border"
           : "border border-[#E5EAF0] bg-white text-[#202124]";
@@ -3329,7 +3343,7 @@ export function KajiApp() {
             onDragEnd={clearDragState}
             onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
             className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
-            style={doneStyle}
+            style={{ touchAction: "none", ...doneStyle }}
           >
             <ChipIcon size={13} color={chore.iconColor} />
             <span>{chore.title}</span>
@@ -3444,6 +3458,15 @@ export function KajiApp() {
                     );
                   })}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setCalendarExpanded(true)}
+                  className="mt-1 flex w-full items-center justify-center gap-1 rounded-[8px] py-1.5 text-[11px] font-semibold text-[#9AA0A6] hover:bg-[#F1F3F4] active:bg-[#E8EAED]"
+                  aria-label="カレンダー表示に拡大"
+                >
+                  <ChevronDown size={14} />
+                  <span>カレンダー表示に拡大</span>
+                </button>
               </div>
             ) : null}
 
@@ -4457,6 +4480,10 @@ export function KajiApp() {
         onClose={() => {
           if (saveChoreLoading || deleteChoreLoading) return;
           setChoreEditorOpen(false);
+          if (resumeOnboardingAfterCreate) {
+            setOnboardingOpen(true);
+            setResumeOnboardingAfterCreate(false);
+          }
         }}
         title=""
         maxHeightClassName="max-h-[92vh]"
