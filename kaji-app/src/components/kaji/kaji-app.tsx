@@ -457,6 +457,7 @@ export function KajiApp() {
   const dragScrollRafRef = useRef<number | null>(null);
   const dragScrollSpeedRef = useRef<number>(0);
   const calendarWeekStartRef = useRef<Date>(new Date());
+  const dropDraggedChoreToDateRef = useRef<(targetDateKey: string) => Promise<void>>(async () => {});
   const [reactionPickerRecordId, setReactionPickerRecordId] = useState<string | null>(null);
 
   const [registerName, setRegisterName] = useState("");
@@ -1738,6 +1739,10 @@ export function KajiApp() {
     }
   }, [clearDragState, dragSourceDateKey, draggingChore, focusCalendarDate, loadBootstrap]);
 
+  // ref を常に最新の関数に同期。useEffect 内のクロージャが古いスナップショットを
+  // 参照しないよう、render 時点で更新しておく。
+  dropDraggedChoreToDateRef.current = dropDraggedChoreToDate;
+
   // グローバルポインターイベント — タッチデバイスでのドラッグ&ドロップ対応
   // 週ナビゲーションホバー・自動スクロールも含む
   useEffect(() => {
@@ -1823,7 +1828,7 @@ export function KajiApp() {
       const els = document.elementsFromPoint(event.clientX, event.clientY);
       const dropEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dropDate) as HTMLElement | undefined;
       if (dropEl?.dataset.dropDate) {
-        void dropDraggedChoreToDate(dropEl.dataset.dropDate);
+        void dropDraggedChoreToDateRef.current(dropEl.dataset.dropDate);
       } else {
         clearDragState();
       }
@@ -1849,7 +1854,7 @@ export function KajiApp() {
       if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
       if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
     };
-  }, [clearDragState, dropDraggedChoreToDate, focusCalendarDate]);
+  }, [clearDragState, focusCalendarDate]);
 
   const shiftCalendarMonth = useCallback((direction: -1 | 1) => {
     const nextMonthKey = monthKeyWithOffset(toMonthKey(calendarMonthCursor), direction === 1 ? -1 : 1);
