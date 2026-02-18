@@ -9,7 +9,7 @@ import { setSession } from "@/lib/session";
 import { touchHousehold } from "@/lib/sync";
 
 const SCRYPT_KEYLEN = 64;
-const SCRYPT_PARAMS = { N: 65536, r: 8, p: 1 };
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 
 function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
