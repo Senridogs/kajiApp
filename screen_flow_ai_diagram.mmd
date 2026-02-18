@@ -1,0 +1,51 @@
+flowchart LR
+  n_main_register["ユーザー登録"]
+  n_main_onboarding["オンボーディ<br/>ング"]
+  n_main_home["ホーム"]
+  n_main_calendar_week["カレンダー<br/>（週）"]
+  n_main_kiroku["きろく"]
+  n_main_monthly_report["月間レポート"]
+  n_settings_sheet["設定BottomSh<br/>eet"]
+  n_settings_my_report["私のレポート"]
+  n_settings_push["プッシュ通知<br/>設定"]
+  n_settings_family["家族コード・<br/>招待"]
+  n_settings_sleep_mode_like["おやすみモード系シート<br/>（nameはsetManage）"]
+  n_calendar_month["カレンダー<br/>（月表示）"]
+  n_calendar_manage_screen["家事を管理<br/>（カレンダー導線側）"]
+  n_sheet_add_chore["家事追加"]
+  n_sheet_custom_icon["カスタムアイ<br/>コン"]
+  n_sheet_completion_toast["完了フィード<br/>バック"]
+  n_sheet_undo_confirm["完了取り消し<br/>確認"]
+  n_sheet_history["履歴"]
+  n_sheet_edit_chore["家事編集"]
+  n_sheet_batch_add["家事まとめて<br/>追加"]
+  n_sheet_week_task_reschedule["週間タスクの<br/>日にち変更"]
+  n_sheet_completion_date_setting_a["完了実績日設<br/>定A"]
+  n_12["フッター"]
+  n_main_monthly_report --> n_settings_my_report
+  n_calendar_month --> n_sheet_week_task_reschedule
+  n_calendar_manage_screen --> n_sheet_history
+  n_sheet_edit_chore --> n_sheet_custom_icon
+  n_main_register --> n_main_onboarding
+  n_main_register --> n_main_home
+  n_main_home --> n_settings_sheet
+  n_main_calendar_week --> n_calendar_month
+  n_sheet_week_task_reschedule --> n_sheet_completion_date_setting_a
+  n_settings_sheet --> n_settings_family
+  n_settings_sheet --> n_settings_push
+  n_calendar_manage_screen --> n_sheet_edit_chore
+  n_calendar_manage_screen --> n_sheet_edit_chore
+  n_calendar_manage_screen --> n_sheet_edit_chore
+  n_main_onboarding --> n_sheet_batch_add
+  n_settings_sheet --> n_settings_sleep_mode_like
+  n_settings_sheet --> n_calendar_manage_screen
+  n_sheet_completion_date_setting_a --> n_sheet_completion_toast
+  n_main_home --> n_sheet_completion_date_setting_a
+  n_main_home --> n_sheet_undo_confirm
+  n_12 --> n_main_calendar_week
+  n_12 --> n_sheet_add_chore
+  n_sheet_add_chore --> n_sheet_custom_icon
+  n_12 --> n_main_kiroku
+  n_12 --> n_main_monthly_report
+  n_calendar_month --> n_calendar_manage_screen
+  n_12 --> n_main_home

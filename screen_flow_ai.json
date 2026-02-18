@@ -1,0 +1,333 @@
+{
+  "meta": {
+    "format_version": "1.0",
+    "generated_at": "2026-02-18",
+    "language": "ja",
+    "description": "kajiApp_phase2.pen の Flow / 画面遷移図 (WzwT3) から読み取れる現状遷移。AI処理向けに構造化。"
+  },
+  "source": {
+    "pen_file": "kajiApp_phase2.pen",
+    "flow_node_id": "WzwT3",
+    "flow_node_name": "Flow / 画面遷移図"
+  },
+  "nodes": [
+    {
+      "id": "SW5Ur",
+      "key": "main_register",
+      "label": "ユーザー登録",
+      "group": "main",
+      "x": 78,
+      "y": 130
+    },
+    {
+      "id": "p3gup",
+      "key": "main_onboarding",
+      "label": "オンボーディング",
+      "group": "main",
+      "x": 569,
+      "y": 152
+    },
+    {
+      "id": "nq9XV",
+      "key": "main_home",
+      "label": "ホーム",
+      "group": "main",
+      "x": 4499,
+      "y": 405
+    },
+    {
+      "id": "BZ20Y",
+      "key": "main_calendar_week",
+      "label": "カレンダー（週）",
+      "group": "main",
+      "x": 5628,
+      "y": 489
+    },
+    {
+      "id": "CtlPx",
+      "key": "main_kiroku",
+      "label": "きろく",
+      "group": "main",
+      "x": 7042,
+      "y": 587
+    },
+    {
+      "id": "WmsYG",
+      "key": "main_monthly_report",
+      "label": "月間レポート",
+      "group": "main",
+      "x": 7525,
+      "y": 587
+    },
+    {
+      "id": "APk1G",
+      "key": "settings_sheet",
+      "label": "設定BottomSheet",
+      "group": "settings",
+      "x": 1210,
+      "y": 172
+    },
+    {
+      "id": "ryaoL",
+      "key": "settings_my_report",
+      "label": "私のレポート",
+      "group": "settings",
+      "x": 1168,
+      "y": 1151
+    },
+    {
+      "id": "hNFUX",
+      "key": "settings_push",
+      "label": "プッシュ通知設定",
+      "group": "settings",
+      "x": 1603,
+      "y": 1151
+    },
+    {
+      "id": "rbLxT",
+      "key": "settings_family",
+      "label": "家族コード・招待",
+      "group": "settings",
+      "x": 2004,
+      "y": 1151
+    },
+    {
+      "id": "SSIOH",
+      "key": "settings_manage",
+      "label": "家事を管理（設定導線側）",
+      "group": "settings",
+      "x": 2427,
+      "y": 1151
+    },
+    {
+      "id": "Zs60u",
+      "key": "settings_sleep_mode_like",
+      "label": "おやすみモード系シート（nameは setManage）",
+      "group": "settings",
+      "x": 2852,
+      "y": 1151
+    },
+    {
+      "id": "jHAA4",
+      "key": "calendar_month",
+      "label": "カレンダー（月表示）",
+      "group": "calendar_detail",
+      "x": 5628,
+      "y": 1439
+    },
+    {
+      "id": "yvpsT",
+      "key": "calendar_drag",
+      "label": "カレンダー（ドラッグ中）",
+      "group": "calendar_detail",
+      "x": 6111,
+      "y": 1439
+    },
+    {
+      "id": "KHhri",
+      "key": "calendar_manage_screen",
+      "label": "家事を管理（カレンダー導線側）",
+      "group": "calendar_detail",
+      "x": 6588,
+      "y": 1439
+    },
+    {
+      "id": "Bjltk",
+      "key": "sheet_add_chore",
+      "label": "家事追加",
+      "group": "actions",
+      "x": 3672,
+      "y": 1325
+    },
+    {
+      "id": "TnsMe",
+      "key": "sheet_custom_icon",
+      "label": "カスタムアイコン",
+      "group": "actions",
+      "x": 3672,
+      "y": 2320
+    },
+    {
+      "id": "k28C0",
+      "key": "sheet_completion_toast",
+      "label": "完了フィードバック",
+      "group": "actions",
+      "x": 4496,
+      "y": 2346
+    },
+    {
+      "id": "8ATS2",
+      "key": "sheet_undo_confirm",
+      "label": "完了取り消し確認",
+      "group": "actions",
+      "x": 5039,
+      "y": 1325
+    },
+    {
+      "id": "U7ZWV",
+      "key": "sheet_history",
+      "label": "履歴",
+      "group": "actions",
+      "x": 6056,
+      "y": 2474
+    },
+    {
+      "id": "7y4lJ",
+      "key": "sheet_edit_chore",
+      "label": "家事編集",
+      "group": "actions",
+      "x": 6557,
+      "y": 2474
+    },
+    {
+      "id": "ffw30",
+      "key": "sheet_batch_add",
+      "label": "家事まとめて追加",
+      "group": "actions",
+      "x": 569,
+      "y": 1137
+    },
+    {
+      "id": "6AYiW",
+      "key": "sheet_week_task_reschedule",
+      "label": "週間タスクの日にち変更",
+      "group": "actions",
+      "x": 7058,
+      "y": 2474
+    },
+    {
+      "id": "LL7VP",
+      "key": "sheet_completion_date_setting_a",
+      "label": "完了実績日設定A",
+      "group": "detail",
+      "x": 4499,
+      "y": 1332
+    },
+    {
+      "id": "WMEdS",
+      "key": "sheet_completion_date_setting_b",
+      "label": "完了実績日設定B",
+      "group": "detail",
+      "x": 7612,
+      "y": 2474
+    }
+  ],
+  "edges_explicit": [
+    {
+      "id": "r25N6",
+      "name": "arrow_main_onb_reg",
+      "from": "main_onboarding",
+      "to": "main_register",
+      "confidence": 0.9
+    },
+    {
+      "id": "BqI98",
+      "name": "arrow_main_reg_home",
+      "from": "main_register",
+      "to": "main_home",
+      "confidence": 0.95
+    },
+    {
+      "id": "qvFgi",
+      "name": "arrow_home_to_settings",
+      "from": "main_home",
+      "to": "settings_sheet",
+      "confidence": 0.95
+    },
+    {
+      "id": "l1xtz",
+      "name": "arrow_cal_to_month",
+      "from": "main_calendar_week",
+      "to": "calendar_month",
+      "confidence": 0.95
+    },
+    {
+      "id": "ZY3hk",
+      "name": "arrow_month_to_drag",
+      "from": "calendar_month",
+      "to": "calendar_drag",
+      "confidence": 0.9
+    },
+    {
+      "id": "WEcyA",
+      "name": "arrow_month_to_drag",
+      "from": "calendar_month",
+      "to": "calendar_drag",
+      "confidence": 0.8
+    },
+    {
+      "id": "aUzMk",
+      "name": "arrow_family_to_manage",
+      "from": "settings_family",
+      "to": "settings_manage",
+      "confidence": 0.7
+    },
+    {
+      "id": "z6Doi",
+      "name": "arrow_sleep_to_myreport",
+      "from": "settings_sleep_mode_like",
+      "to": "settings_my_report",
+      "confidence": 0.7
+    },
+    {
+      "id": "1iNRz",
+      "name": "arrow_manage_to_edit",
+      "from": "calendar_manage_screen",
+      "to": "sheet_edit_chore",
+      "confidence": 0.8
+    },
+    {
+      "id": "qInit",
+      "name": "arrow_manage_to_edit",
+      "from": "calendar_manage_screen",
+      "to": "sheet_edit_chore",
+      "confidence": 0.6
+    },
+    {
+      "id": "X8Z7Y",
+      "name": "arrow_manage_to_edit",
+      "from": "calendar_manage_screen",
+      "to": "sheet_edit_chore",
+      "confidence": 0.5
+    },
+    {
+      "id": "KccGG",
+      "name": "arrow_drag_to_week_reschedule",
+      "from": "calendar_drag",
+      "to": "sheet_week_task_reschedule",
+      "confidence": 0.95
+    }
+  ],
+  "labels": [
+    {
+      "id": "PkpXV",
+      "name": "label_drag_to_week_reschedule",
+      "text": "週間タスクの日にち変更"
+    },
+    {
+      "id": "kVzYn",
+      "name": "section_main",
+      "text": "1) 主要導線（タブ/初回導線）"
+    },
+    {
+      "id": "qYPXi",
+      "name": "section_settings",
+      "text": "2) 設定導線（左上アイコン起点）"
+    },
+    {
+      "id": "YBMEp",
+      "name": "section_actions",
+      "text": "3) Home/管理から開くシート・ダイアログ"
+    },
+    {
+      "id": "Ont4O",
+      "name": "section_detail",
+      "text": "4) 補助フロー（完了日設定）"
+    }
+  ],
+  "warnings": [
+    "同名ノード/重複ノードが存在します（例: setManage, detailDateScreen, arrow_manage_to_edit）。",
+    "矢印の向きと配置の不一致が一部あるため、edges_explicit には confidence を付与しています。",
+    "本データは『図面上に現在存在するもの』を優先して抽出しており、要件定義の理想遷移を保証しません。"
+  ]
+}
