@@ -101,7 +101,14 @@ type AssignmentTabKey = "daily" | "big";
 const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily", "big"] as const;
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
-type SettingsViewKey = "menu" | "my-report" | "push" | "family" | "manage" | "sleep";
+type SettingsViewKey = "menu" | "my-report" | "push" | "push-guide" | "family" | "manage" | "sleep";
+type PushGuidePlatform = "android" | "iphone";
+type PushGuideContent = {
+  setupTitle: string;
+  setupSteps: string[];
+  troubleTitle: string;
+  troubleSteps: string[];
+};
 type RescheduleChoice = "tomorrow" | "next_same_weekday" | "custom";
 type StandaloneScreenKey = "manage" | "my-report";
 type StandaloneOriginKey = "settings" | "list" | "stats";
@@ -114,6 +121,57 @@ const ONBOARDING_PRESET_CHORES = [
   { title: "ゴミ出し", icon: "recycle", iconColor: "#B97700", bgColor: "#FFF6E3", intervalDays: 3, isBigTask: false },
   { title: "水まわり掃除", icon: "droplets", iconColor: "#4D8BFF", bgColor: "#EEF3FF", intervalDays: 7, isBigTask: false },
 ] as const;
+const PUSH_GUIDE_CONFIRM_STEPS = [
+  "・「いま通知を送信」で通知が来たらOK",
+  "・届かない時だけ、アプリ再起動後に再テスト",
+  "・さらに届かない時は、端末通知設定を確認",
+] as const;
+const PUSH_GUIDE_CONTENT: Record<PushGuidePlatform, PushGuideContent> = {
+  android: {
+    setupTitle: "Android（ホーム追加からの手順）",
+    setupSteps: [
+      "1. Chromeで家事アプリを開く。",
+      "2. 右上メニューから「ホーム画面に追加」。",
+      "3. 追加したホーム画面アイコンから開く。",
+      "4. ログイン画面が出たらログイン。",
+      "5. 左上ユーザーアイコン→設定→プッシュ通知。",
+      "6. 通知をON（すでにONならそのまま）。",
+      "7. 「いま通知を送信」をタップ（確認用）。",
+      "8. 許可確認が出たら許可。通知が来たらOK。",
+    ],
+    troubleTitle: "届かないとき（Android）",
+    troubleSteps: [
+      "1. 設定 > 通知 > 家事アプリ（またはChrome）を開く。",
+      "2. 「通知を許可」「ロック画面」「音」をONにする。",
+      "3. 設定 > 電池で最適化対象から外す。",
+      "4. アプリに戻り、通知をOFF→ONし直す。",
+      "5. 「いま通知を送信」を押し、1分待つ。",
+      "6. 届けばOK。届かなければ端末再起動後に再テスト。",
+    ],
+  },
+  iphone: {
+    setupTitle: "iPhone（ホーム追加からの手順）",
+    setupSteps: [
+      "1. Safariで家事アプリを開く。",
+      "2. 共有ボタン→「ホーム画面に追加」。",
+      "3. 追加したホーム画面アイコンから開く。",
+      "4. ログイン画面が出たらログイン。",
+      "5. 左上ユーザーアイコン→設定→プッシュ通知。",
+      "6. 通知をON（すでにONならそのまま）。",
+      "7. 「いま通知を送信」をタップ（確認用）。",
+      "8. 許可確認が出たら許可。通知が来たらOK。",
+    ],
+    troubleTitle: "届かないとき（iPhone）",
+    troubleSteps: [
+      "1. 設定 > 通知 > 家事アプリを開く。",
+      "2. 「通知を許可」「ロック画面」「バナー」「サウンド」をON。",
+      "3. 集中モード/おやすみモードで通知が止まっていないか確認。",
+      "4. アプリに戻り、通知をOFF→ONし直す。",
+      "5. 「いま通知を送信」を押し、1分待つ。",
+      "6. 届けばOK。届かなければ端末再起動後に再テスト。",
+    ],
+  },
+};
 type PendingSwipeDelete = {
   toastId: string;
   chore: ChoreWithComputed;
@@ -355,6 +413,7 @@ export function KajiApp() {
   const [reportLoading, setReportLoading] = useState(false);
   const [myReportLoading, setMyReportLoading] = useState(false);
   const [settingsView, setSettingsView] = useState<SettingsViewKey>("menu");
+  const [pushGuidePlatform, setPushGuidePlatform] = useState<PushGuidePlatform>("android");
   const [standaloneScreen, setStandaloneScreen] = useState<StandaloneScreenKey | null>(null);
   const [standaloneOrigin, setStandaloneOrigin] = useState<StandaloneOriginKey>("settings");
   const [sleepModeEnabled, setSleepModeEnabled] = useState(false);
@@ -382,9 +441,26 @@ export function KajiApp() {
   const [draggingChore, setDraggingChore] = useState<ChoreWithComputed | null>(null);
   const [dragSourceDateKey, setDragSourceDateKey] = useState<string | null>(null);
   const [dragTargetDateKey, setDragTargetDateKey] = useState<string | null>(null);
+  const [touchDragging, setTouchDragging] = useState(false);
+  const [touchDragPos, setTouchDragPos] = useState({ x: 0, y: 0 });
+  const touchDragInfoRef = useRef<{
+    active: boolean;
+    chore: ChoreWithComputed;
+    sourceDateKey: string;
+    startX: number;
+    startY: number;
+  } | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const suppressChipClickRef = useRef(false);
+  const dragNavTimerRef = useRef<number | null>(null);
+  const dragNavHoveringRef = useRef<string | null>(null);
+  const dragScrollRafRef = useRef<number | null>(null);
+  const dragScrollSpeedRef = useRef<number>(0);
+  const calendarWeekStartRef = useRef<Date>(new Date());
   const [reactionPickerRecordId, setReactionPickerRecordId] = useState<string | null>(null);
 
   const [registerName, setRegisterName] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
   const [registerInviteCode, setRegisterInviteCode] = useState("");
   const [registerColor, setRegisterColor] = useState(USER_COLOR_PALETTE[0]);
   const [registerLoading, setRegisterLoading] = useState(false);
@@ -503,7 +579,7 @@ export function KajiApp() {
     tabs: TAB_ORDER,
     activeTab,
     onChangeTab: (tab) => { closeAssignment(); closeSettings(); setActiveTab(tab); if (tab === "home") setRefreshAnimationSeed((p) => p + 1); },
-    disabled: assignmentOpen || settingsOpen || standaloneScreen !== null || listDeleteSwipeActive || balanceSwipeActive,
+    disabled: assignmentOpen || settingsOpen || standaloneScreen !== null || listDeleteSwipeActive || balanceSwipeActive || !!draggingChore,
     threshold: 78,
     dominanceRatio: 1.4,
     lockDistance: 14,
@@ -1056,10 +1132,19 @@ export function KajiApp() {
   }, [calendarSelectedDateKey]);
 
   useEffect(() => {
+    calendarWeekStartRef.current = calendarWeekStart;
+  }, [calendarWeekStart]);
+
+  useEffect(() => {
     if (activeTab !== "home" && activeTab !== "list") {
+      // Cancel any in-flight drag state when leaving drag-capable tabs (M-2)
+      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+      if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+      touchDragInfoRef.current = null;
       setDraggingChore(null);
       setDragSourceDateKey(null);
       setDragTargetDateKey(null);
+      setTouchDragging(false);
     }
   }, [activeTab]);
 
@@ -1267,6 +1352,7 @@ export function KajiApp() {
         method: "POST",
         body: JSON.stringify({
           name: registerName,
+          password: registerPassword,
           color: registerColor,
           ...(inviteCode ? { inviteCode } : {}),
         }),
@@ -1582,6 +1668,11 @@ export function KajiApp() {
     setDraggingChore(null);
     setDragSourceDateKey(null);
     setDragTargetDateKey(null);
+    setTouchDragging(false);
+    if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+    dragNavHoveringRef.current = null;
+    if (dragScrollRafRef.current !== null) { cancelAnimationFrame(dragScrollRafRef.current); dragScrollRafRef.current = null; }
+    dragScrollSpeedRef.current = 0;
   }, []);
 
   const beginChoreDrag = useCallback((chore: ChoreWithComputed, sourceDateKey: string) => {
@@ -1589,6 +1680,25 @@ export function KajiApp() {
     setDragSourceDateKey(sourceDateKey);
     setDragTargetDateKey(null);
   }, []);
+
+  const handleChorePointerDown = useCallback(
+    (chore: ChoreWithComputed, sourceDateKey: string, event: React.PointerEvent<HTMLElement>) => {
+      if (!event.isPrimary) return;
+      const { clientX: startX, clientY: startY } = event;
+      touchDragInfoRef.current = { active: false, chore, sourceDateKey, startX, startY };
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = window.setTimeout(() => {
+        if (!touchDragInfoRef.current) return;
+        touchDragInfoRef.current.active = true;
+        suppressChipClickRef.current = true;
+        beginChoreDrag(touchDragInfoRef.current.chore, touchDragInfoRef.current.sourceDateKey);
+        setTouchDragging(true);
+        setTouchDragPos({ x: startX, y: startY });
+        longPressTimerRef.current = null;
+      }, 350);
+    },
+    [beginChoreDrag],
+  );
 
   const dropDraggedChoreToDate = useCallback(async (targetDateKey: string) => {
     if (!draggingChore) return;
@@ -1598,14 +1708,143 @@ export function KajiApp() {
     }
     try {
       setError("");
-      await rescheduleChoreToDate(draggingChore.id, targetDateKey);
+      // If the chore was completed on the source date, move the completion record
+      // rather than creating a schedule override (move, not copy).
+      const completedDateKey =
+        draggingChore.lastPerformedAt && !draggingChore.lastRecordSkipped
+          ? toJstDateKey(startOfJstDay(new Date(draggingChore.lastPerformedAt)))
+          : null;
+      const sourceRecordId =
+        completedDateKey === dragSourceDateKey && draggingChore.lastRecordId
+          ? draggingChore.lastRecordId
+          : undefined;
+      await apiFetch("/api/schedule-override", {
+        method: "POST",
+        body: JSON.stringify({
+          choreId: draggingChore.id,
+          date: targetDateKey,
+          ...(sourceRecordId ? { sourceRecordId } : {}),
+        }),
+      });
+      await loadBootstrap();
       focusCalendarDate(targetDateKey);
     } catch (err: unknown) {
       setError((err as Error).message ?? "日にち変更に失敗しました。");
     } finally {
       clearDragState();
     }
-  }, [clearDragState, dragSourceDateKey, draggingChore, focusCalendarDate, rescheduleChoreToDate]);
+  }, [clearDragState, dragSourceDateKey, draggingChore, focusCalendarDate, loadBootstrap]);
+
+  // グローバルポインターイベント — タッチデバイスでのドラッグ&ドロップ対応
+  // 週ナビゲーションホバー・自動スクロールも含む
+  useEffect(() => {
+    const SCROLL_ZONE = 100;   // 端からこのpx内でスクロール発動
+    const MAX_SCROLL_SPEED = 12; // px/frame
+
+    const startScrollLoop = () => {
+      if (dragScrollRafRef.current !== null) return;
+      const loop = () => {
+        const speed = dragScrollSpeedRef.current;
+        const el = mainScrollRef.current;
+        if (speed === 0 || !el) { dragScrollRafRef.current = null; return; }
+        el.scrollTop += speed;
+        dragScrollRafRef.current = requestAnimationFrame(loop);
+      };
+      dragScrollRafRef.current = requestAnimationFrame(loop);
+    };
+
+    const stopScrollLoop = () => {
+      if (dragScrollRafRef.current !== null) { cancelAnimationFrame(dragScrollRafRef.current); dragScrollRafRef.current = null; }
+      dragScrollSpeedRef.current = 0;
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const info = touchDragInfoRef.current;
+      if (!info) return;
+      if (!info.active) {
+        const dx = Math.abs(event.clientX - info.startX);
+        const dy = Math.abs(event.clientY - info.startY);
+        if (dx > 8 || dy > 8) {
+          if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+          touchDragInfoRef.current = null;
+        }
+        return;
+      }
+      event.preventDefault();
+      setTouchDragPos({ x: event.clientX, y: event.clientY });
+
+      const els = document.elementsFromPoint(event.clientX, event.clientY);
+
+      // ドロップ先の判定
+      const dropEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dropDate) as HTMLElement | undefined;
+      setDragTargetDateKey(dropEl?.dataset.dropDate ?? null);
+
+      // 週ナビゲーションゾーンのホバー検出 — 600ms滞在で週移動
+      const navEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dragNavigate) as HTMLElement | undefined;
+      const navDir = navEl?.dataset.dragNavigate ?? null;
+      if (navDir !== dragNavHoveringRef.current) {
+        dragNavHoveringRef.current = navDir;
+        if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+        if (navDir === "next-week" || navDir === "prev-week") {
+          dragNavTimerRef.current = window.setTimeout(() => {
+            dragNavTimerRef.current = null;
+            const delta = navDir === "next-week" ? 7 : -7;
+            focusCalendarDate(toJstDateKey(addDays(calendarWeekStartRef.current, delta)));
+          }, 600);
+        }
+      }
+
+      // 画面端の自動スクロール
+      const { clientY } = event;
+      const h = window.innerHeight;
+      if (clientY < SCROLL_ZONE) {
+        dragScrollSpeedRef.current = -MAX_SCROLL_SPEED * (1 - clientY / SCROLL_ZONE);
+        startScrollLoop();
+      } else if (clientY > h - SCROLL_ZONE) {
+        dragScrollSpeedRef.current = MAX_SCROLL_SPEED * (1 - (h - clientY) / SCROLL_ZONE);
+        startScrollLoop();
+      } else {
+        dragScrollSpeedRef.current = 0;
+        // speed=0 になったら loop が自然に止まる
+      }
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+      if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+      dragNavHoveringRef.current = null;
+      stopScrollLoop();
+      const info = touchDragInfoRef.current;
+      touchDragInfoRef.current = null;
+      if (!info?.active) return;
+      const els = document.elementsFromPoint(event.clientX, event.clientY);
+      const dropEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dropDate) as HTMLElement | undefined;
+      if (dropEl?.dataset.dropDate) {
+        void dropDraggedChoreToDate(dropEl.dataset.dropDate);
+      } else {
+        clearDragState();
+      }
+    };
+
+    const handlePointerCancel = () => {
+      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+      if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+      dragNavHoveringRef.current = null;
+      stopScrollLoop();
+      touchDragInfoRef.current = null;
+      clearDragState();
+    };
+
+    document.addEventListener("pointermove", handlePointerMove, { passive: false });
+    document.addEventListener("pointerup", handlePointerUp);
+    document.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", handlePointerUp);
+      document.removeEventListener("pointercancel", handlePointerCancel);
+      stopScrollLoop();
+    };
+  }, [clearDragState, dropDraggedChoreToDate, focusCalendarDate]);
 
   const shiftCalendarMonth = useCallback((direction: -1 | 1) => {
     const nextMonthKey = monthKeyWithOffset(toMonthKey(calendarMonthCursor), direction === 1 ? -1 : 1);
@@ -1802,12 +2041,14 @@ export function KajiApp() {
 
     try {
       await apiFetch(`/api/records/${chore.lastRecordId}`, { method: "DELETE", body: "{}" });
+      // Refresh authoritative state from server to ensure dueAt, lastPerformedAt etc. are correct.
+      await loadBootstrap();
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
       if (previousBoot) {
         setBoot(previousBoot);
       }
-      setError((err as Error).message ?? "Failed to undo record.");
+      setError((err as Error).message ?? "元に戻す処理に失敗しました。");
     } finally {
       setRecordUpdating(chore.id, false);
     }
@@ -2088,6 +2329,16 @@ export function KajiApp() {
     [pullRefreshing],
   );
 
+  // React 17+ registers onTouchMove as passive, preventing preventDefault().
+  // Register directly with { passive: false } so pull-to-refresh can cancel scroll.
+  useEffect(() => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+    const handler = (e: Event) => handleMainScrollTouchMove(e as unknown as TouchEvent<HTMLDivElement>);
+    el.addEventListener("touchmove", handler, { passive: false });
+    return () => el.removeEventListener("touchmove", handler);
+  }, [handleMainScrollTouchMove]);
+
   const endMainScrollPullGesture = useCallback(() => {
     if (!pullRefreshEnabled) return;
     const shouldHandle = pullDraggingRef.current || pullDistance > 0;
@@ -2259,13 +2510,29 @@ export function KajiApp() {
           <div className="w-full space-y-3 rounded-[20px] border border-[#DADCE0] bg-white px-[18px] py-4">
             <div className="flex items-center gap-2">
               <User size={22} className="text-[#1A9BE8]" aria-hidden="true" />
-              <p className="text-[24px] font-bold text-[#202124]">あなたの名前は？</p>
+              <p className="text-[24px] font-bold text-[#202124]">ログイン / 新規登録</p>
             </div>
-            <input
-              value={registerName}
-              onChange={(e) => setRegisterName(e.target.value)}
-              className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none"
-            />
+            <div className="space-y-1">
+              <p className="text-[13px] font-semibold text-[#5F6368]">ユーザーネーム</p>
+              <input
+                value={registerName}
+                onChange={(e) => setRegisterName(e.target.value)}
+                placeholder="あなたの名前"
+                autoComplete="username"
+                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[#9AA0A6]"
+              />
+            </div>
+            <div className="space-y-1">
+              <p className="text-[13px] font-semibold text-[#5F6368]">パスワード</p>
+              <input
+                type="password"
+                value={registerPassword}
+                onChange={(e) => setRegisterPassword(e.target.value)}
+                placeholder="8文字以上"
+                autoComplete="current-password"
+                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[#9AA0A6]"
+              />
+            </div>
             <div className="space-y-2 pt-1">
               <div className="flex items-center gap-1.5">
                 <span className="text-[14px] text-[#5F6368]">🏷️</span>
@@ -2285,11 +2552,11 @@ export function KajiApp() {
           <div className="w-full space-y-2 px-1">
             <div className="flex items-center gap-1.5">
               <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#1A9BE8] text-[11px] font-bold text-white">1</span>
-              <p className="text-[12px] font-medium text-[#5F6368]">名前だけで登録 → 家族コードが発行されます</p>
+              <p className="text-[12px] font-medium text-[#5F6368]">はじめての方：ユーザーネームとパスワードを決めて登録</p>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#33C28A] text-[11px] font-bold text-white">2</span>
-              <p className="text-[12px] font-medium text-[#5F6368]">コードをもらった方は入力して参加できます</p>
+              <p className="text-[12px] font-medium text-[#5F6368]">すでに登録済みの方：同じユーザーネームとパスワードでログイン</p>
             </div>
           </div>
 
@@ -2512,7 +2779,7 @@ export function KajiApp() {
   const yesterdayBaseDate = startOfJstDay(addDays(new Date(), -1));
   const yesterdayChores = sortHomeSectionChores(
     "yesterday",
-    boot.chores.filter((chore) => isScheduledOnDate(chore, yesterdayBaseDate)),
+    calendarScheduleMap.get(yesterdayKey) ?? [],
     sessionUser?.id ?? null,
     (choreId) => {
       const c = boot.chores.find((ch) => ch.id === choreId);
@@ -2881,6 +3148,7 @@ export function KajiApp() {
                   return (
                   <div
                     key={section.key}
+                    data-drop-date={sectionDateKey}
                     className={`space-y-[6px] rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[#EEF4FE] px-1 py-1" : ""}`}
                     onDragOver={(event) => {
                       if (!draggingChore) return;
@@ -2917,10 +3185,16 @@ export function KajiApp() {
                         const disableTomorrowDailyCheck = false;
                         const performerUser = chore.lastPerformerId ? boot.users.find((u) => u.id === chore.lastPerformerId) : null;
                         const performerColor = performerUser?.color ?? null;
+                        const doneYesterday =
+                          !chore.doneToday &&
+                          !!chore.lastPerformedAt &&
+                          toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt))) === yesterdayKey;
                         const displayChore =
-                          section.key === "tomorrow" && chore.doneToday
-                            ? { ...chore, doneToday: false }
-                            : chore;
+                          section.key === "yesterday" && doneYesterday
+                            ? { ...chore, doneToday: true }
+                            : section.key === "tomorrow" && chore.doneToday
+                              ? { ...chore, doneToday: false }
+                              : chore;
                         return (
                           <div
                             key={chore.id}
@@ -2931,6 +3205,7 @@ export function KajiApp() {
                               event.dataTransfer.setData("text/plain", chore.id);
                             }}
                             onDragEnd={clearDragState}
+                            onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
                           >
                             <HomeTaskRow
                               chore={displayChore}
@@ -3007,7 +3282,7 @@ export function KajiApp() {
       const previousWeekTarget = shiftTargetDateByWeek(-1);
       const nextWeekTarget = shiftTargetDateByWeek(1);
 
-      const renderCalendarChip = (chore: ChoreWithComputed, dateKey: string, emphasize = false) => {
+      const renderCalendarChip = (chore: ChoreWithComputed, dateKey: string) => {
         const ChipIcon = iconByName(chore.icon);
         const performerUser = chore.lastPerformerId
           ? boot.users.find((user) => user.id === chore.lastPerformerId)
@@ -3020,9 +3295,7 @@ export function KajiApp() {
         const isDone = performedDateKey === dateKey;
         const chipClass = isDone
           ? "border"
-          : emphasize
-            ? "border border-[#D2E3FC] bg-[#EEF4FE] text-[#202124]"
-            : "border border-[#E5EAF0] bg-white text-[#202124]";
+          : "border border-[#E5EAF0] bg-white text-[#202124]";
         const doneStyle: CSSProperties | undefined = isDone
           ? {
             backgroundColor: `${doneColor}14`,
@@ -3034,7 +3307,10 @@ export function KajiApp() {
           <button
             key={`${dateKey}-${chore.id}`}
             type="button"
-            onClick={() => openReschedule(chore, dateKey)}
+            onClick={() => {
+              if (suppressChipClickRef.current) { suppressChipClickRef.current = false; return; }
+              openReschedule(chore, dateKey);
+            }}
             draggable
             onDragStart={(event) => {
               beginChoreDrag(chore, dateKey);
@@ -3042,6 +3318,7 @@ export function KajiApp() {
               event.dataTransfer.setData("text/plain", chore.id);
             }}
             onDragEnd={clearDragState}
+            onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
             className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
             style={doneStyle}
           >
@@ -3099,6 +3376,7 @@ export function KajiApp() {
                         type="button"
                         onClick={() => {
                           focusCalendarDate(dateKey);
+                          setCalendarExpanded(false);
                         }}
                         className="flex min-h-[36px] flex-col items-center justify-center py-1"
                       >
@@ -3117,30 +3395,15 @@ export function KajiApp() {
                     );
                   })}
                 </div>
-                <div className="space-y-2 border-t border-[#E8EAED] pt-2">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-[10px] bg-[#EEF4FE] px-3 py-1 text-[14px] font-bold text-[#202124]">
-                      {selectedDateLabel}
-                      {calendarSelectedDateKey === todayKey ? " 今日" : ""}
-                    </span>
-                    <div className="h-px flex-1 bg-[#E5EAF0]" />
-                    <p className="text-[12px] font-medium text-[#9AA0A6]">{calendarSelectedDayEntries.length}件</p>
-                  </div>
-                  <div
-                    className="flex flex-wrap gap-[6px]"
-                    onClick={(event) => {
-                      handleCalendarSurfaceTap(event, calendarSelectedDateKey);
-                    }}
-                  >
-                    {calendarSelectedDayEntries.length === 0 ? (
-                      <p className="text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
-                    ) : (
-                      calendarSelectedDayEntries.map((chore) =>
-                        renderCalendarChip(chore, calendarSelectedDateKey, true),
-                      )
-                    )}
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setCalendarExpanded(false)}
+                  className="mt-1 flex w-full items-center justify-center gap-1 rounded-[8px] py-1.5 text-[11px] font-semibold text-[#9AA0A6] hover:bg-[#F1F3F4] active:bg-[#E8EAED]"
+                  aria-label="週表示に縮小"
+                >
+                  <ChevronDown size={14} className="rotate-180" />
+                  <span>週表示に縮小</span>
+                </button>
               </div>
             ) : null}
 
@@ -3176,6 +3439,7 @@ export function KajiApp() {
 
             {draggingChore ? (
               <div
+                data-drag-navigate="prev-week"
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => {
                   event.preventDefault();
@@ -3183,7 +3447,7 @@ export function KajiApp() {
                 }}
                 className="rounded-[12px] border border-dashed border-[#F9AB00] bg-[#FFF8E8] px-3 py-2 text-center text-[12px] font-bold text-[#B06000]"
               >
-                ↑ 1週間前へ移動
+                <span data-drag-navigate="prev-week">↑ ここに乗せると前の週に移動</span>
               </div>
             ) : null}
 
@@ -3191,7 +3455,8 @@ export function KajiApp() {
               {calendarSelectedWeekEntries.map((entry) => (
                 <div
                   key={`week-group-${entry.dateKey}`}
-                  className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[#EEF4FE]" : ""}`}
+                  data-drop-date={entry.dateKey}
+                  className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[#EEF4FE]" : entry.dateKey === calendarSelectedDateKey ? "bg-[#F5F9FF]" : ""}`}
                   onClick={(event) => {
                     handleCalendarSurfaceTap(event, entry.dateKey);
                   }}
@@ -3221,7 +3486,7 @@ export function KajiApp() {
                       <p className="text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
                     ) : (
                       entry.items.map((chore) =>
-                        renderCalendarChip(chore, entry.dateKey, entry.dateKey === calendarSelectedDateKey),
+                        renderCalendarChip(chore, entry.dateKey),
                       )
                     )}
                   </div>
@@ -3231,6 +3496,7 @@ export function KajiApp() {
 
             {draggingChore ? (
               <div
+                data-drag-navigate="next-week"
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => {
                   event.preventDefault();
@@ -3238,7 +3504,7 @@ export function KajiApp() {
                 }}
                 className="rounded-[12px] border border-dashed border-[#34A853] bg-[#E8F5E9] px-3 py-2 text-center text-[12px] font-bold text-[#1E8E3E]"
               >
-                ↓ 1週間後へ移動
+                <span data-drag-navigate="next-week">↓ ここに乗せると次の週に移動</span>
               </div>
             ) : null}
           </div>
@@ -3488,6 +3754,79 @@ export function KajiApp() {
               <button type="button" onClick={handleTestNotification} disabled={pushLoading} className="w-full rounded-[10px] bg-[#C2A12F] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60">いま通知を送信</button>
             </div>
           ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setPushGuidePlatform("android");
+              setSettingsView("push-guide");
+            }}
+            className="flex w-full items-center justify-between rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-left"
+          >
+            <div>
+              <p className="text-[14px] font-bold text-[#202124]">スマホ通知の設定方法</p>
+              <p className="text-[12px] font-medium text-[#5F6368]">Android / iPhone 向けに手順を案内</p>
+            </div>
+            <ChevronRight size={16} color="#9AA0A6" />
+          </button>
+        </div>
+      );
+    }
+
+    if (settingsView === "push-guide") {
+      const guide = PUSH_GUIDE_CONTENT[pushGuidePlatform];
+
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("push")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[#202124]">通知の設定方法</p>
+          </div>
+
+          <div className="flex gap-1 rounded-[12px] bg-[#E9EEF6] p-1">
+            <button
+              type="button"
+              onClick={() => setPushGuidePlatform("android")}
+              className={`flex-1 rounded-[10px] px-2 py-2 text-[13px] font-bold ${pushGuidePlatform === "android" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
+            >
+              Android
+            </button>
+            <button
+              type="button"
+              onClick={() => setPushGuidePlatform("iphone")}
+              className={`flex-1 rounded-[10px] px-2 py-2 text-[13px] font-bold ${pushGuidePlatform === "iphone" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
+            >
+              iPhone
+            </button>
+          </div>
+
+          <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-4">
+            <p className="text-[15px] font-bold text-[#202124]">{guide.setupTitle}</p>
+            <div className="space-y-1.5 text-[12px] font-medium leading-relaxed text-[#5F6368]">
+              {guide.setupSteps.map((step) => (
+                <p key={step}>{step}</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-[14px] border border-[#D8E7FF] bg-[#F5F9FF] p-4">
+            <p className="text-[13px] font-bold text-[#1A9BE8]">確認（テスト）</p>
+            <div className="space-y-1 text-[11.5px] font-medium leading-relaxed text-[#5F6368]">
+              {PUSH_GUIDE_CONFIRM_STEPS.map((step) => (
+                <p key={step}>{step}</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-[14px] border border-[#F2D39D] bg-[#FFF6E8] p-4">
+            <p className="text-[13px] font-bold text-[#C58500]">{guide.troubleTitle}</p>
+            <div className="space-y-1 text-[11px] font-medium leading-relaxed text-[#7A6A45]">
+              {guide.troubleSteps.map((step) => (
+                <p key={step}>{step}</p>
+              ))}
+            </div>
+          </div>
         </div>
       );
     }
@@ -3792,7 +4131,6 @@ export function KajiApp() {
               overscrollBehaviorY: "contain",
             }}
             onTouchStart={handleMainScrollTouchStart}
-            onTouchMove={handleMainScrollTouchMove}
             onTouchEnd={handleMainScrollTouchEnd}
             onTouchCancel={handleMainScrollTouchCancel}
           >
@@ -4042,6 +4380,24 @@ export function KajiApp() {
         aria-hidden
         className={`pointer-events-none fixed inset-0 z-[10010] bg-[#F8F9FA] transition-opacity duration-200 ${appReloading ? "opacity-100" : "opacity-0"}`}
       />
+
+      {touchDragging && draggingChore ? (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            left: touchDragPos.x,
+            top: touchDragPos.y,
+            transform: "translate(-50%, -50%) scale(1.1)",
+            zIndex: 9998,
+            pointerEvents: "none",
+          }}
+          className="inline-flex items-center gap-1 rounded-[10px] border border-[#D2E3FC] bg-[#EEF4FE] px-[10px] py-[6px] text-[12px] font-semibold text-[#202124] shadow-lg opacity-90"
+        >
+          <span className="material-symbols-rounded text-[13px]" style={{ color: draggingChore.iconColor }}>drag_indicator</span>
+          <span>{draggingChore.title}</span>
+        </div>
+      ) : null}
 
       <nav className="fixed bottom-4 left-0 right-0 z-50 mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">

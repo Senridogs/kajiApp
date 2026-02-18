@@ -1,3 +1,5 @@
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
@@ -6,8 +8,41 @@ import { prisma } from "@/lib/prisma";
 import { setSession } from "@/lib/session";
 import { touchHousehold } from "@/lib/sync";
 
+const SCRYPT_KEYLEN = 64;
+const SCRYPT_PARAMS = { N: 65536, r: 8, p: 1 };
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, SCRYPT_KEYLEN, SCRYPT_PARAMS).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password: string, stored: string): boolean {
+  const parts = stored.split(":");
+  const salt = parts[0] ?? "";
+  const storedHash = parts[1] ?? "";
+  let derived: Buffer;
+  try {
+    derived = scryptSync(password, salt || randomBytes(16).toString("hex"), SCRYPT_KEYLEN, SCRYPT_PARAMS);
+  } catch {
+    derived = randomBytes(SCRYPT_KEYLEN);
+  }
+  const storedBuf = Buffer.from(storedHash.padEnd(SCRYPT_KEYLEN * 2, "0"), "hex");
+  try {
+    return timingSafeEqual(derived, storedBuf);
+  } catch {
+    return false;
+  }
+}
+
 function generateInviteCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(6);
+  let code = "";
+  for (let i = 0; i < 6; i += 1) {
+    code += alphabet[bytes[i] % alphabet.length];
+  }
+  return code;
 }
 
 async function createHouseholdWithUniqueInviteCode(maxRetries = 5) {
@@ -68,22 +103,56 @@ function registerErrorResponse(error: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const body = await readJsonBody<{ name?: string; inviteCode?: string; color?: string }>(request);
+    const body = await readJsonBody<{
+      name?: string;
+      password?: string;
+      inviteCode?: string;
+      color?: string;
+    }>(request);
     if (!body) return badRequest("リクエスト形式が不正です。");
+
     const name = body?.name?.trim();
+    const password = body?.password;
     const inviteCodeInput = body?.inviteCode?.trim().toUpperCase();
     const color = body?.color && /^#[0-9A-Fa-f]{6}$/.test(body.color) ? body.color : undefined;
 
     if (!name) return badRequest("ユーザー名を入力してください。");
     if (name.length > 24) return badRequest("ユーザー名は24文字以内で入力してください。");
+    if (!password) return badRequest("パスワードを入力してください。");
+    if (password.length < 8) return badRequest("パスワードは8文字以上で入力してください。");
+    if (password.length > 128) return badRequest("パスワードが長すぎます。");
 
-    const existingUser = await prisma.user.findFirst({
+    const existingUser = await prisma.user.findUnique({
       where: { name },
       include: { household: { select: { inviteCode: true } } },
-      orderBy: { createdAt: "asc" },
     });
 
     if (existingUser) {
+      if (existingUser.passwordHash) {
+        // Password already set: verify it
+        if (!verifyPassword(password, existingUser.passwordHash)) {
+          return badRequest("パスワードが正しくありません。");
+        }
+      } else {
+        // Migration path: first login after password feature was added.
+        // Use WHERE passwordHash IS NULL to prevent race condition when
+        // two concurrent requests try to set the password simultaneously.
+        const updated = await prisma.user.updateMany({
+          where: { id: existingUser.id, passwordHash: null },
+          data: { passwordHash: hashPassword(password) },
+        });
+        if (updated.count === 0) {
+          // Another concurrent request already set the hash; fetch it and verify.
+          const fresh = await prisma.user.findUnique({
+            where: { id: existingUser.id },
+            select: { passwordHash: true },
+          });
+          if (!fresh?.passwordHash || !verifyPassword(password, fresh.passwordHash)) {
+            return badRequest("パスワードが正しくありません。");
+          }
+        }
+      }
+
       await setSession(
         { userId: existingUser.id, householdId: existingUser.householdId },
         { secure: isHttpsRequest(request) },
@@ -97,6 +166,7 @@ export async function POST(request: Request) {
       });
     }
 
+    // New user
     let household = inviteCodeInput
       ? await prisma.household.findUnique({ where: { inviteCode: inviteCodeInput } })
       : null;
@@ -116,6 +186,7 @@ export async function POST(request: Request) {
     const user = await prisma.user.create({
       data: {
         name,
+        passwordHash: hashPassword(password),
         householdId: household.id,
         ...(color ? { color } : {}),
       },
@@ -138,6 +209,12 @@ export async function POST(request: Request) {
       onboardingRequired: !inviteCodeInput,
     });
   } catch (error: unknown) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return badRequest("このユーザー名はすでに使われています。別の名前を選んでください。");
+    }
     console.error("[api/register] failed", error);
     return registerErrorResponse(error);
   }

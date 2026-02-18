@@ -8,6 +8,10 @@ type ChoreWithLatest = Chore & {
   defaultAssignee?: Pick<User, "id" | "name"> | null;
 };
 
+type ChoreRecordWithOptionalSkip = ChoreRecord & {
+  isSkipped?: boolean | null;
+};
+
 export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWithComputed {
   const latest = chore.records[0];
   const lastPerformedAt = latest?.performedAt ?? null;
@@ -24,8 +28,8 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
   const daysSinceLast = lastPerformedAt ? diffDaysFloor(lastPerformedAt, now) : null;
   const doneToday = !!latest && latest.performedAt >= todayStart;
 
-  // Use 'any' cast for isSkipped if types are not up to date
-  const isSkipped = (latest as any)?.isSkipped ?? false;
+  const latestWithOptionalSkip = latest as ChoreRecordWithOptionalSkip | undefined;
+  const isSkipped = latestWithOptionalSkip?.isSkipped ?? false;
 
   return {
     id: chore.id,

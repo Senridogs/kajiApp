@@ -183,10 +183,16 @@ export function StatsView({
     // If the balance chart has already animated for this seed + tab,
     // skip the animation and show the final state immediately.
     if (balanceHasAnimatedRef.current) {
-      setBalanceAnimationReady(true);
-      return;
+      const frame = requestAnimationFrame(() => {
+        setBalanceAnimationReady(true);
+      });
+      return () => {
+        cancelAnimationFrame(frame);
+      };
     }
-    setBalanceAnimationReady(false);
+    const resetFrame = requestAnimationFrame(() => {
+      setBalanceAnimationReady(false);
+    });
     let frame2: number | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const frame1 = requestAnimationFrame(() => {
@@ -198,6 +204,7 @@ export function StatsView({
       });
     });
     return () => {
+      cancelAnimationFrame(resetFrame);
       cancelAnimationFrame(frame1);
       if (frame2 !== null) {
         cancelAnimationFrame(frame2);
@@ -212,10 +219,16 @@ export function StatsView({
     // If the chore bars have already animated for this seed,
     // skip the animation and show the final state immediately.
     if (choreHasAnimatedRef.current) {
-      setChoreAnimationReady(true);
-      return;
+      const frame = requestAnimationFrame(() => {
+        setChoreAnimationReady(true);
+      });
+      return () => {
+        cancelAnimationFrame(frame);
+      };
     }
-    setChoreAnimationReady(false);
+    const resetFrame = requestAnimationFrame(() => {
+      setChoreAnimationReady(false);
+    });
     let frame2: number | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const frame1 = requestAnimationFrame(() => {
@@ -227,6 +240,7 @@ export function StatsView({
       });
     });
     return () => {
+      cancelAnimationFrame(resetFrame);
       cancelAnimationFrame(frame1);
       if (frame2 !== null) {
         cancelAnimationFrame(frame2);

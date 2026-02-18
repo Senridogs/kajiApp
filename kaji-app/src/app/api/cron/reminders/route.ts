@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 
 import { buildReminderPayload, canSendPush, sendWebPush } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
@@ -6,14 +7,31 @@ import { addDays, startOfJstDay } from "@/lib/time";
 
 export const runtime = "nodejs";
 
+function safeCompare(a: string, b: string) {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
 function isAuthorized(request: Request) {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) return true;
+  const expected = process.env.CRON_SECRET?.trim();
+  if (!expected) {
+    // Fail closed in production. Allow local/dev runs without CRON_SECRET.
+    return process.env.NODE_ENV !== "production";
+  }
+
   const auth = request.headers.get("authorization");
-  const bearer = auth?.replace(/^Bearer\s+/i, "");
+  const bearer = auth?.replace(/^Bearer\s+/i, "").trim();
   const url = new URL(request.url);
-  const secretQuery = url.searchParams.get("secret");
-  return bearer === expected || secretQuery === expected;
+  const secretQuery = url.searchParams.get("secret")?.trim();
+
+  if (bearer && safeCompare(bearer, expected)) return true;
+  // Query-based secret is allowed only for non-production/manual validation.
+  if (process.env.NODE_ENV !== "production" && secretQuery && safeCompare(secretQuery, expected)) {
+    return true;
+  }
+  return false;
 }
 
 export async function GET(request: Request) {

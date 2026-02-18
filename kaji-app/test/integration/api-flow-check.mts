@@ -47,9 +47,10 @@ async function main() {
   assert.equal(guestBody.needsRegistration, true);
 
   const uniqueName = `itest-${Date.now()}`;
+  const password = "itest-pass-123";
   const registerRes = await request("/api/register", {
     method: "POST",
-    body: JSON.stringify({ name: uniqueName }),
+    body: JSON.stringify({ name: uniqueName, password }),
   });
   assert.equal(registerRes.status, 200);
   const registerBody = await registerRes.json();
@@ -63,7 +64,7 @@ async function main() {
   cookieJar.clear();
   const reloginRes = await request("/api/register", {
     method: "POST",
-    body: JSON.stringify({ name: uniqueName }),
+    body: JSON.stringify({ name: uniqueName, password }),
   });
   assert.equal(reloginRes.status, 200);
   const reloginBody = await reloginRes.json();

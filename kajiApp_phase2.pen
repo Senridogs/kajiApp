@@ -11017,6 +11017,86 @@
                       ]
                     }
                   ]
+                },
+                {
+                  "type": "frame",
+                  "id": "1g22l",
+                  "name": "n2_guideLinkCard",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 14,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#DCE3EC"
+                  },
+                  "gap": 10,
+                  "padding": [
+                    12,
+                    14
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "zCFsN",
+                      "name": "n2_guideLinkLeft",
+                      "gap": 10,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "pMfzE",
+                          "name": "n2_guideLinkIcon",
+                          "width": 16,
+                          "height": 16,
+                          "iconFontName": "smartphone",
+                          "iconFontFamily": "lucide",
+                          "fill": "#1A9BE8"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "OUGxA",
+                          "name": "n2_guideLinkTextWrap",
+                          "layout": "vertical",
+                          "gap": 2,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "qiDQO",
+                              "name": "n2_guideLinkTitle",
+                              "fill": "#202124",
+                              "content": "スマホで通知を受ける設定方法",
+                              "fontFamily": "DM Sans",
+                              "fontSize": 14,
+                              "fontWeight": "700"
+                            },
+                            {
+                              "type": "text",
+                              "id": "wPzcp",
+                              "name": "n2_guideLinkSub",
+                              "fill": "#5F6368",
+                              "content": "Android / iPhone の手順を見る",
+                              "fontFamily": "DM Sans",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "icon_font",
+                      "id": "qAJwr",
+                      "name": "n2_guideLinkChevron",
+                      "width": 18,
+                      "height": 18,
+                      "iconFontName": "chevron-right",
+                      "iconFontFamily": "lucide",
+                      "fill": "#9AA0A6"
+                    }
+                  ]
                 }
               ]
             }
@@ -47343,7 +47423,7 @@
           "x": 6177.758878532815,
           "y": 1343.150599145707,
           "name": "arrow_month_to_drag",
-          "rotation": -49.07839284355257,
+          "rotation": -49.07839284355258,
           "fill": "#7C8795",
           "content": "→",
           "fontFamily": "DM Sans",
@@ -48679,7 +48759,7 @@
           "x": 6539.513505602223,
           "y": 1363,
           "name": "arrow_month_to_drag",
-          "rotation": -49.07839284355257,
+          "rotation": -49.07839284355258,
           "fill": "#7C8795",
           "content": "→",
           "fontFamily": "DM Sans",
@@ -49931,6 +50011,712 @@
               ]
             }
           ]
+        },
+        {
+          "type": "text",
+          "id": "C6WQK",
+          "x": 1778,
+          "y": 2018,
+          "name": "arrow_push_to_guide",
+          "fill": "#7C8795",
+          "content": "↓",
+          "fontFamily": "DM Sans",
+          "fontSize": 34,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "6z7Xj",
+          "x": 1818,
+          "y": 2028,
+          "name": "label_push_to_guide",
+          "fill": "#5F6368",
+          "content": "通知設定ガイド",
+          "fontFamily": "DM Sans",
+          "fontSize": 12,
+          "fontWeight": "700"
+        },
+        {
+          "type": "frame",
+          "id": "5ONvD",
+          "x": 2004,
+          "y": 2148,
+          "name": "setPushGuideAndroid",
+          "clip": true,
+          "width": 393,
+          "height": 852,
+          "fill": "#F8F9FA",
+          "layout": "vertical",
+          "gap": 16,
+          "padding": [
+            20,
+            20,
+            24,
+            20
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "G3yCH",
+              "name": "guide_header",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "CuvJm",
+                  "name": "guide_back",
+                  "width": 24,
+                  "height": 24,
+                  "iconFontName": "arrow-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "#202124"
+                },
+                {
+                  "type": "text",
+                  "id": "MOhsI",
+                  "name": "guide_title",
+                  "fill": "#202124",
+                  "content": "通知の設定方法",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 22,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "L60Yc",
+              "name": "guide_tabs",
+              "width": "fill_container",
+              "fill": "#E8EDF5",
+              "cornerRadius": 12,
+              "gap": 6,
+              "padding": 4,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "aHcUi",
+                  "name": "guide_tab_android",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 10,
+                  "padding": [
+                    10,
+                    0
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Gzu9j",
+                      "name": "guide_tab_android_text",
+                      "fill": "#1A9BE8",
+                      "content": "Android",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "E2O9o",
+                  "name": "guide_tab_iphone",
+                  "width": "fill_container",
+                  "fill": "#E8EDF5",
+                  "cornerRadius": 10,
+                  "padding": [
+                    10,
+                    0
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "hxpEm",
+                      "name": "guide_tab_iphone_text",
+                      "fill": "#5F6368",
+                      "content": "iPhone",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "MPZOo",
+              "name": "guide_body",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "udxHW",
+                  "name": "guide_android_main",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 16,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E5EAF0"
+                  },
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "1OoPK",
+                      "name": "guide_android_title",
+                      "fill": "#202124",
+                      "content": "Android（アプリ内の設定手順）",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 17,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "jv6Lv",
+                      "name": "guide_android_step1",
+                      "fill": "#202124",
+                      "content": "1. ログイン後、左上のユーザーアイコンをタップ。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "GiQqy",
+                      "name": "guide_android_step2",
+                      "fill": "#202124",
+                      "content": "2. 設定画面で「プッシュ通知」をタップ。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "j3aiw",
+                      "name": "guide_android_step3",
+                      "fill": "#202124",
+                      "content": "3. 通知をONにする（すでにONならそのままでOK）。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "FsMxG",
+                      "name": "guide_android_step4",
+                      "fill": "#202124",
+                      "content": "4. 「いま通知を送信」をタップ（確認用）。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "5zNHG",
+                      "name": "guide_android_step5",
+                      "fill": "#202124",
+                      "content": "5. この操作で初めて許可確認が出たら「許可」。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "o3vQ4",
+                      "name": "guide_android_step6",
+                      "fill": "#202124",
+                      "content": "6. 通知が届いたら設定完了。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "TyUNK",
+                      "name": "guide_android_step7",
+                      "fill": "#202124",
+                      "content": "7. 届かない場合のみ、アプリを開き直して再テスト。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "RprW0",
+                      "name": "guide_android_step8",
+                      "fill": "#202124",
+                      "content": "8. それでも届かない場合のみ、端末の通知設定を確認。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "u3SK7",
+                  "name": "guide_android_check",
+                  "width": "fill_container",
+                  "fill": "#F5F9FF",
+                  "cornerRadius": 14,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#D8E7FF"
+                  },
+                  "layout": "vertical",
+                  "gap": 6,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "vmPsh",
+                      "name": "guide_android_check_title",
+                      "fill": "#1A9BE8",
+                      "content": "確認（テスト）",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "ZQMpG",
+                      "name": "guide_android_check1",
+                      "fill": "#5F6368",
+                      "content": "・「いま通知を送信」で通知が来たらOK",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "odGkI",
+                      "name": "guide_android_check2",
+                      "fill": "#5F6368",
+                      "content": "・届かない時だけ、アプリ再起動後に再テスト",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Xve3f",
+                      "name": "guide_android_check3",
+                      "fill": "#5F6368",
+                      "content": "・さらに届かない時だけ、端末通知設定を確認",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "xCrJ7",
+                  "name": "guide_android_help",
+                  "width": "fill_container",
+                  "fill": "#FFF6E8",
+                  "cornerRadius": 14,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#F2D39D"
+                  },
+                  "layout": "vertical",
+                  "gap": 6,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "dvUZA",
+                      "name": "guide_android_help_title",
+                      "fill": "#C58500",
+                      "content": "届かないとき",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "kdmPr",
+                      "name": "guide_android_help_text",
+                      "fill": "#7A6A45",
+                      "content": "通知が来ない時は、通知をOFF→ONして再テスト。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "WcSre",
+          "x": 2447,
+          "y": 2148,
+          "name": "setPushGuideIphone",
+          "clip": true,
+          "width": 393,
+          "height": 852,
+          "fill": "#F8F9FA",
+          "layout": "vertical",
+          "gap": 16,
+          "padding": [
+            20,
+            20,
+            24,
+            20
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "3mQNe",
+              "name": "guide_header",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "bDBK9",
+                  "name": "guide_back",
+                  "width": 24,
+                  "height": 24,
+                  "iconFontName": "arrow-left",
+                  "iconFontFamily": "lucide",
+                  "fill": "#202124"
+                },
+                {
+                  "type": "text",
+                  "id": "kkIOD",
+                  "name": "guide_title",
+                  "fill": "#202124",
+                  "content": "通知の設定方法",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 22,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "NlElw",
+              "name": "guide_tabs",
+              "width": "fill_container",
+              "fill": "#E8EDF5",
+              "cornerRadius": 12,
+              "gap": 6,
+              "padding": 4,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "bJpjj",
+                  "name": "guide_tab_android",
+                  "width": "fill_container",
+                  "fill": "#E8EDF5",
+                  "cornerRadius": 10,
+                  "padding": [
+                    10,
+                    0
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "MyVin",
+                      "name": "guide_tab_android_text",
+                      "fill": "#5F6368",
+                      "content": "Android",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "bD06I",
+                  "name": "guide_tab_iphone",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 10,
+                  "padding": [
+                    10,
+                    0
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "EhY5x",
+                      "name": "guide_tab_iphone_text",
+                      "fill": "#1A9BE8",
+                      "content": "iPhone",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "WDiXC",
+              "name": "guide_body",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "QqH47",
+                  "name": "guide_iphone_main",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 16,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#E5EAF0"
+                  },
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "DYJ4f",
+                      "name": "guide_iphone_title",
+                      "fill": "#202124",
+                      "content": "iPhone（アプリ内の設定手順）",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 17,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "IX7cw",
+                      "name": "guide_iphone_step1",
+                      "fill": "#202124",
+                      "content": "1. ログイン後、左上のユーザーアイコンをタップ。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "AAfj2",
+                      "name": "guide_iphone_step2",
+                      "fill": "#202124",
+                      "content": "2. 設定画面で「プッシュ通知」をタップ。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Ub367",
+                      "name": "guide_iphone_step3",
+                      "fill": "#202124",
+                      "content": "3. 通知をONにする（すでにONならそのままでOK）。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "yUjHy",
+                      "name": "guide_iphone_step4",
+                      "fill": "#202124",
+                      "content": "4. 「いま通知を送信」をタップ（確認用）。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "ELfO5",
+                      "name": "guide_iphone_step5",
+                      "fill": "#202124",
+                      "content": "5. この操作で初めて許可確認が出たら「許可」。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "tc326",
+                      "name": "guide_iphone_step6",
+                      "fill": "#202124",
+                      "content": "6. 通知が届いたら設定完了。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "MF6Hy",
+                      "name": "guide_iphone_step7",
+                      "fill": "#202124",
+                      "content": "7. 届かない場合のみ、アプリを開き直して再テスト。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "GtTIV",
+                      "name": "guide_iphone_step8",
+                      "fill": "#202124",
+                      "content": "8. それでも届かない場合のみ、端末の通知設定を確認。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "rn2yI",
+                  "name": "guide_iphone_check",
+                  "width": "fill_container",
+                  "fill": "#F5F9FF",
+                  "cornerRadius": 14,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#D8E7FF"
+                  },
+                  "layout": "vertical",
+                  "gap": 6,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "3XPIu",
+                      "name": "guide_iphone_check_title",
+                      "fill": "#1A9BE8",
+                      "content": "確認（テスト）",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "NQeVF",
+                      "name": "guide_iphone_check1",
+                      "fill": "#5F6368",
+                      "content": "・「いま通知を送信」で通知が来たらOK",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "H9DbW",
+                      "name": "guide_iphone_check2",
+                      "fill": "#5F6368",
+                      "content": "・届かない時だけ、アプリ再起動後に再テスト",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "2H0Po",
+                      "name": "guide_iphone_check3",
+                      "fill": "#5F6368",
+                      "content": "・さらに届かない時だけ、端末通知設定を確認",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "NaoeK",
+                  "name": "guide_iphone_help",
+                  "width": "fill_container",
+                  "fill": "#FFF6E8",
+                  "cornerRadius": 14,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#F2D39D"
+                  },
+                  "layout": "vertical",
+                  "gap": 6,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "TahkT",
+                      "name": "guide_iphone_help_title",
+                      "fill": "#C58500",
+                      "content": "届かないとき",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 14,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "v0v4n",
+                      "name": "guide_iphone_help_text",
+                      "fill": "#7A6A45",
+                      "content": "通知が来ない時は、通知をOFF→ONして再テスト。",
+                      "fontFamily": "DM Sans",
+                      "fontSize": 12,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "V6iin",
+          "x": 2388,
+          "y": 2530,
+          "name": "arrow_push_guide_switch",
+          "fill": "#7C8795",
+          "content": "↔",
+          "fontFamily": "DM Sans",
+          "fontSize": 30,
+          "fontWeight": "700"
+        },
+        {
+          "type": "text",
+          "id": "FV5Sp",
+          "x": 2362,
+          "y": 2572,
+          "name": "label_push_guide_switch",
+          "fill": "#5F6368",
+          "content": "OSタブ切替",
+          "fontFamily": "DM Sans",
+          "fontSize": 12,
+          "fontWeight": "700"
         }
       ]
     },
@@ -51052,6 +51838,664 @@
                   "fontFamily": "DM Sans",
                   "fontSize": 15,
                   "fontWeight": "700"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "wKo8o",
+      "x": 5547,
+      "y": 1882,
+      "name": "Screen / 通知の設定方法 / iPhone16",
+      "clip": true,
+      "width": 393,
+      "height": 852,
+      "fill": "#F8F9FA",
+      "layout": "vertical",
+      "gap": 16,
+      "padding": [
+        20,
+        20,
+        24,
+        20
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "5AIwq",
+          "name": "guide_header",
+          "width": "fill_container",
+          "gap": 12,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "8b9kG",
+              "name": "guide_back",
+              "width": 24,
+              "height": 24,
+              "iconFontName": "arrow-left",
+              "iconFontFamily": "lucide",
+              "fill": "#202124"
+            },
+            {
+              "type": "text",
+              "id": "AKlJx",
+              "name": "guide_title",
+              "fill": "#202124",
+              "content": "通知の設定方法",
+              "fontFamily": "DM Sans",
+              "fontSize": 22,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "QvP4J",
+          "name": "guide_tabs",
+          "width": "fill_container",
+          "fill": "#E8EDF5",
+          "cornerRadius": 12,
+          "gap": 6,
+          "padding": 4,
+          "children": [
+            {
+              "type": "frame",
+              "id": "5yPmj",
+              "name": "guide_tab_android",
+              "width": "fill_container",
+              "fill": "#FFFFFF",
+              "cornerRadius": 10,
+              "padding": [
+                10,
+                0
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "C79UW",
+                  "name": "guide_tab_android_text",
+                  "fill": "#1A9BE8",
+                  "content": "Android",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "KR4uc",
+              "name": "guide_tab_iphone",
+              "width": "fill_container",
+              "fill": "#E8EDF5",
+              "cornerRadius": 10,
+              "padding": [
+                10,
+                0
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "KcQzL",
+                  "name": "guide_tab_iphone_text",
+                  "fill": "#5F6368",
+                  "content": "iPhone",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "fXgDX",
+          "name": "guide_body",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "AAqGE",
+              "name": "guide_android_main",
+              "width": "fill_container",
+              "fill": "#FFFFFF",
+              "cornerRadius": 16,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#E5EAF0"
+              },
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "p0Sjz",
+                  "name": "guide_android_title",
+                  "fill": "#202124",
+                  "content": "Android（アプリ内の設定手順）",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 17,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "HPvob",
+                  "name": "guide_android_step1",
+                  "fill": "#202124",
+                  "content": "1. ログイン後、左上のユーザーアイコンをタップ。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "ZS2ND",
+                  "name": "guide_android_step2",
+                  "fill": "#202124",
+                  "content": "2. 設定画面で「プッシュ通知」をタップ。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "EylxB",
+                  "name": "guide_android_step3",
+                  "fill": "#202124",
+                  "content": "3. 通知をONにする（すでにONならそのままでOK）。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "CbdeZ",
+                  "name": "guide_android_step4",
+                  "fill": "#202124",
+                  "content": "4. 「いま通知を送信」をタップ（確認用）。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "MGaHZ",
+                  "name": "guide_android_step5",
+                  "fill": "#202124",
+                  "content": "5. この操作で初めて許可確認が出たら「許可」。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "3EoC7",
+                  "name": "guide_android_step6",
+                  "fill": "#202124",
+                  "content": "6. 通知が届いたら設定完了。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "hpRlx",
+                  "name": "guide_android_step7",
+                  "fill": "#202124",
+                  "content": "7. 届かない場合のみ、アプリを開き直して再テスト。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "6SinA",
+                  "name": "guide_android_step8",
+                  "fill": "#202124",
+                  "content": "8. それでも届かない場合のみ、端末の通知設定を確認。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "mOqh2",
+              "name": "guide_android_check",
+              "width": "fill_container",
+              "fill": "#F5F9FF",
+              "cornerRadius": 14,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#D8E7FF"
+              },
+              "layout": "vertical",
+              "gap": 6,
+              "padding": 14,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "HDycL",
+                  "name": "guide_android_check_title",
+                  "fill": "#1A9BE8",
+                  "content": "確認（テスト）",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "Tl3qH",
+                  "name": "guide_android_check1",
+                  "fill": "#5F6368",
+                  "content": "・「いま通知を送信」で通知が来たらOK",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "kvOuN",
+                  "name": "guide_android_check2",
+                  "fill": "#5F6368",
+                  "content": "・届かない時だけ、アプリ再起動後に再テスト",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "ZapS3",
+                  "name": "guide_android_check3",
+                  "fill": "#5F6368",
+                  "content": "・さらに届かない時だけ、端末通知設定を確認",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "a2y7r",
+              "name": "guide_android_help",
+              "width": "fill_container",
+              "fill": "#FFF6E8",
+              "cornerRadius": 14,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#F2D39D"
+              },
+              "layout": "vertical",
+              "gap": 6,
+              "padding": 14,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "fLJkr",
+                  "name": "guide_android_help_title",
+                  "fill": "#C58500",
+                  "content": "届かないとき",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "6tBY8",
+                  "name": "guide_android_help_text",
+                  "fill": "#7A6A45",
+                  "content": "通知が来ない時は、通知をOFF→ONして再テスト。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "wlCLv",
+      "x": 5990,
+      "y": 1882,
+      "name": "Screen / 通知の設定方法(iPhone) / iPhone16",
+      "clip": true,
+      "width": 393,
+      "height": 852,
+      "fill": "#F8F9FA",
+      "layout": "vertical",
+      "gap": 16,
+      "padding": [
+        20,
+        20,
+        24,
+        20
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "dEIxU",
+          "name": "guide_header",
+          "width": "fill_container",
+          "gap": 12,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "Rj85r",
+              "name": "guide_back",
+              "width": 24,
+              "height": 24,
+              "iconFontName": "arrow-left",
+              "iconFontFamily": "lucide",
+              "fill": "#202124"
+            },
+            {
+              "type": "text",
+              "id": "S1xBY",
+              "name": "guide_title",
+              "fill": "#202124",
+              "content": "通知の設定方法",
+              "fontFamily": "DM Sans",
+              "fontSize": 22,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "tqky3",
+          "name": "guide_tabs",
+          "width": "fill_container",
+          "fill": "#E8EDF5",
+          "cornerRadius": 12,
+          "gap": 6,
+          "padding": 4,
+          "children": [
+            {
+              "type": "frame",
+              "id": "t5XhU",
+              "name": "guide_tab_android",
+              "width": "fill_container",
+              "fill": "#E8EDF5",
+              "cornerRadius": 10,
+              "padding": [
+                10,
+                0
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "DgcsD",
+                  "name": "guide_tab_android_text",
+                  "fill": "#5F6368",
+                  "content": "Android",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "99gNu",
+              "name": "guide_tab_iphone",
+              "width": "fill_container",
+              "fill": "#FFFFFF",
+              "cornerRadius": 10,
+              "padding": [
+                10,
+                0
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "N0Bhx",
+                  "name": "guide_tab_iphone_text",
+                  "fill": "#1A9BE8",
+                  "content": "iPhone",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Quy1G",
+          "name": "guide_body",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "yyeHc",
+              "name": "guide_iphone_main",
+              "width": "fill_container",
+              "fill": "#FFFFFF",
+              "cornerRadius": 16,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#E5EAF0"
+              },
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "L6Oh1",
+                  "name": "guide_iphone_title",
+                  "fill": "#202124",
+                  "content": "iPhone（アプリ内の設定手順）",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 17,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "8j3Dy",
+                  "name": "guide_iphone_step1",
+                  "fill": "#202124",
+                  "content": "1. ログイン後、左上のユーザーアイコンをタップ。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "Qzfpn",
+                  "name": "guide_iphone_step2",
+                  "fill": "#202124",
+                  "content": "2. 設定画面で「プッシュ通知」をタップ。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "vFuif",
+                  "name": "guide_iphone_step3",
+                  "fill": "#202124",
+                  "content": "3. 通知をONにする（すでにONならそのままでOK）。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "2scmX",
+                  "name": "guide_iphone_step4",
+                  "fill": "#202124",
+                  "content": "4. 「いま通知を送信」をタップ（確認用）。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "ufzX3",
+                  "name": "guide_iphone_step5",
+                  "fill": "#202124",
+                  "content": "5. この操作で初めて許可確認が出たら「許可」。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "hQNe8",
+                  "name": "guide_iphone_step6",
+                  "fill": "#202124",
+                  "content": "6. 通知が届いたら設定完了。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "SlWTz",
+                  "name": "guide_iphone_step7",
+                  "fill": "#202124",
+                  "content": "7. 届かない場合のみ、アプリを開き直して再テスト。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "gmwCW",
+                  "name": "guide_iphone_step8",
+                  "fill": "#202124",
+                  "content": "8. それでも届かない場合のみ、端末の通知設定を確認。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "hrkPx",
+              "name": "guide_iphone_check",
+              "width": "fill_container",
+              "fill": "#F5F9FF",
+              "cornerRadius": 14,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#D8E7FF"
+              },
+              "layout": "vertical",
+              "gap": 6,
+              "padding": 14,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "tVJ6r",
+                  "name": "guide_iphone_check_title",
+                  "fill": "#1A9BE8",
+                  "content": "確認（テスト）",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "iU4YE",
+                  "name": "guide_iphone_check1",
+                  "fill": "#5F6368",
+                  "content": "・「いま通知を送信」で通知が来たらOK",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "QO3Kq",
+                  "name": "guide_iphone_check2",
+                  "fill": "#5F6368",
+                  "content": "・届かない時だけ、アプリ再起動後に再テスト",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "text",
+                  "id": "Ohwop",
+                  "name": "guide_iphone_check3",
+                  "fill": "#5F6368",
+                  "content": "・さらに届かない時だけ、端末通知設定を確認",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "scEVc",
+              "name": "guide_iphone_help",
+              "width": "fill_container",
+              "fill": "#FFF6E8",
+              "cornerRadius": 14,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#F2D39D"
+              },
+              "layout": "vertical",
+              "gap": 6,
+              "padding": 14,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "n95o6",
+                  "name": "guide_iphone_help_title",
+                  "fill": "#C58500",
+                  "content": "届かないとき",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "leRnW",
+                  "name": "guide_iphone_help_text",
+                  "fill": "#7A6A45",
+                  "content": "通知が来ない時は、通知をOFF→ONして再テスト。",
+                  "fontFamily": "DM Sans",
+                  "fontSize": 12,
+                  "fontWeight": "500"
                 }
               ]
             }

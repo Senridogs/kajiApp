@@ -1,13 +1,13 @@
 [api/register] failed Error [PrismaClientInitializationError]: 
-Invalid `prisma.user.findFirst()` invocation:
+Invalid `prisma.user.findUnique()` invocation:
 
 
 Can't reach database server at `localhost:5432`
 
 Please make sure your database server is running at `localhost:5432`.
-    at async q (C:\Users\hueym\Documents\GitHub\kajiApp\kaji-app\.next\server\chunks\[root-of-the-server]__81e63ad3._.js:1:3141)
-    at async d (C:\Users\hueym\Documents\GitHub\kajiApp\kaji-app\.next\server\chunks\[root-of-the-server]__81e63ad3._.js:1:7340)
-    at async l (C:\Users\hueym\Documents\GitHub\kajiApp\kaji-app\.next\server\chunks\[root-of-the-server]__81e63ad3._.js:1:8381) {
+    at async _ (C:\Users\hueym\Documents\GitHub\kajiApp\kaji-app\.next\server\chunks\[root-of-the-server]__14aa82cd._.js:1:3889)
+    at async l (C:\Users\hueym\Documents\GitHub\kajiApp\kaji-app\.next\server\chunks\[root-of-the-server]__14aa82cd._.js:1:8665)
+    at async d (C:\Users\hueym\Documents\GitHub\kajiApp\kaji-app\.next\server\chunks\[root-of-the-server]__14aa82cd._.js:1:9706) {
   clientVersion: '6.17.1',
   errorCode: undefined,
   retryable: undefined

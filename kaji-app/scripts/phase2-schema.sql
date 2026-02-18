@@ -94,4 +94,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS "ChoreScheduleOverride_choreId_date_key"
 CREATE INDEX IF NOT EXISTS "ChoreScheduleOverride_choreId_idx"
   ON "ChoreScheduleOverride" ("choreId");
 
+-- 4) User.passwordHash + unique name constraint
+ALTER TABLE "User"
+  ADD COLUMN IF NOT EXISTS "passwordHash" TEXT;
+
+-- Note: CREATE UNIQUE INDEX will fail if duplicate names exist.
+-- If you have duplicates, remove them manually first before running.
+CREATE UNIQUE INDEX IF NOT EXISTS "User_name_key"
+  ON "User" ("name");
+
 COMMIT;
