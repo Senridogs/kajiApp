@@ -2828,8 +2828,8 @@ export function KajiApp() {
         return resolveAssigneeForSort(choreId, "tomorrow", c);
       }, customIcons),
     },
-  ].filter((section) => section.chores.length > 0);
-  const hasAnyUpcomingChores = homeSections.length > 0;
+  ];
+  const hasAnyUpcomingChores = homeSections.some((section) => section.chores.length > 0);
   const swipeProgress = swipe.visual.progress;
   const swipeFromTabIndex = Math.max(0, TAB_ORDER.indexOf(swipe.visual.fromTab));
   const swipeTrackTranslatePercent = (-swipeFromTabIndex + swipeProgress) * 100;
@@ -3191,7 +3191,9 @@ export function KajiApp() {
                       ) : null}
                     </div>
                     <div className="flex flex-col items-stretch gap-2">
-                      {section.chores.map((chore) => {
+                      {section.chores.length === 0 ? (
+                        <p className="py-2 text-center text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
+                      ) : section.chores.map((chore) => {
                         const assignedEntry = assignments.find(
                           (x) => x.choreId === chore.id && x.date === sectionDateKey,
                         );
@@ -3206,6 +3208,8 @@ export function KajiApp() {
                         const doneYesterday =
                           !chore.doneToday &&
                           !!chore.lastPerformedAt &&
+                          !!chore.lastRecordId &&
+                          !chore.lastRecordSkipped &&
                           toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt))) === yesterdayKey;
                         const displayChore =
                           section.key === "yesterday" && doneYesterday
