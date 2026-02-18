@@ -1150,8 +1150,8 @@ export function KajiApp() {
 
   const handleDeleteCustomIcon = useCallback((customIconId: string) => {
     setCustomIcons((prev) => prev.filter((icon) => icon.id !== customIconId));
-    apiFetch(`/api/custom-icons/${customIconId}`, { method: "DELETE" }).catch(() => {
-      // Reload on failure to restore state
+    apiFetch(`/api/custom-icons/${customIconId}`, { method: "DELETE" }).catch((err: unknown) => {
+      setError((err as Error).message ?? "カスタムアイコンの削除に失敗しました。");
       void loadBootstrap();
     });
   }, [loadBootstrap]);
@@ -1646,6 +1646,9 @@ export function KajiApp() {
   const focusCalendarDate = useCallback((dateKey: string) => {
     const nextDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
     if (Number.isNaN(nextDate.getTime())) return;
+    // Cancel any pending week-nav timer so it doesn't fire after this explicit navigation.
+    if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+    dragNavHoveringRef.current = null;
     setCalendarSelectedDateKey(dateKey);
     setCalendarMonthCursor(nextDate);
   }, []);
@@ -1843,6 +1846,8 @@ export function KajiApp() {
       document.removeEventListener("pointerup", handlePointerUp);
       document.removeEventListener("pointercancel", handlePointerCancel);
       stopScrollLoop();
+      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+      if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
     };
   }, [clearDragState, dropDraggedChoreToDate, focusCalendarDate]);
 
@@ -1858,9 +1863,12 @@ export function KajiApp() {
     const sourceDate = startOfJstDay(new Date(`${source}T00:00:00+09:00`));
     const jstDay = new Date(sourceDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
     const weekDayIndex = jstDay === 0 ? 6 : jstDay - 1;
-    const target = addDays(calendarWeekStart, direction * 7 + weekDayIndex);
+    // Use the source date's own week start (not calendarWeekStart) so that week-nav buttons
+    // always move relative to the drag source even when the month calendar cursor diverges.
+    const sourceWeekStart = startOfJstWeekMonday(sourceDate);
+    const target = addDays(sourceWeekStart, direction * 7 + weekDayIndex);
     return toJstDateKey(target);
-  }, [calendarWeekStart, dragSourceDateKey]);
+  }, [dragSourceDateKey]);
 
   const resolveMemoPerformedAt = useCallback((now: Date) => {
     const todayStart = startOfJstDay(now);
@@ -3278,7 +3286,8 @@ export function KajiApp() {
         month: "long",
       }).format(calendarMonthCursor);
       const selectedDate = startOfJstDay(new Date(`${calendarSelectedDateKey}T00:00:00+09:00`));
-      const selectedDateLabel = `${WEEKDAY_SHORT[selectedDate.getDay()]} ${selectedDate.getDate()}`;
+      const selectedDateJst = new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000);
+      const selectedDateLabel = `${WEEKDAY_SHORT[selectedDateJst.getUTCDay()]} ${selectedDateJst.getUTCDate()}`;
       const previousWeekTarget = shiftTargetDateByWeek(-1);
       const nextWeekTarget = shiftTargetDateByWeek(1);
 
@@ -3367,7 +3376,7 @@ export function KajiApp() {
                     const monthKey = toMonthKey(date);
                     const inMonth = monthKey === currentMonthKey;
                     const isSelected = dateKey === calendarSelectedDateKey;
-                    const dayOfWeek = date.getDay();
+                    const dayOfWeek = new Date(date.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
                     const weekendClass =
                       dayOfWeek === 0 ? "text-[#EA4335]" : dayOfWeek === 6 ? "text-[#4285F4]" : "text-[#202124]";
                     return (
@@ -3411,11 +3420,12 @@ export function KajiApp() {
               <div className="rounded-[14px] border border-[#E5EAF0] bg-white px-2 py-2">
                 <div className="flex items-center justify-around">
                   {calendarSelectedWeekEntries.map((entry) => {
-                    const weekday = WEEKDAY_SHORT[entry.date.getDay()];
-                    const dayNumber = entry.date.getDate();
+                    const entryDateJst = new Date(entry.date.getTime() + 9 * 60 * 60 * 1000);
+                    const weekday = WEEKDAY_SHORT[entryDateJst.getUTCDay()];
+                    const dayNumber = entryDateJst.getUTCDate();
                     const isSelected = entry.dateKey === calendarSelectedDateKey;
-                    const isSun = entry.date.getDay() === 0;
-                    const isSat = entry.date.getDay() === 6;
+                    const isSun = entryDateJst.getUTCDay() === 0;
+                    const isSat = entryDateJst.getUTCDay() === 6;
                     return (
                       <button
                         key={entry.dateKey}
@@ -3452,7 +3462,9 @@ export function KajiApp() {
             ) : null}
 
             <div className="space-y-4">
-              {calendarSelectedWeekEntries.map((entry) => (
+              {calendarSelectedWeekEntries.map((entry) => {
+                const entryJst = new Date(entry.date.getTime() + 9 * 60 * 60 * 1000);
+                return (
                 <div
                   key={`week-group-${entry.dateKey}`}
                   data-drop-date={entry.dateKey}
@@ -3475,7 +3487,7 @@ export function KajiApp() {
                 >
                   <div className="flex items-center gap-2">
                     <p className="text-[14px] font-bold text-[#202124]">
-                      {WEEKDAY_SHORT[entry.date.getDay()]} {entry.date.getDate()}
+                      {WEEKDAY_SHORT[entryJst.getUTCDay()]} {entryJst.getUTCDate()}
                       {entry.dateKey === todayKey ? " 今日" : ""}
                     </p>
                     <div className="h-px flex-1 bg-[#E5EAF0]" />
@@ -3491,7 +3503,8 @@ export function KajiApp() {
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {draggingChore ? (

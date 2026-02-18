@@ -141,6 +141,6 @@ export type BootstrapResponse = {
   assignments: ChoreAssignmentEntry[];
   notificationSettings: NotificationSettings | null;
   customIcons: Array<{ id: string; label: string; icon: string; iconColor: string; bgColor: string }>;
-  scheduleOverrides?: ChoreScheduleOverride[];
+  scheduleOverrides: ChoreScheduleOverride[];
   needsRegistration: boolean;
 };
