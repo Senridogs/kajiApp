@@ -666,7 +666,7 @@ export function KajiApp() {
   }, [taskBanner]);
 
   useEffect(() => {
-    if (!boot || boot.needsRegistration || !sessionUser) {
+    if (!boot || boot.needsRegistration || !sessionUser || onboardingOpen) {
       missionBannerReadyRef.current = false;
       previousTodayMissionCompletedRef.current = false;
       return;
@@ -680,7 +680,7 @@ export function KajiApp() {
       showTaskBanner("🎉 きょうのにんむ ぜんぶおわり！おつかれさま！", "green");
     }
     previousTodayMissionCompletedRef.current = todayMissionCompletedForBanner;
-  }, [boot, sessionUser, showTaskBanner, todayMissionCompletedForBanner]);
+  }, [boot, onboardingOpen, sessionUser, showTaskBanner, todayMissionCompletedForBanner]);
 
   const listChores = useMemo(() => {
     const now = startOfJstDay(new Date());
