@@ -155,8 +155,7 @@ async function main() {
   const settingsRes = await request("/api/notification-settings", {
     method: "PATCH",
     body: JSON.stringify({
-      notifyDueToday: true,
-      remindDailyIfOverdue: true,
+      notifyReminder: true,
       notifyCompletion: true,
       reminderTimes: ["06:00", "20:00"],
     }),
@@ -164,6 +163,7 @@ async function main() {
   assert.equal(settingsRes.status, 200);
   const settingsBody = await settingsRes.json();
   assert.deepEqual(settingsBody.reminderTimes, ["06:00", "20:00"]);
+  assert.equal(settingsBody.notifyReminder, true);
 }
 
 await main();

@@ -4,6 +4,25 @@ export type AppUser = {
   color: string | null;
 };
 
+export type RecordReaction = {
+  id: string;
+  userId: string;
+  userName: string;
+  emoji: string;
+  createdAt: string;
+};
+
+export type ChoreRecordItem = {
+  id: string;
+  performedAt: string;
+  memo: string | null;
+  chore: { id: string; title: string };
+  user: { id: string; name: string };
+  isInitial?: boolean;
+  isSkipped?: boolean;
+  reactions?: RecordReaction[];
+};
+
 export type ChoreWithComputed = {
   id: string;
   title: string;
@@ -38,8 +57,7 @@ export type ChoreAssignmentEntry = {
 
 export type NotificationSettings = {
   reminderTimes: string[];
-  notifyDueToday: boolean;
-  remindDailyIfOverdue: boolean;
+  notifyReminder: boolean;
   notifyCompletion: boolean;
 };
 
@@ -70,6 +88,48 @@ export type StatsResponse = {
   bigTaskUserCounts: StatsUserCount[];
 };
 
+export type HouseholdReportResponse = {
+  currentMonthTotal: number;
+  previousMonthTotal: number;
+  choreCounts: Array<{
+    choreId: string;
+    title: string;
+    icon: string;
+    iconColor: string;
+    bgColor: string;
+    count: number;
+  }>;
+  staleTasks: Array<{
+    choreId: string;
+    title: string;
+    icon: string;
+    iconColor: string;
+    bgColor: string;
+    lastPerformedAt: string;
+    intervalDays: number;
+    daysSinceLast: number;
+  }>;
+};
+
+export type MyStatsResponse = {
+  currentMonthTotal: number;
+  choreCounts: Array<{
+    choreId: string;
+    title: string;
+    icon: string;
+    iconColor: string;
+    bgColor: string;
+    count: number;
+  }>;
+};
+
+export type ChoreScheduleOverride = {
+  id: string;
+  choreId: string;
+  date: string;
+  createdAt: string;
+};
+
 export type BootstrapResponse = {
   sessionUser: AppUser | null;
   householdInviteCode: string | null;
@@ -81,5 +141,6 @@ export type BootstrapResponse = {
   assignments: ChoreAssignmentEntry[];
   notificationSettings: NotificationSettings | null;
   customIcons: Array<{ id: string; label: string; icon: string; iconColor: string; bgColor: string }>;
+  scheduleOverrides?: ChoreScheduleOverride[];
   needsRegistration: boolean;
 };

@@ -1,14 +1,15 @@
 ﻿"use client";
 
-import { FormEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { type CSSProperties, FormEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  Copy,
   ChevronDown,
   ChevronLeft,
-  ChevronUp,
+  ChevronRight,
   Loader2,
   Plus,
+  Share2,
   User,
-  Users,
 } from "lucide-react";
 
 import { BottomSheet } from "@/components/kaji/bottom-sheet";
@@ -21,22 +22,21 @@ import {
 import { PRIMARY_COLOR, QUICK_ICON_PRESETS, USER_COLOR_PALETTE } from "@/components/kaji/constants";
 import {
   apiFetch,
+  darkenColor,
   dueInDaysLabel,
   formatJpDate,
   formatMonthDay,
   formatTopDate,
+  iconByName,
   relativeLastPerformed,
   urlBase64ToUint8Array,
   lightenColor,
 } from "@/components/kaji/helpers";
-import { StatsView } from "@/components/kaji/stats-view";
 import { useEdgeSwipeBack } from "@/components/kaji/use-edge-swipe-back";
 import { useSwipeTab } from "@/components/kaji/use-swipe-tab";
 import {
-  FamilyCodeCard,
   HomeSectionTitle,
   HomeTaskRow,
-  JoinHouseholdCard,
   ScreenTitle,
   SegmentedFilter,
   SettingToggleRow,
@@ -46,8 +46,12 @@ import {
 import { AnimatedList } from "@/components/ui/animated-list";
 import {
   BootstrapResponse,
+  ChoreRecordItem,
   ChoreAssignmentEntry,
+  ChoreScheduleOverride,
   ChoreWithComputed,
+  HouseholdReportResponse,
+  MyStatsResponse,
   NotificationSettings,
   StatsPeriodKey,
   StatsResponse,
@@ -69,15 +73,47 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PULL_REFRESH_TRIGGER_PX = 74;
 const PULL_REFRESH_MAX_PX = 128;
 const PULL_REFRESH_HOLD_PX = 28;
+const REMINDER_HOUR_CHOICES = Array.from({ length: 18 }, (_, idx) => `${String(6 + idx).padStart(2, "0")}:00`);
+const PERFORMED_DAY_OPTIONS = [
+  { label: "今日", offset: 0 },
+  { label: "昨日", offset: 1 },
+  { label: "一昨日", offset: 2 },
+] as const;
+const REACTION_CHOICES = ["👏", "❤️", "✨", "🎉"] as const;
+const REACTION_ICON_MAP: Record<(typeof REACTION_CHOICES)[number], { icon: string; color: string }> = {
+  "👏": { icon: "thumb_up", color: "#1A9BE8" },
+  "❤️": { icon: "favorite", color: "#E53935" },
+  "✨": { icon: "celebration", color: "#FF9800" },
+  "🎉": { icon: "star", color: "#9C27B0" },
+};
+const WEEKDAY_SHORT = ["日", "月", "火", "水", "木", "金", "土"] as const;
+const REPORT_MONTH_OFFSETS = [0, 1, 2] as const;
+const REPORT_MONTH_LABELS: Record<(typeof REPORT_MONTH_OFFSETS)[number], string> = {
+  0: "今月",
+  1: "先月",
+  2: "2ヶ月前",
+};
+const CALENDAR_WEEK_DAYS = 7;
 
-type TabKey = "home" | "list" | "stats" | "settings";
-const TAB_ORDER: readonly TabKey[] = ["home", "list", "stats", "settings"] as const;
+type TabKey = "home" | "list" | "records" | "stats" | "settings";
+const TAB_ORDER: readonly TabKey[] = ["home", "records", "list", "stats"] as const;
 type AssignmentTabKey = "daily" | "big";
 const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily", "big"] as const;
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
+type SettingsViewKey = "menu" | "my-report" | "push" | "family" | "manage" | "sleep";
+type RescheduleChoice = "tomorrow" | "next_same_weekday" | "custom";
+type StandaloneScreenKey = "manage" | "my-report";
+type StandaloneOriginKey = "settings" | "list" | "stats";
 const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
 const APP_UPDATE_TARGET_TAB_STORAGE_KEY = "kaji_app_update_target_tab";
+const ONBOARDING_PENDING_STORAGE_KEY = "kaji_onboarding_pending";
+const ONBOARDING_PRESET_CHORES = [
+  { title: "食器洗い", icon: "cooking-pot", iconColor: "#33C28A", bgColor: "#EAF7EF", intervalDays: 1, isBigTask: false },
+  { title: "洗濯", icon: "shirt", iconColor: "#7A6FF0", bgColor: "#EFEAFE", intervalDays: 2, isBigTask: false },
+  { title: "ゴミ出し", icon: "recycle", iconColor: "#B97700", bgColor: "#FFF6E3", intervalDays: 3, isBigTask: false },
+  { title: "水まわり掃除", icon: "droplets", iconColor: "#4D8BFF", bgColor: "#EEF3FF", intervalDays: 7, isBigTask: false },
+] as const;
 type PendingSwipeDelete = {
   toastId: string;
   chore: ChoreWithComputed;
@@ -104,6 +140,36 @@ function applyPullResistance(distance: number) {
   return Math.min(PULL_REFRESH_MAX_PX, Math.max(0, distance) * 0.5);
 }
 
+function toMonthKey(date: Date) {
+  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return `${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthKeyWithOffset(base: string, offset: number) {
+  const [year, month] = base.split("-").map(Number);
+  const target = new Date(Date.UTC(year, month - 1 - offset, 1));
+  return `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function startOfJstWeekMonday(date: Date) {
+  const day = new Date(date);
+  const jstDay = new Date(day.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
+  const diff = jstDay === 0 ? -6 : 1 - jstDay;
+  return startOfJstDay(addDays(day, diff));
+}
+
+function isSameDateKey(a: string, b: string) {
+  return a === b;
+}
+
+function topDateWithWeekday(now = new Date()) {
+  const weekday = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    weekday: "long",
+  }).format(now);
+  return `${weekday} ${formatTopDate(now)}`;
+}
+
 function scheduledDayOffset(
   chore: Pick<ChoreWithComputed, "dueAt">,
   targetDate: Date,
@@ -128,26 +194,9 @@ function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
   const todayChores = chores.filter((c) => c.isDueToday || c.isOverdue || c.doneToday);
   const tomorrowChores = chores.filter(
     (c) =>
-      (c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue))) &&
-      !(c.isBigTask && c.doneToday),
+      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || c.doneToday)),
   );
-  const priorityChoreIds = new Set([...todayChores, ...tomorrowChores].map((chore) => chore.id));
-  const bigTaskWindowEnd = addDays(startOfJstDay(new Date()), 40).getTime();
-  const upcomingBigChores = chores
-    .filter((c) => {
-      if (!c.isBigTask || priorityChoreIds.has(c.id) || !c.dueAt) return false;
-      const dueDayTime = startOfJstDay(new Date(c.dueAt)).getTime();
-      return dueDayTime <= bigTaskWindowEnd;
-    })
-    .sort((a, b) => {
-      const aTime = a.dueAt
-        ? startOfJstDay(new Date(a.dueAt)).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      const bTime = b.dueAt
-        ? startOfJstDay(new Date(b.dueAt)).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      return aTime - bTime;
-    });
+  const upcomingBigChores: ChoreWithComputed[] = [];
 
   return { todayChores, tomorrowChores, upcomingBigChores };
 }
@@ -160,7 +209,7 @@ function assigneePriority(assigneeId: string | null, sessionUserId: string | nul
 }
 
 function sortHomeSectionChores(
-  sectionKey: "today" | "tomorrow" | "big",
+  sectionKey: "today" | "yesterday" | "tomorrow" | "big",
   chores: ChoreWithComputed[],
   sessionUserId: string | null,
   resolveAssigneeId: (choreId: string) => string | null,
@@ -287,6 +336,7 @@ export function KajiApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
+  const [taskBanner, setTaskBanner] = useState<{ message: string; tone: "green" | "blue" } | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window === "undefined") return "home";
     const storedTab = window.sessionStorage.getItem(APP_UPDATE_TARGET_TAB_STORAGE_KEY);
@@ -297,31 +347,70 @@ export function KajiApp() {
     return "home";
   });
 
-  const [records, setRecords] = useState<
-    Array<{
-      id: string;
-      performedAt: string;
-      memo: string | null;
-      chore: { id: string; title: string };
-      user: { id: string; name: string };
-      isInitial?: boolean;
-      isSkipped?: boolean;
-    }>
-  >([]);
+  const [records, setRecords] = useState<ChoreRecordItem[]>([]);
+  const [householdReport, setHouseholdReport] = useState<HouseholdReportResponse | null>(null);
+  const [myReport, setMyReport] = useState<MyStatsResponse | null>(null);
+  const [myReportPreviousTotal, setMyReportPreviousTotal] = useState<number | null>(null);
+  const [reportMonthOffset, setReportMonthOffset] = useState<(typeof REPORT_MONTH_OFFSETS)[number]>(0);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [myReportLoading, setMyReportLoading] = useState(false);
+  const [settingsView, setSettingsView] = useState<SettingsViewKey>("menu");
+  const [standaloneScreen, setStandaloneScreen] = useState<StandaloneScreenKey | null>(null);
+  const [standaloneOrigin, setStandaloneOrigin] = useState<StandaloneOriginKey>("settings");
+  const [sleepModeEnabled, setSleepModeEnabled] = useState(false);
+  const [sleepModeStart, setSleepModeStart] = useState("22:00");
+  const [sleepModeEnd, setSleepModeEnd] = useState("07:00");
+  const [calendarExpanded, setCalendarExpanded] = useState(false);
+  const [calendarWeekStart, setCalendarWeekStart] = useState<Date>(() =>
+    startOfJstWeekMonday(startOfJstDay(new Date())),
+  );
+  const [calendarMonthCursor, setCalendarMonthCursor] = useState<Date>(() =>
+    startOfJstDay(new Date()),
+  );
+  const [calendarSelectedDateKey, setCalendarSelectedDateKey] = useState<string>(() =>
+    toJstDateKey(startOfJstDay(new Date())),
+  );
+  const [rescheduleTarget, setRescheduleTarget] = useState<ChoreWithComputed | null>(null);
+  const [rescheduleChoice, setRescheduleChoice] = useState<RescheduleChoice>("tomorrow");
+  const [rescheduleBaseDateKey, setRescheduleBaseDateKey] = useState<string>(() =>
+    toJstDateKey(startOfJstDay(new Date())),
+  );
+  const [rescheduleCustomDate, setRescheduleCustomDate] = useState<string>(() =>
+    toJstDateKey(addDays(startOfJstDay(new Date()), 1)),
+  );
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [draggingChore, setDraggingChore] = useState<ChoreWithComputed | null>(null);
+  const [dragSourceDateKey, setDragSourceDateKey] = useState<string | null>(null);
+  const [dragTargetDateKey, setDragTargetDateKey] = useState<string | null>(null);
+  const [reactionPickerRecordId, setReactionPickerRecordId] = useState<string | null>(null);
 
   const [registerName, setRegisterName] = useState("");
   const [registerInviteCode, setRegisterInviteCode] = useState("");
   const [registerColor, setRegisterColor] = useState(USER_COLOR_PALETTE[0]);
   const [registerLoading, setRegisterLoading] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem(ONBOARDING_PENDING_STORAGE_KEY) === "1";
+  });
+  const [onboardingSubmitting, setOnboardingSubmitting] = useState(false);
+  const [onboardingBulkSelectOpen, setOnboardingBulkSelectOpen] = useState(false);
+  const [onboardingPresetSelections, setOnboardingPresetSelections] = useState<string[]>(
+    ONBOARDING_PRESET_CHORES.map((preset) => preset.title),
+  );
+  const [resumeOnboardingAfterCreate, setResumeOnboardingAfterCreate] = useState(false);
 
   const [choreEditorOpen, setChoreEditorOpen] = useState(false);
   const [customIconOpen, setCustomIconOpen] = useState(false);
   const [customIcons, setCustomIcons] = useState<CustomIconOption[]>([]);
   const [editingChore, setEditingChore] = useState<ChoreForm | null>(null);
   const [memoTarget, setMemoTarget] = useState<ChoreWithComputed | null>(null);
+  const [memoBaseDateKey, setMemoBaseDateKey] = useState<string | null>(null);
   const [memo, setMemo] = useState("");
+  const [performedDayOffset, setPerformedDayOffset] = useState<(typeof PERFORMED_DAY_OPTIONS)[number]["offset"]>(0);
   const [memoOpen, setMemoOpen] = useState(false);
+  const [undoConfirmTarget, setUndoConfirmTarget] = useState<ChoreWithComputed | null>(null);
   const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
+  const [reactionUpdatingId, setReactionUpdatingId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<ChoreWithComputed | null>(null);
   const [historyFilter, setHistoryFilter] = useState("all");
@@ -333,17 +422,21 @@ export function KajiApp() {
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(
     null,
   );
+  const [reminderTimePickerOpen, setReminderTimePickerOpen] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [appUpdateLoading, setAppUpdateLoading] = useState(false);
   const [appUpdateAvailable, setAppUpdateAvailable] = useState(false);
   const [appReloading, setAppReloading] = useState(false);
   const startupUpdateCheckedRef = useRef(false);
+  const missionBannerReadyRef = useRef(false);
+  const previousTodayMissionCompletedRef = useRef(false);
 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [assignmentMounted, setAssignmentMounted] = useState(false);
   const [assignmentSlideIn, setAssignmentSlideIn] = useState(false);
   const assignmentCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [listDeleteSwipeActive, setListDeleteSwipeActive] = useState(false);
   const [balanceSwipeActive, setBalanceSwipeActive] = useState(false);
   const clearAssignmentCloseTimer = useCallback(() => {
@@ -357,17 +450,6 @@ export function KajiApp() {
     },
     [clearAssignmentCloseTimer],
   );
-  const openAssignment = useCallback(() => {
-    clearAssignmentCloseTimer();
-    setAssignmentOpen(true);
-    setAssignmentMounted(true);
-    setAssignmentSlideIn(false);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setAssignmentSlideIn(true);
-      });
-    });
-  }, [clearAssignmentCloseTimer]);
   const closeAssignment = useCallback(() => {
     if (!assignmentOpen && !assignmentMounted) return;
     clearAssignmentCloseTimer();
@@ -378,11 +460,50 @@ export function KajiApp() {
       setAssignmentOpen(false);
     }, ASSIGNMENT_SHEET_SLIDE_MS);
   }, [assignmentMounted, assignmentOpen, clearAssignmentCloseTimer]);
+  const openSettings = useCallback(() => {
+    setSettingsView("menu");
+    setSettingsOpen(true);
+  }, []);
+  const openSettingsView = useCallback((view: SettingsViewKey) => {
+    setSettingsView(view);
+    setSettingsOpen(true);
+  }, []);
+  const closeSettings = useCallback(() => {
+    setSettingsView("menu");
+    setSettingsOpen(false);
+  }, []);
+  const openStandaloneScreen = useCallback(
+    (screen: StandaloneScreenKey, origin: StandaloneOriginKey = "settings") => {
+      setStandaloneOrigin(origin);
+      setSettingsOpen(false);
+      setSettingsView(screen);
+      setStandaloneScreen(screen);
+    },
+    [],
+  );
+  const closeStandaloneScreen = useCallback(() => {
+    setStandaloneScreen(null);
+    setStandaloneOrigin("settings");
+  }, []);
+  const returnFromStandaloneScreen = useCallback(() => {
+    const origin = standaloneOrigin;
+    closeStandaloneScreen();
+    if (origin === "settings") {
+      setSettingsView("menu");
+      setSettingsOpen(true);
+      return;
+    }
+    if (origin === "list") {
+      setActiveTab("list");
+      return;
+    }
+    setActiveTab("stats");
+  }, [closeStandaloneScreen, standaloneOrigin]);
   const swipe = useSwipeTab({
     tabs: TAB_ORDER,
     activeTab,
-    onChangeTab: (tab) => { closeAssignment(); setActiveTab(tab); if (tab === "home") setRefreshAnimationSeed((p) => p + 1); },
-    disabled: assignmentOpen || listDeleteSwipeActive || balanceSwipeActive,
+    onChangeTab: (tab) => { closeAssignment(); closeSettings(); setActiveTab(tab); if (tab === "home") setRefreshAnimationSeed((p) => p + 1); },
+    disabled: assignmentOpen || settingsOpen || standaloneScreen !== null || listDeleteSwipeActive || balanceSwipeActive,
     threshold: 78,
     dominanceRatio: 1.4,
     lockDistance: 14,
@@ -427,9 +548,11 @@ export function KajiApp() {
   const [homeHeaderHeight, setHomeHeaderHeight] = useState(HOME_SECTION_STICKY_FALLBACK_TOP);
   const homeHeaderRef = useRef<HTMLDivElement | null>(null);
   const listHeaderRef = useRef<HTMLDivElement | null>(null);
+  const recordsHeaderRef = useRef<HTMLDivElement | null>(null);
   const statsHeaderRef = useRef<HTMLDivElement | null>(null);
   const settingsHeaderRef = useRef<HTMLDivElement | null>(null);
   const [listHeaderHeight, setListHeaderHeight] = useState(0);
+  const [recordsHeaderHeight, setRecordsHeaderHeight] = useState(0);
   const [statsHeaderHeight, setStatsHeaderHeight] = useState(0);
   const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(0);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
@@ -445,6 +568,42 @@ export function KajiApp() {
 
   const sessionUser = boot?.sessionUser ?? null;
   const chores = boot?.chores ?? [];
+  const todayMissionCompletedForBanner = useMemo(() => {
+    if (!boot || boot.needsRegistration) return false;
+    if (!boot.todayChores || boot.todayChores.length === 0) return false;
+    return boot.todayChores.every((chore) => chore.doneToday);
+  }, [boot]);
+
+  const showTaskBanner = useCallback((message: string, tone: "green" | "blue" = "green") => {
+    setTaskBanner({ message, tone });
+  }, []);
+
+  useEffect(() => {
+    if (!taskBanner) return;
+    const timer = window.setTimeout(() => {
+      setTaskBanner(null);
+    }, 2600);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [taskBanner]);
+
+  useEffect(() => {
+    if (!boot || boot.needsRegistration || !sessionUser) {
+      missionBannerReadyRef.current = false;
+      previousTodayMissionCompletedRef.current = false;
+      return;
+    }
+    if (!missionBannerReadyRef.current) {
+      missionBannerReadyRef.current = true;
+      previousTodayMissionCompletedRef.current = todayMissionCompletedForBanner;
+      return;
+    }
+    if (todayMissionCompletedForBanner && !previousTodayMissionCompletedRef.current) {
+      showTaskBanner("🎉 きょうのにんむ ぜんぶおわり！おつかれさま！", "green");
+    }
+    previousTodayMissionCompletedRef.current = todayMissionCompletedForBanner;
+  }, [boot, sessionUser, showTaskBanner, todayMissionCompletedForBanner]);
 
   const listChores = useMemo(() => {
     const now = startOfJstDay(new Date());
@@ -531,6 +690,92 @@ export function KajiApp() {
     customDateRangeRef.current = customDateRange;
   }, [customDateRange]);
 
+  const scheduleOverrides = boot?.scheduleOverrides ?? [];
+  const scheduleOverridesByChore = useMemo(() => {
+    const map = new Map<string, ChoreScheduleOverride[]>();
+    for (const override of scheduleOverrides) {
+      const list = map.get(override.choreId) ?? [];
+      list.push(override);
+      map.set(override.choreId, list);
+    }
+    return map;
+  }, [scheduleOverrides]);
+
+  const calendarWindowStart = useMemo(
+    () => startOfJstWeekMonday(addDays(calendarMonthCursor, -31)),
+    [calendarMonthCursor],
+  );
+  const calendarWindowEnd = useMemo(
+    () => addDays(calendarWindowStart, 130),
+    [calendarWindowStart],
+  );
+  const calendarScheduleMap = useMemo(() => {
+    const map = new Map<string, ChoreWithComputed[]>();
+    const addToMap = (dateKey: string, chore: ChoreWithComputed) => {
+      const current = map.get(dateKey) ?? [];
+      if (!current.some((item) => item.id === chore.id)) {
+        current.push(chore);
+      }
+      map.set(dateKey, current);
+    };
+
+    chores.forEach((chore) => {
+      // Show the latest completed day (including initial record) on calendar as completed.
+      if (chore.lastPerformedAt && !chore.lastRecordSkipped) {
+        const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
+        if (
+          performedDateKey >= toJstDateKey(calendarWindowStart) &&
+          performedDateKey <= toJstDateKey(calendarWindowEnd)
+        ) {
+          addToMap(performedDateKey, chore);
+        }
+      }
+
+      const overrideList = (scheduleOverridesByChore.get(chore.id) ?? []).filter((override) => {
+        if (override.date < toJstDateKey(calendarWindowStart)) return false;
+        if (override.date > toJstDateKey(calendarWindowEnd)) return false;
+        return true;
+      });
+
+      if (overrideList.length > 0) {
+        overrideList.forEach((override) => addToMap(override.date, chore));
+        return;
+      }
+
+      for (let day = calendarWindowStart; day <= calendarWindowEnd; day = addDays(day, 1)) {
+        if (!isScheduledOnDate(chore, day)) continue;
+        addToMap(toJstDateKey(day), chore);
+      }
+    });
+
+    map.forEach((items) => {
+      items.sort((a, b) => JA_COLLATOR.compare(a.title, b.title));
+    });
+    return map;
+  }, [calendarWindowEnd, calendarWindowStart, chores, scheduleOverridesByChore]);
+
+  const calendarTaskCountByDate = useMemo(() => {
+    const counts = new Map<string, number>();
+    calendarScheduleMap.forEach((items, dateKey) => {
+      counts.set(dateKey, items.length);
+    });
+    return counts;
+  }, [calendarScheduleMap]);
+
+  const calendarMonthGridDates = useMemo(() => {
+    const monthStart = startOfJstDay(new Date(calendarMonthCursor));
+    const firstOfMonth = startOfJstDay(new Date(
+      `${toJstDateKey(monthStart).slice(0, 8)}01T00:00:00+09:00`,
+    ));
+    const gridStart = startOfJstWeekMonday(firstOfMonth);
+    return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
+  }, [calendarMonthCursor]);
+
+  const calendarSelectedWeekDates = useMemo(
+    () => Array.from({ length: CALENDAR_WEEK_DAYS }, (_, index) => addDays(calendarWeekStart, index)),
+    [calendarWeekStart],
+  );
+
   const loadBootstrap = useCallback(async () => {
     const data = await apiFetch<BootstrapResponse>("/api/bootstrap", { cache: "no-store" });
     setBoot(data);
@@ -540,46 +785,59 @@ export function KajiApp() {
     return data;
   }, []);
 
-  const loadStats = useCallback(async (period: StatsPeriodKey, options?: StatsQueryOptions) => {
-    const requestId = ++statsRequestIdRef.current;
-    setStatsPeriod(period);
-    setStatsLoading(true);
-
-    const params = new URLSearchParams({ period });
-    if (period === "custom") {
-      const from = options?.from ?? customDateRangeRef.current.from;
-      const to = options?.to ?? customDateRangeRef.current.to;
-      params.set("from", from);
-      params.set("to", to);
-      const nextRange = { from, to };
-      customDateRangeRef.current = nextRange;
-      setCustomDateRange(nextRange);
-    }
-
+  const loadHouseholdReport = useCallback(async (offset: (typeof REPORT_MONTH_OFFSETS)[number]) => {
+    const currentMonth = toMonthKey(new Date());
+    const month = monthKeyWithOffset(currentMonth, offset);
+    setReportLoading(true);
     try {
-      const data = await apiFetch<StatsResponse>(`/api/stats?${params.toString()}`, { cache: "no-store" });
-      if (requestId !== statsRequestIdRef.current) return;
-      setStats(data);
-      setStatsAnimationSeed((prev) => prev + 1);
+      const data = await apiFetch<HouseholdReportResponse>(
+        `/api/household-report?month=${encodeURIComponent(month)}`,
+        { cache: "no-store" },
+      );
+      setHouseholdReport(data);
     } finally {
-      if (requestId === statsRequestIdRef.current) {
-        setStatsLoading(false);
-      }
+      setReportLoading(false);
     }
   }, []);
 
+  const loadMyReport = useCallback(async (offset: (typeof REPORT_MONTH_OFFSETS)[number]) => {
+    const currentMonth = toMonthKey(new Date());
+    const month = monthKeyWithOffset(currentMonth, offset);
+    setMyReportLoading(true);
+    try {
+      const [data, previous] = await Promise.all([
+        apiFetch<MyStatsResponse>(`/api/my-stats?month=${encodeURIComponent(month)}`, { cache: "no-store" }),
+        offset < 2
+          ? apiFetch<MyStatsResponse>(
+            `/api/my-stats?month=${encodeURIComponent(monthKeyWithOffset(currentMonth, (offset + 1) as (typeof REPORT_MONTH_OFFSETS)[number]))}`,
+            { cache: "no-store" },
+          )
+          : Promise.resolve<MyStatsResponse | null>(null),
+      ]);
+      setMyReport(data);
+      setMyReportPreviousTotal(previous?.currentMonthTotal ?? null);
+    } finally {
+      setMyReportLoading(false);
+    }
+  }, []);
+
+  const loadStats = useCallback(async (period: StatsPeriodKey, options?: StatsQueryOptions) => {
+    setStatsPeriod(period);
+    setStatsLoading(true);
+    try {
+      await Promise.all([
+        loadHouseholdReport(reportMonthOffset),
+        loadMyReport(reportMonthOffset),
+      ]);
+      setStats(null);
+      setStatsAnimationSeed((prev) => prev + 1);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [loadHouseholdReport, loadMyReport, reportMonthOffset]);
+
   const loadHistory = useCallback(async () => {
-    const data = await apiFetch<{
-      records: Array<{
-        id: string;
-        performedAt: string;
-        memo: string | null;
-        chore: { id: string; title: string };
-        user: { id: string; name: string };
-        isInitial?: boolean;
-        isSkipped?: boolean;
-      }>;
-    }>("/api/records");
+    const data = await apiFetch<{ records: ChoreRecordItem[] }>("/api/records");
     setRecords(data.records);
   }, []);
 
@@ -608,6 +866,8 @@ export function KajiApp() {
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
   const syncCheck = useCallback(async () => {
+    if (!boot || boot.needsRegistration || !sessionUser) return;
+
     // Don't start another poll while one is in-flight
     if (syncPollingRef.current) return;
     syncPollingRef.current = true;
@@ -641,7 +901,7 @@ export function KajiApp() {
       if (tab === "stats") {
         refreshPromises.push(loadStats(statsPeriodRef.current).catch(() => { }));
       }
-      if (tab === "stats" || tab === "home") {
+      if (tab === "stats" || tab === "home" || tab === "records") {
         refreshPromises.push(loadHistory().catch(() => { }));
       }
       // Don't await — let polling continue while refresh runs in background
@@ -653,9 +913,11 @@ export function KajiApp() {
     } finally {
       syncPollingRef.current = false;
     }
-  }, [loadBootstrap, loadStats, loadHistory]);
+  }, [boot, loadBootstrap, loadHistory, loadStats, sessionUser]);
 
   useEffect(() => {
+    if (!boot || boot.needsRegistration || !sessionUser) return;
+
     const SYNC_INTERVAL_MS = 1_000;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -685,7 +947,7 @@ export function KajiApp() {
       stopPolling();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [syncCheck]);
+  }, [boot, sessionUser, syncCheck]);
   // ── End real-time sync ─────────────────────────────────────
 
   const reloadAppForLatestUpdate = useCallback((options?: { showNotice?: boolean; targetTab?: TabKey }) => {
@@ -753,7 +1015,7 @@ export function KajiApp() {
         }
 
         // 常にリロードして最新のアプリコードを取得する
-        reloadAppForLatestUpdate({ showNotice: true, targetTab: "settings" });
+        reloadAppForLatestUpdate({ showNotice: true, targetTab: "home" });
       } catch (err: unknown) {
         setError((err as Error).message ?? "最新化に失敗しました。");
         setAppUpdateLoading(false);
@@ -772,6 +1034,34 @@ export function KajiApp() {
       }
     })();
   }, [refreshAll]);
+
+  useEffect(() => {
+    if (!boot || boot.needsRegistration || !sessionUser) return;
+    void (async () => {
+      try {
+        await Promise.all([
+          loadHouseholdReport(reportMonthOffset),
+          loadMyReport(reportMonthOffset),
+        ]);
+      } catch (err: unknown) {
+        setError((err as Error).message ?? "レポートの取得に失敗しました。");
+      }
+    })();
+  }, [boot, loadHouseholdReport, loadMyReport, reportMonthOffset, sessionUser]);
+
+  useEffect(() => {
+    const selected = startOfJstDay(new Date(`${calendarSelectedDateKey}T00:00:00+09:00`));
+    if (Number.isNaN(selected.getTime())) return;
+    setCalendarWeekStart(startOfJstWeekMonday(selected));
+  }, [calendarSelectedDateKey]);
+
+  useEffect(() => {
+    if (activeTab !== "home" && activeTab !== "list") {
+      setDraggingChore(null);
+      setDragSourceDateKey(null);
+      setDragTargetDateKey(null);
+    }
+  }, [activeTab]);
 
   const handleDeleteCustomIcon = useCallback((customIconId: string) => {
     setCustomIcons((prev) => prev.filter((icon) => icon.id !== customIconId));
@@ -855,6 +1145,7 @@ export function KajiApp() {
   useEffect(() => {
     const entries: Array<[React.RefObject<HTMLDivElement | null>, React.Dispatch<React.SetStateAction<number>>]> = [
       [listHeaderRef, setListHeaderHeight],
+      [recordsHeaderRef, setRecordsHeaderHeight],
       [statsHeaderRef, setStatsHeaderHeight],
       [settingsHeaderRef, setSettingsHeaderHeight],
     ];
@@ -960,21 +1251,46 @@ export function KajiApp() {
     [],
   );
 
+  const clearOnboardingPending = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.removeItem(ONBOARDING_PENDING_STORAGE_KEY);
+  }, []);
+
   const registerUser = async (e: FormEvent) => {
     e.preventDefault();
     if (registerLoading) return;
     try {
       setRegisterLoading(true);
       setError("");
-      await apiFetch("/api/register", {
+      const inviteCode = registerInviteCode.trim();
+      const registerResponse = await apiFetch<{ isExistingUser?: boolean; onboardingRequired?: boolean }>("/api/register", {
         method: "POST",
         body: JSON.stringify({
           name: registerName,
           color: registerColor,
-          ...(registerInviteCode.trim() ? { inviteCode: registerInviteCode.trim() } : {}),
+          ...(inviteCode ? { inviteCode } : {}),
         }),
       });
+      const shouldStartOnboarding =
+        registerResponse?.onboardingRequired ??
+        (!registerResponse?.isExistingUser && inviteCode.length === 0);
+      if (typeof window !== "undefined") {
+        if (shouldStartOnboarding) {
+          window.sessionStorage.setItem(ONBOARDING_PENDING_STORAGE_KEY, "1");
+        } else {
+          window.sessionStorage.removeItem(ONBOARDING_PENDING_STORAGE_KEY);
+        }
+      }
       await refreshAll("week");
+      setOnboardingOpen(shouldStartOnboarding);
+      if (shouldStartOnboarding) {
+        setOnboardingBulkSelectOpen(false);
+        setOnboardingPresetSelections(ONBOARDING_PRESET_CHORES.map((preset) => preset.title));
+      }
+      if (!shouldStartOnboarding) {
+        setActiveTab("home");
+        setRefreshAnimationSeed((prev) => prev + 1);
+      }
     } catch (err: unknown) {
       setError((err as Error).message ?? "登録に失敗しました。");
     } finally {
@@ -982,7 +1298,57 @@ export function KajiApp() {
     }
   };
 
+  const finishOnboarding = useCallback(() => {
+    clearOnboardingPending();
+    setOnboardingOpen(false);
+    setOnboardingSubmitting(false);
+    setOnboardingBulkSelectOpen(false);
+    setOnboardingPresetSelections(ONBOARDING_PRESET_CHORES.map((preset) => preset.title));
+    setResumeOnboardingAfterCreate(false);
+    setActiveTab("home");
+    setRefreshAnimationSeed((prev) => prev + 1);
+  }, [clearOnboardingPending]);
+
+  const handleOnboardingAddPreset = useCallback(async () => {
+    if (onboardingSubmitting) return;
+    const selectedPresets = ONBOARDING_PRESET_CHORES.filter((preset) =>
+      onboardingPresetSelections.includes(preset.title),
+    );
+    if (selectedPresets.length === 0) {
+      setError("少なくとも1つ選択してください。");
+      return;
+    }
+    try {
+      setOnboardingSubmitting(true);
+      setError("");
+      const lastPerformedAt = defaultLastPerformedAt();
+      for (const preset of selectedPresets) {
+        await apiFetch("/api/chores", {
+          method: "POST",
+          body: JSON.stringify({
+            title: preset.title,
+            icon: preset.icon,
+            iconColor: preset.iconColor,
+            bgColor: preset.bgColor,
+            intervalDays: preset.intervalDays,
+            isBigTask: preset.isBigTask,
+            lastPerformedAt,
+          }),
+        });
+      }
+      await refreshAll("week");
+      setOnboardingBulkSelectOpen(false);
+      setInfoMessage("家事をまとめて追加しました。");
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "初期タスクの追加に失敗しました。");
+    } finally {
+      setOnboardingSubmitting(false);
+    }
+  }, [onboardingPresetSelections, onboardingSubmitting, refreshAll]);
+
   const openAddChore = () => {
+    closeSettings();
+    closeStandaloneScreen();
     setEditingChore({
       title: "",
       intervalDays: 7,
@@ -993,6 +1359,31 @@ export function KajiApp() {
       lastPerformedAt: defaultLastPerformedAt(),
     });
     setChoreEditorOpen(true);
+  };
+
+  const openAddChoreForDate = (dateKey: string) => {
+    const selectedDate = new Date(`${dateKey}T00:00:00+09:00`);
+    const initialPerformedAt = Number.isNaN(selectedDate.getTime())
+      ? defaultLastPerformedAt()
+      : selectedDate.toISOString();
+    closeSettings();
+    closeStandaloneScreen();
+    setEditingChore({
+      title: "",
+      intervalDays: 7,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#1A9BE8",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: initialPerformedAt,
+    });
+    setChoreEditorOpen(true);
+  };
+
+  const handleCalendarSurfaceTap = (event: MouseEvent<HTMLElement>, dateKey: string) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button, a, input, textarea, select, [role='button']")) return;
+    openAddChoreForDate(dateKey);
   };
 
   const openEditChore = (chore: ChoreWithComputed) => {
@@ -1012,13 +1403,14 @@ export function KajiApp() {
 
   const saveChore = async () => {
     if (!editingChore || saveChoreLoading || deleteChoreLoading) return;
+    const isCreatingChore = !editingChore.id;
     setError("");
     if (!editingChore.lastPerformedAt) {
-      setError("前回実施日時は必須です。");
+      setError("開始日は必須です。");
       return;
     }
     if (Number.isNaN(new Date(editingChore.lastPerformedAt).getTime())) {
-      setError("前回実施日時が不正です。");
+      setError("開始日が不正です。");
       return;
     }
 
@@ -1042,6 +1434,10 @@ export function KajiApp() {
       await refreshAll(statsPeriod);
       setDeleteConfirmOpen(false);
       setChoreEditorOpen(false);
+      if (isCreatingChore && resumeOnboardingAfterCreate) {
+        setOnboardingOpen(true);
+        setResumeOnboardingAfterCreate(false);
+      }
     } catch (err: unknown) {
       setError((err as Error).message ?? "家事の保存に失敗しました。");
     } finally {
@@ -1115,44 +1511,173 @@ export function KajiApp() {
     void finalizeSwipeDeleteChore(toastId);
   }, [finalizeSwipeDeleteChore]);
 
-  const openMemo = (chore: ChoreWithComputed) => {
+  const openMemo = (chore: ChoreWithComputed, baseDateKey?: string) => {
     setMemoTarget(chore);
+    setMemoBaseDateKey(baseDateKey ?? null);
     setMemo("");
+    setPerformedDayOffset(0);
     setMemoOpen(true);
   };
+
+  const shiftDateKey = useCallback((dateKey: string, days: number) => {
+    const parsed = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
+    if (Number.isNaN(parsed.getTime())) {
+      return toJstDateKey(addDays(startOfJstDay(new Date()), days));
+    }
+    return toJstDateKey(addDays(parsed, days));
+  }, []);
+
+  const openReschedule = (chore: ChoreWithComputed, baseDateKey?: string) => {
+    const baseKey = baseDateKey ?? toJstDateKey(startOfJstDay(new Date()));
+    setRescheduleTarget(chore);
+    setRescheduleBaseDateKey(baseKey);
+    setRescheduleChoice("tomorrow");
+    setRescheduleCustomDate(shiftDateKey(baseKey, 1));
+    setRescheduleOpen(true);
+  };
+
+  const resolveRescheduleDateKey = useCallback((choice: RescheduleChoice, customDate: string, baseDateKey: string) => {
+    if (choice === "tomorrow") {
+      return shiftDateKey(baseDateKey, 1);
+    }
+    if (choice === "next_same_weekday") {
+      return shiftDateKey(baseDateKey, 7);
+    }
+    return customDate;
+  }, [shiftDateKey]);
+
+  const rescheduleChoreToDate = useCallback(async (choreId: string, date: string) => {
+    await apiFetch("/api/schedule-override", {
+      method: "POST",
+      body: JSON.stringify({
+        choreId,
+        date,
+      }),
+    });
+    await loadBootstrap();
+  }, [loadBootstrap]);
+
+  const focusCalendarDate = useCallback((dateKey: string) => {
+    const nextDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
+    if (Number.isNaN(nextDate.getTime())) return;
+    setCalendarSelectedDateKey(dateKey);
+    setCalendarMonthCursor(nextDate);
+  }, []);
+
+  const applyReschedule = useCallback(async () => {
+    if (!rescheduleTarget) return;
+    const nextDate = resolveRescheduleDateKey(rescheduleChoice, rescheduleCustomDate, rescheduleBaseDateKey);
+    try {
+      setError("");
+      await rescheduleChoreToDate(rescheduleTarget.id, nextDate);
+      focusCalendarDate(nextDate);
+      setRescheduleOpen(false);
+      setRescheduleTarget(null);
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "日にち変更に失敗しました。");
+    }
+  }, [focusCalendarDate, rescheduleBaseDateKey, rescheduleChoice, rescheduleCustomDate, rescheduleTarget, resolveRescheduleDateKey, rescheduleChoreToDate]);
+
+  const clearDragState = useCallback(() => {
+    setDraggingChore(null);
+    setDragSourceDateKey(null);
+    setDragTargetDateKey(null);
+  }, []);
+
+  const beginChoreDrag = useCallback((chore: ChoreWithComputed, sourceDateKey: string) => {
+    setDraggingChore(chore);
+    setDragSourceDateKey(sourceDateKey);
+    setDragTargetDateKey(null);
+  }, []);
+
+  const dropDraggedChoreToDate = useCallback(async (targetDateKey: string) => {
+    if (!draggingChore) return;
+    if (dragSourceDateKey === targetDateKey) {
+      clearDragState();
+      return;
+    }
+    try {
+      setError("");
+      await rescheduleChoreToDate(draggingChore.id, targetDateKey);
+      focusCalendarDate(targetDateKey);
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "日にち変更に失敗しました。");
+    } finally {
+      clearDragState();
+    }
+  }, [clearDragState, dragSourceDateKey, draggingChore, focusCalendarDate, rescheduleChoreToDate]);
+
+  const shiftCalendarMonth = useCallback((direction: -1 | 1) => {
+    const nextMonthKey = monthKeyWithOffset(toMonthKey(calendarMonthCursor), direction === 1 ? -1 : 1);
+    const nextDateKey = `${nextMonthKey}-01`;
+    focusCalendarDate(nextDateKey);
+    setCalendarExpanded(true);
+  }, [calendarMonthCursor, focusCalendarDate]);
+
+  const shiftTargetDateByWeek = useCallback((direction: -1 | 1) => {
+    const source = dragSourceDateKey ?? toJstDateKey(startOfJstDay(new Date()));
+    const sourceDate = startOfJstDay(new Date(`${source}T00:00:00+09:00`));
+    const jstDay = new Date(sourceDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
+    const weekDayIndex = jstDay === 0 ? 6 : jstDay - 1;
+    const target = addDays(calendarWeekStart, direction * 7 + weekDayIndex);
+    return toJstDateKey(target);
+  }, [calendarWeekStart, dragSourceDateKey]);
+
+  const resolveMemoPerformedAt = useCallback((now: Date) => {
+    const todayStart = startOfJstDay(now);
+    if (memoBaseDateKey && performedDayOffset === 0) {
+      const baseDate = startOfJstDay(new Date(`${memoBaseDateKey}T00:00:00+09:00`));
+      if (!Number.isNaN(baseDate.getTime()) && baseDate.getTime() > todayStart.getTime()) {
+        return baseDate;
+      }
+    }
+    return addDays(now, -performedDayOffset);
+  }, [memoBaseDateKey, performedDayOffset]);
 
   const submitRecord = async () => {
     if (!memoTarget) return;
     const targetId = memoTarget.id;
+    const completedTomorrowTask = memoTarget.isDueTomorrow && performedDayOffset === 0;
     const previousBoot = boot;
     const now = new Date();
-    const nowIso = now.toISOString();
+    const performedAt = resolveMemoPerformedAt(now);
+    const performedAtIso = performedAt.toISOString();
+    const todayStart = startOfJstDay(now);
+    const tomorrowStart = addDays(todayStart, 1);
+    const dayAfterTomorrow = addDays(todayStart, 2);
 
     setMemoOpen(false);
     setRecordUpdating(targetId, true);
 
     if (sessionUser) {
-      updateBootChoreOptimistically(targetId, (chore) => ({
-        ...chore,
-        doneToday: true,
-        lastPerformedAt: nowIso,
-        lastPerformerName: sessionUser.name,
-        lastPerformerId: sessionUser.id,
-        lastRecordSkipped: false,
-        lastRecordId: chore.lastRecordId ?? `optimistic-${now.getTime()}`,
-        dueAt: addDays(now, chore.intervalDays).toISOString(),
-        isDueToday: false,
-        isDueTomorrow: chore.intervalDays === 1,
-        isOverdue: false,
-        overdueDays: 0,
-        daysSinceLast: 0,
-      }));
+      updateBootChoreOptimistically(targetId, (chore) => {
+        const nextDueAt = addDays(performedAt, chore.intervalDays);
+        const nextDueAtTime = nextDueAt.getTime();
+        return {
+          ...chore,
+          doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
+          lastPerformedAt: performedAtIso,
+          lastPerformerName: sessionUser.name,
+          lastPerformerId: sessionUser.id,
+          lastRecordSkipped: false,
+          lastRecordId: chore.lastRecordId ?? `optimistic-${now.getTime()}`,
+          dueAt: nextDueAt.toISOString(),
+          isDueToday: nextDueAt >= todayStart && nextDueAt < tomorrowStart,
+          isDueTomorrow: nextDueAt >= tomorrowStart && nextDueAt < dayAfterTomorrow,
+          isOverdue: nextDueAt < todayStart,
+          overdueDays:
+            nextDueAt < todayStart
+              ? Math.floor((todayStart.getTime() - nextDueAtTime) / (24 * 60 * 60 * 1000))
+              : 0,
+          daysSinceLast: 0,
+        };
+      });
     }
 
     try {
       const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
         method: "POST",
-        body: JSON.stringify({ memo }),
+        body: JSON.stringify({ memo, performedAt: performedAtIso }),
       });
       // Replace the optimistic lastRecordId with the real one from the server
       if (result?.record?.id) {
@@ -1161,15 +1686,19 @@ export function KajiApp() {
           lastRecordId: result.record.id,
         }));
       }
+      if (completedTomorrowTask) {
+        showTaskBanner("👏 明日のものをやってえらい！", "blue");
+      }
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
       if (previousBoot) {
         setBoot(previousBoot);
       }
-      setError((err as Error).message ?? "スキップに失敗しました。");
+      setError((err as Error).message ?? "記録に失敗しました。");
     } finally {
       setRecordUpdating(targetId, false);
       setMemoTarget(null);
+      setMemoBaseDateKey(null);
     }
   };
 
@@ -1178,33 +1707,44 @@ export function KajiApp() {
     const targetId = memoTarget.id;
     const previousBoot = boot;
     const now = new Date();
-    const nowIso = now.toISOString();
+    const performedAt = resolveMemoPerformedAt(now);
+    const performedAtIso = performedAt.toISOString();
+    const todayStart = startOfJstDay(now);
+    const tomorrowStart = addDays(todayStart, 1);
+    const dayAfterTomorrow = addDays(todayStart, 2);
 
     setMemoOpen(false);
     setRecordUpdating(targetId, true);
 
     if (sessionUser) {
-      updateBootChoreOptimistically(targetId, (chore) => ({
-        ...chore,
-        doneToday: true,
-        lastPerformedAt: nowIso,
-        lastPerformerName: "スキップ",
-        lastPerformerId: sessionUser.id,
-        lastRecordSkipped: true,
-        lastRecordId: chore.lastRecordId ?? `optimistic-skip-${now.getTime()}`,
-        dueAt: addDays(now, chore.intervalDays).toISOString(),
-        isDueToday: false,
-        isDueTomorrow: chore.intervalDays === 1,
-        isOverdue: false,
-        overdueDays: 0,
-        daysSinceLast: 0,
-      }));
+      updateBootChoreOptimistically(targetId, (chore) => {
+        const nextDueAt = addDays(performedAt, chore.intervalDays);
+        const nextDueAtTime = nextDueAt.getTime();
+        return {
+          ...chore,
+          doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
+          lastPerformedAt: performedAtIso,
+          lastPerformerName: "スキップ",
+          lastPerformerId: sessionUser.id,
+          lastRecordSkipped: true,
+          lastRecordId: chore.lastRecordId ?? `optimistic-skip-${now.getTime()}`,
+          dueAt: nextDueAt.toISOString(),
+          isDueToday: nextDueAt >= todayStart && nextDueAt < tomorrowStart,
+          isDueTomorrow: nextDueAt >= tomorrowStart && nextDueAt < dayAfterTomorrow,
+          isOverdue: nextDueAt < todayStart,
+          overdueDays:
+            nextDueAt < todayStart
+              ? Math.floor((todayStart.getTime() - nextDueAtTime) / (24 * 60 * 60 * 1000))
+              : 0,
+          daysSinceLast: 0,
+        };
+      });
     }
 
     try {
       const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
         method: "POST",
-        body: JSON.stringify({ memo, skipped: true }),
+        body: JSON.stringify({ memo, skipped: true, performedAt: performedAtIso }),
       });
       if (result?.record?.id) {
         updateBootChoreOptimistically(targetId, (chore) => ({
@@ -1221,6 +1761,7 @@ export function KajiApp() {
     } finally {
       setRecordUpdating(targetId, false);
       setMemoTarget(null);
+      setMemoBaseDateKey(null);
     }
   };
 
@@ -1272,11 +1813,53 @@ export function KajiApp() {
     }
   };
 
+  const requestUndoRecord = (chore: ChoreWithComputed) => {
+    if (!chore.lastRecordId) return;
+    if (recordUpdatingIds.includes(chore.id)) return;
+    setUndoConfirmTarget(chore);
+  };
+
+  const confirmUndoRecord = async () => {
+    const target = undoConfirmTarget;
+    if (!target) return;
+    setUndoConfirmTarget(null);
+    await undoRecord(target);
+  };
+
   const openHistory = (chore: ChoreWithComputed) => {
     setHistoryTarget(chore);
     setHistoryFilter("all");
     setHistoryOpen(true);
   };
+
+  const toggleReaction = useCallback(
+    async (record: ChoreRecordItem, emoji: (typeof REACTION_CHOICES)[number]) => {
+      if (!sessionUser) return;
+      if (reactionUpdatingId === record.id) return;
+      const current = (record.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
+      try {
+        setReactionUpdatingId(record.id);
+        setError("");
+        if (current?.emoji === emoji) {
+          await apiFetch(`/api/records/${record.id}/reaction`, {
+            method: "DELETE",
+            body: "{}",
+          });
+        } else {
+          await apiFetch(`/api/records/${record.id}/reaction`, {
+            method: "PUT",
+            body: JSON.stringify({ emoji }),
+          });
+        }
+        await loadHistory();
+      } catch (err: unknown) {
+        setError((err as Error).message ?? "リアクションの更新に失敗しました。");
+      } finally {
+        setReactionUpdatingId(null);
+      }
+    },
+    [loadHistory, reactionUpdatingId, sessionUser],
+  );
 
   const updateNotificationSettings = async (next: NotificationSettings) => {
     const previous = notificationSettings;
@@ -1294,6 +1877,60 @@ export function KajiApp() {
       setNotificationSettings(previous);
       setError((err as Error).message ?? "通知設定の保存に失敗しました。");
     }
+  };
+
+  const handleTogglePush = async (next: boolean) => {
+    if (pushLoading) return;
+    if (next) {
+      const enabled = await subscribePush();
+      if (!enabled) {
+        setPushEnabled(false);
+        return;
+      }
+      setPushEnabled(true);
+      return;
+    }
+
+    try {
+      setPushLoading(true);
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = await registration?.pushManager.getSubscription();
+      if (subscription?.endpoint) {
+        await apiFetch("/api/subscriptions", {
+          method: "DELETE",
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        });
+      }
+      await subscription?.unsubscribe();
+      setPushEnabled(false);
+      setReminderTimePickerOpen(false);
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "通知設定の変更に失敗しました。");
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const removeReminderTime = (time: string) => {
+    if (!notificationSettings) return;
+    if (notificationSettings.reminderTimes.length <= 1) {
+      setError("通知時刻は1件以上必要です。");
+      return;
+    }
+    const nextTimes = notificationSettings.reminderTimes.filter((value) => value !== time);
+    void updateNotificationSettings({ ...notificationSettings, reminderTimes: nextTimes });
+  };
+
+  const addReminderTime = (time: string) => {
+    if (!notificationSettings) return;
+    if (notificationSettings.reminderTimes.includes(time)) return;
+    if (notificationSettings.reminderTimes.length >= 4) {
+      setError("通知時刻は最大4件までです。");
+      return;
+    }
+    const nextTimes = [...notificationSettings.reminderTimes, time].sort((a, b) => a.localeCompare(b));
+    void updateNotificationSettings({ ...notificationSettings, reminderTimes: nextTimes });
+    setReminderTimePickerOpen(false);
   };
 
   const subscribePush = async () => {
@@ -1352,7 +1989,7 @@ export function KajiApp() {
       setError("");
       await loadStats("custom", range);
     } catch (err: unknown) {
-      setError((err as Error).message ?? "統計の読み込みに失敗しました。");
+      setError((err as Error).message ?? "月間レポートの読み込みに失敗しました。");
     }
   };
 
@@ -1380,7 +2017,7 @@ export function KajiApp() {
   const handleMainScrollTouchStart = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
       if (!pullRefreshEnabled) return;
-      if (pullRefreshing || assignmentOpen || activeTab === "settings") return;
+      if (pullRefreshing || assignmentOpen || settingsOpen) return;
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
       if (!touch || !scroller) return;
@@ -1398,7 +2035,7 @@ export function KajiApp() {
       pullStartYRef.current = touch.clientY;
       pullStartXRef.current = touch.clientX;
     },
-    [activeTab, assignmentOpen, pullRefreshing],
+    [assignmentOpen, pullRefreshing, settingsOpen],
   );
 
   const handleMainScrollTouchMove = useCallback(
@@ -1514,6 +2151,85 @@ export function KajiApp() {
       (record) => record.chore.id === historyTarget.id && new Date(record.performedAt) >= cutoff,
     ).length;
   }, [historyTarget, records]);
+  const latestRecordItem = useMemo(() => {
+    return records
+      .filter((record) => !record.isInitial && !record.isSkipped)
+      .sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime())[0] ?? null;
+  }, [records]);
+  const groupedTimelineRecords = useMemo(() => {
+    const todayKey = toJstDateKey(startOfJstDay(new Date()));
+    const yesterdayKey = toJstDateKey(addDays(startOfJstDay(new Date()), -1));
+    const filtered = records
+      .filter((record) => !record.isInitial && !record.isSkipped)
+      .slice(0, 60);
+    const groups = new Map<string, ChoreRecordItem[]>();
+    filtered.forEach((record) => {
+      const key = toJstDateKey(startOfJstDay(new Date(record.performedAt)));
+      const list = groups.get(key) ?? [];
+      list.push(record);
+      groups.set(key, list);
+    });
+    return [...groups.entries()]
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .map(([dateKey, items]) => ({
+        dateKey,
+        label: isSameDateKey(dateKey, todayKey)
+          ? "今日"
+          : isSameDateKey(dateKey, yesterdayKey)
+            ? "昨日"
+            : (() => {
+              const [y, m, d] = dateKey.split("-").map(Number);
+              return `${m}/${d}`;
+            })(),
+        items: items.sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime()),
+      }));
+  }, [records]);
+
+  const calendarSelectedWeekEntries = useMemo(() => {
+    return calendarSelectedWeekDates.map((date) => {
+      const dateKey = toJstDateKey(date);
+      const items = calendarScheduleMap.get(dateKey) ?? [];
+      return {
+        date,
+        dateKey,
+        items,
+      };
+    });
+  }, [calendarScheduleMap, calendarSelectedWeekDates]);
+  const calendarSelectedDayEntries = useMemo(() => {
+    return calendarScheduleMap.get(calendarSelectedDateKey) ?? [];
+  }, [calendarScheduleMap, calendarSelectedDateKey]);
+  const memoFutureBaseDateKey = useMemo(() => {
+    if (!memoOpen || !memoBaseDateKey) return null;
+    const baseDate = startOfJstDay(new Date(`${memoBaseDateKey}T00:00:00+09:00`));
+    if (Number.isNaN(baseDate.getTime())) return null;
+    const todayStart = startOfJstDay(new Date());
+    return baseDate.getTime() > todayStart.getTime() ? memoBaseDateKey : null;
+  }, [memoBaseDateKey, memoOpen]);
+  const reportMonthKey = useMemo(
+    () => monthKeyWithOffset(toMonthKey(new Date()), reportMonthOffset),
+    [reportMonthOffset],
+  );
+  const householdReportDiff = useMemo(() => {
+    if (!householdReport) return 0;
+    return householdReport.currentMonthTotal - householdReport.previousMonthTotal;
+  }, [householdReport]);
+
+  const renderDayDots = useCallback((dateKey: string) => {
+    const count = calendarTaskCountByDate.get(dateKey) ?? 0;
+    if (count <= 0) return <span className="h-1 w-1 rounded-full bg-transparent" />;
+    const dots = Math.min(3, count);
+    return (
+      <span className="mt-0.5 inline-flex items-center gap-0.5">
+        {Array.from({ length: dots }).map((_, index) => (
+          <span
+            key={`${dateKey}-dot-${index}`}
+            className="h-1 w-1 rounded-full bg-[#1A9BE8]"
+          />
+        ))}
+      </span>
+    );
+  }, [calendarTaskCountByDate]);
 
   if (loading) {
     return (
@@ -1526,18 +2242,20 @@ export function KajiApp() {
   if (!boot || boot.needsRegistration || !sessionUser) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-[#F8F9FA] to-[#EEF3FD]">
-        <form onSubmit={registerUser} className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col items-center justify-center gap-4 px-5 py-8">
-          <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M22 2L27 17L22 22L17 17L22 2Z" fill="#1A9BE8" />
-            <path d="M22 42L27 27L22 22L17 27L22 42Z" fill="#1A9BE8" />
-            <path d="M2 22L17 17L22 22L17 27L2 22Z" fill="#1A9BE8" />
-            <path d="M42 22L27 17L22 22L27 27L42 22Z" fill="#1A9BE8" />
-            <path d="M42 6L44 11L42 13L40 11L42 6Z" fill="#4FC3F7" />
-            <path d="M42 13L44 11L46 13L44 15L42 13Z" fill="#4FC3F7" />
-            <path d="M38 10L40 11L42 13L40 15L38 10Z" fill="#4FC3F7" />
-            <circle cx="48" cy="4" r="2.5" fill="#4FC3F7" />
-          </svg>
-          <p className="text-[26px] font-bold text-[#202124]">さあ、始めましょう</p>
+        <form
+          onSubmit={registerUser}
+          className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col items-center justify-center gap-4 px-5 py-8"
+        >
+          <div className="rounded-[20px] bg-[#E8F0FE] p-5">
+            <span className="material-symbols-rounded text-[44px] text-[#1A9BE8]">auto_awesome</span>
+          </div>
+          <p className="text-[42px] font-bold leading-none text-[#202124]">さあ、始めましょう</p>
+
+          <div className="flex items-center justify-center gap-2">
+            <span className="rounded-full bg-[#1A9BE8] px-4 py-2 text-[13px] font-bold text-white">はじめての方</span>
+            <span className="rounded-full border border-[#DADCE0] bg-white px-4 py-2 text-[13px] font-semibold text-[#5F6368]">招待された方</span>
+          </div>
+
           <div className="w-full space-y-3 rounded-[20px] border border-[#DADCE0] bg-white px-[18px] py-4">
             <div className="flex items-center gap-2">
               <User size={22} className="text-[#1A9BE8]" aria-hidden="true" />
@@ -1548,32 +2266,9 @@ export function KajiApp() {
               onChange={(e) => setRegisterName(e.target.value)}
               className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none"
             />
-            <div className="h-px bg-[#E8EAED]" />
-            <div className="space-y-2">
-              <p className="text-[15px] font-bold text-[#202124]">マイカラー</p>
-              <div className="flex flex-wrap gap-2">
-                {USER_COLOR_PALETTE.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setRegisterColor(c)}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-transform ${registerColor === c ? "scale-110 ring-2 ring-[#202124] ring-offset-2" : ""}`}
-                    style={{ backgroundColor: c }}
-                    aria-label={c}
-                  >
-                    {registerColor === c ? (
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <path d="M2.5 7L5.5 10L11.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="h-px bg-[#E8EAED]" />
-            <div className="space-y-2">
+            <div className="space-y-2 pt-1">
               <div className="flex items-center gap-1.5">
-                <span className="text-[14px] text-[#5F6368]">🎟️</span>
+                <span className="text-[14px] text-[#5F6368]">🏷️</span>
                 <p className="text-[15px] font-bold text-[#202124]">家族コード</p>
                 <p className="text-[13px] font-medium text-[#9AA0A6]">（任意）</p>
               </div>
@@ -1581,46 +2276,230 @@ export function KajiApp() {
                 value={registerInviteCode}
                 onChange={(e) => setRegisterInviteCode(e.target.value)}
                 placeholder="パートナーから届いたコード"
-                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[#9AA0A6]"
+                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16px] font-semibold text-[#202124] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[#9AA0A6]"
               />
               <p className="text-[11px] font-medium text-[#9AA0A6]">パートナーが先に登録済みの場合のみ入力</p>
             </div>
           </div>
-          <div className="w-full space-y-3">
-            <div className="space-y-1.5 px-1">
-              <div className="flex items-center gap-1.5">
-                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#1A9BE8] text-[11px] font-bold text-white">1</span>
-                <p className="text-[12px] font-medium text-[#5F6368]">名前だけで登録 → 家族コードが発行されます</p>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#33C28A] text-[11px] font-bold text-white">2</span>
-                <p className="text-[12px] font-medium text-[#5F6368]">コードをもらった方は入力して参加できます</p>
-              </div>
+
+          <div className="w-full space-y-2 px-1">
+            <div className="flex items-center gap-1.5">
+              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#1A9BE8] text-[11px] font-bold text-white">1</span>
+              <p className="text-[12px] font-medium text-[#5F6368]">名前だけで登録 → 家族コードが発行されます</p>
             </div>
-            <button
-              type="submit"
-              disabled={registerLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#1A9BE8] px-4 py-3 text-[16.8px] font-bold text-white shadow-lg shadow-[#2A1E1730] disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {registerLoading ? <Loader2 size={18} className="animate-spin" /> : <span>→</span>}
-              {registerLoading ? "読み込み中..." : "はじめる"}
-            </button>
-            {error ? <p className="mt-3 text-center text-sm text-[#C5221F]">{error}</p> : null}
+            <div className="flex items-center gap-1.5">
+              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#33C28A] text-[11px] font-bold text-white">2</span>
+              <p className="text-[12px] font-medium text-[#5F6368]">コードをもらった方は入力して参加できます</p>
+            </div>
           </div>
+
+          <button
+            type="submit"
+            disabled={registerLoading}
+            className="flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#1A9BE8] px-4 py-3 text-[16.8px] font-bold text-white shadow-lg shadow-[#2A1E1730] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {registerLoading ? <Loader2 size={18} className="animate-spin" /> : <span className="material-symbols-rounded text-[18px] leading-none">arrow_forward</span>}
+            {registerLoading ? "読み込み中..." : "はじめる"}
+          </button>
+          <div className="flex flex-wrap justify-center gap-2">
+            {USER_COLOR_PALETTE.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setRegisterColor(c)}
+                className={`h-6 w-6 rounded-full ${registerColor === c ? "ring-2 ring-[#202124] ring-offset-2" : ""}`}
+                style={{ backgroundColor: c }}
+                aria-label={c}
+              />
+            ))}
+          </div>
+          {error ? <p className="mt-2 text-center text-sm text-[#C5221F]">{error}</p> : null}
         </form>
       </main>
     );
   }
 
-  const resolveAssigneeForSort = (choreId: string, sectionKey: "today" | "tomorrow" | "big", choreRef?: ChoreWithComputed) => {
-    const todayKey = toJstDateKey(startOfJstDay(new Date()));
-    const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
+  if (onboardingOpen) {
+    const inviteCode = boot.householdInviteCode ?? "";
+    const inviteLink =
+      typeof window === "undefined"
+        ? `https://ietasuku.vercel.app/?invite=${inviteCode}`
+        : `${window.location.origin}/?invite=${inviteCode}`;
+
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col bg-[#F8F9FA] px-5 py-8">
+        <div className="mt-8 space-y-5">
+          <div className="text-center">
+            <span className="material-symbols-rounded text-[42px] text-[#1A9BE8]">home</span>
+            <p className="mt-1.5 text-[42px] font-bold leading-none text-[#202124]">いえたすくへようこそ！</p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[16px] font-bold text-[#202124]">まずはパートナーを招待</p>
+            <p className="text-[13px] font-medium text-[#5F6368]">一緒に使う家族やパートナーにこのリンクを送ってね！</p>
+            <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-3">
+              <p className="truncate rounded-[10px] bg-[#F1F3F4] px-3 py-2 text-[12px] font-medium text-[#5F6368]">{inviteLink}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(inviteLink);
+                      setInfoMessage("招待リンクをコピーしました。");
+                    } catch {
+                      setError("リンクのコピーに失敗しました。");
+                    }
+                  }}
+                  className="inline-flex items-center justify-center gap-1 rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#1A73E8]"
+                >
+                  <Copy size={14} />
+                  コピー
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (navigator.share) {
+                      try {
+                        await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink });
+                        return;
+                      } catch {
+                        return;
+                      }
+                    }
+                    try {
+                      await navigator.clipboard.writeText(inviteLink);
+                      setInfoMessage("招待リンクをコピーしました。");
+                    } catch {
+                      setError("リンクの共有に失敗しました。");
+                    }
+                  }}
+                  className="inline-flex items-center justify-center gap-1 rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white"
+                >
+                  <Share2 size={14} />
+                  送る
+                </button>
+              </div>
+            </div>
+            <p className="text-[12px] font-medium text-[#9AA0A6]">LINEやメッセージに貼り付けするだけで参加できるよ！</p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[16px] font-bold text-[#202124]">家事を登録しよう</p>
+            <button
+              type="button"
+              onClick={() => {
+                setResumeOnboardingAfterCreate(true);
+                setOnboardingOpen(false);
+                openAddChore();
+              }}
+              className="w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[15px] font-bold text-white"
+            >
+              ＋ 最初のタスクを追加しよう
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOnboardingBulkSelectOpen(true);
+              }}
+              disabled={onboardingSubmitting || onboardingBulkSelectOpen}
+              className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-semibold text-[#202124] disabled:opacity-60"
+            >
+              🏠 よくある家事をまとめて追加
+            </button>
+            {onboardingBulkSelectOpen ? (
+              <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-3">
+                <p className="text-[14px] font-bold text-[#202124]">家事まとめて追加</p>
+                <div className="space-y-1.5">
+                  {ONBOARDING_PRESET_CHORES.map((preset) => {
+                    const checked = onboardingPresetSelections.includes(preset.title);
+                    return (
+                      <button
+                        key={`onboarding-preset-${preset.title}`}
+                        type="button"
+                        onClick={() => {
+                          setOnboardingPresetSelections((prev) =>
+                            prev.includes(preset.title)
+                              ? prev.filter((title) => title !== preset.title)
+                              : [...prev, preset.title],
+                          );
+                        }}
+                        className={`flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left ${checked ? "bg-[#E8F2FF]" : "bg-[#F8F9FA]"}`}
+                      >
+                        <span className="text-[13px] font-semibold text-[#202124]">{preset.title}</span>
+                        <span className="material-symbols-rounded text-[18px] text-[#1A9BE8]">
+                          {checked ? "check_circle" : "radio_button_unchecked"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setOnboardingBulkSelectOpen(false)}
+                    disabled={onboardingSubmitting}
+                    className="rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#5F6368] disabled:opacity-60"
+                  >
+                    戻る
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleOnboardingAddPreset();
+                    }}
+                    disabled={onboardingSubmitting}
+                    className="rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                  >
+                    {onboardingSubmitting ? "追加中..." : "追加する"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {boot.chores.length > 0 ? (
+              <div className="rounded-[14px] border border-[#DADCE0] bg-white p-3">
+                <p className="text-[13px] font-bold text-[#5F6368]">登録済みの家事</p>
+                <div className="mt-2 space-y-1">
+                  {boot.chores.slice(0, 5).map((chore) => (
+                    <p key={`onboarding-chore-${chore.id}`} className="text-[13px] font-medium text-[#202124]">
+                      ・{chore.title}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={finishOnboarding}
+              disabled={onboardingSubmitting}
+              className="w-full rounded-[14px] bg-[#F1F3F4] px-4 py-3 text-[14px] font-semibold text-[#5F6368] disabled:opacity-60"
+            >
+              あとで設定する
+            </button>
+          </div>
+          {error ? <p className="text-center text-sm text-[#C5221F]">{error}</p> : null}
+        </div>
+      </main>
+    );
+  }
+
+  const todayKey = toJstDateKey(startOfJstDay(new Date()));
+  const yesterdayKey = toJstDateKey(addDays(startOfJstDay(new Date()), -1));
+  const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
+  const getHomeSectionDateKey = (sectionKey: "today" | "yesterday" | "tomorrow") => {
+    if (sectionKey === "yesterday") return yesterdayKey;
+    if (sectionKey === "tomorrow") return tomorrowKey;
+    return todayKey;
+  };
+
+  const resolveAssigneeForSort = (
+    choreId: string,
+    sectionKey: "today" | "yesterday" | "tomorrow" | "big",
+    choreRef?: ChoreWithComputed,
+  ) => {
     const sectionDateKey =
-      sectionKey === "tomorrow"
-        ? tomorrowKey
-        : sectionKey === "big" && choreRef?.dueAt
-          ? toJstDateKey(startOfJstDay(new Date(choreRef.dueAt)))
-          : todayKey;
+      sectionKey === "big" && choreRef?.dueAt
+        ? toJstDateKey(startOfJstDay(new Date(choreRef.dueAt)))
+        : getHomeSectionDateKey(sectionKey === "big" ? "today" : sectionKey);
     const entry = assignments.find((x) => x.choreId === choreId && x.date === sectionDateKey);
     const clearKey = `${choreId}:${sectionDateKey}`;
     const isDefaultCleared = clearedDefaults.has(clearKey);
@@ -1630,10 +2509,27 @@ export function KajiApp() {
     return null;
   };
 
+  const yesterdayBaseDate = startOfJstDay(addDays(new Date(), -1));
+  const yesterdayChores = sortHomeSectionChores(
+    "yesterday",
+    boot.chores.filter((chore) => isScheduledOnDate(chore, yesterdayBaseDate)),
+    sessionUser?.id ?? null,
+    (choreId) => {
+      const c = boot.chores.find((ch) => ch.id === choreId);
+      return resolveAssigneeForSort(choreId, "yesterday", c);
+    },
+    customIcons,
+  );
+
   const homeSections = [
     {
+      key: "yesterday" as const,
+      title: "きのうのにんむ",
+      chores: yesterdayChores,
+    },
+    {
       key: "today" as const,
-      title: "今日",
+      title: "きょうのにんむ",
       chores: sortHomeSectionChores("today", boot.todayChores, sessionUser?.id ?? null, (choreId) => {
         const c = boot.todayChores.find((ch) => ch.id === choreId);
         return resolveAssigneeForSort(choreId, "today", c);
@@ -1641,18 +2537,10 @@ export function KajiApp() {
     },
     {
       key: "tomorrow" as const,
-      title: "明日",
+      title: "あしたのにんむ",
       chores: sortHomeSectionChores("tomorrow", boot.tomorrowChores, sessionUser?.id ?? null, (choreId) => {
         const c = boot.tomorrowChores.find((ch) => ch.id === choreId);
         return resolveAssigneeForSort(choreId, "tomorrow", c);
-      }, customIcons),
-    },
-    {
-      key: "big" as const,
-      title: "大仕事",
-      chores: sortHomeSectionChores("big", boot.upcomingBigChores, sessionUser?.id ?? null, (choreId) => {
-        const c = boot.upcomingBigChores.find((ch) => ch.id === choreId);
-        return resolveAssigneeForSort(choreId, "big", c);
       }, customIcons),
     },
   ].filter((section) => section.chores.length > 0);
@@ -1673,7 +2561,7 @@ export function KajiApp() {
       ? "指を離して読み込み"
       : "下にスワイプして読み込み";
   const getPullAnimatedContentStyle = (tab: TabKey) =>
-    pullRefreshEnabled && tab === activeTab && tab !== "settings"
+    pullRefreshEnabled && tab === activeTab
       ? {
         transform: pullDistance === 0 ? "none" : `translate3d(0, ${pullDistance}px, 0)`,
         transition:
@@ -1682,7 +2570,6 @@ export function KajiApp() {
       : undefined;
   const renderInlinePullRefreshHint = (tab: TabKey) => {
     if (!pullRefreshEnabled) return null;
-    if (tab === "settings") return null;
     if (!showPullRefreshHint || tab !== activeTab) return null;
     return (
       <div className="py-2 text-center">
@@ -1819,59 +2706,124 @@ export function KajiApp() {
 
   const renderTabHeader = (tab: TabKey) => {
     if (tab === "home") {
+      const topDate = topDateWithWeekday();
       return (
         <div ref={homeHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
           <div className="flex items-center justify-between">
-            <p className="text-[48px] font-bold leading-none text-[#5F6368]">{formatTopDate()}</p>
-            {boot.users.length > 1 ? (
-              <button
-                type="button"
-                onClick={() => {
-                  openAssignment();
-                  if (!assignmentUser && boot.users.length > 0) {
-                    setAssignmentUser(boot.users[0].id);
-                  }
-                }}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF3FF]"
-              >
-                <Users size={20} color="#1A9BE8" />
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                closeAssignment();
+                openSettings();
+              }}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
+              aria-label="設定を開く"
+            >
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
+                account_circle
+              </span>
+            </button>
+            <p className="text-[32px] font-bold leading-none text-[#5F6368]">{topDate}</p>
+            <div className="h-9 w-9" />
           </div>
         </div>
       );
     }
     if (tab === "list") {
+      const calendarMonthTitle = new Intl.DateTimeFormat("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        year: "numeric",
+        month: "long",
+      }).format(calendarMonthCursor);
       return (
-        <div ref={listHeaderRef} className="space-y-1.5 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-          <ScreenTitle title="家事一覧" />
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <p className="text-[13.2px] font-bold text-[#5F6368]">並び替え</p>
+        <div ref={listHeaderRef} className="space-y-2 bg-[#F8F9FA]/95 px-5 pb-2 pt-4 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                closeAssignment();
+                openSettings();
+              }}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
+              aria-label="設定を開く"
+            >
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
+                account_circle
+              </span>
+            </button>
+            <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center rounded-[8px] bg-[#F1F3F4] p-[3px]">
+                <button
+                  type="button"
+                  onClick={() => setCalendarExpanded(false)}
+                  className={`rounded-[6px] px-[14px] py-[6px] text-[13px] ${calendarExpanded ? "text-[#9AA0A6]" : "bg-white font-bold text-[#202124]"}`}
+                >
+                  週
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarExpanded(true)}
+                  className={`rounded-[6px] px-[14px] py-[6px] text-[13px] ${calendarExpanded ? "bg-white font-bold text-[#202124]" : "text-[#9AA0A6]"}`}
+                >
+                  月
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => setListSortOpen((prev) => !prev)}
-                aria-expanded={listSortOpen}
-                aria-controls="list-sort-options"
-                className="rounded-lg p-1 text-[#5F6368]"
+                onClick={() => shiftCalendarMonth(-1)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#5F6368]"
+                aria-label="前月へ"
               >
-                {listSortOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCalendarExpanded((prev) => !prev)}
+                className="inline-flex items-center gap-1 text-[14px] font-semibold text-[#5F6368]"
+              >
+                {calendarMonthTitle}
+                <ChevronDown size={15} className={calendarExpanded ? "rotate-180" : ""} />
+              </button>
+              <button
+                type="button"
+                onClick={() => shiftCalendarMonth(1)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#5F6368]"
+                aria-label="次月へ"
+              >
+                <ChevronRight size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => openStandaloneScreen("manage", "list")}
+                className="inline-flex h-9 items-center gap-1 rounded-full border border-[#E5EAF0] bg-white px-2 text-[11px] font-bold text-[#5F6368]"
+              >
+                <span className="material-symbols-rounded text-[15px]">checklist</span>
+                家事管理
               </button>
             </div>
-            {listSortOpen ? (
-              <div id="list-sort-options" className="flex flex-wrap gap-1.5">
-                {LIST_SORT_ITEMS.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => setListSortKey(item.key)}
-                    className={`rounded-xl px-3 py-1.5 text-[12.5px] font-bold ${listSortKey === item.key ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+          </div>
+        </div>
+      );
+    }
+    if (tab === "records") {
+      return (
+        <div ref={recordsHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                closeAssignment();
+                openSettings();
+              }}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
+              aria-label="設定を開く"
+            >
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
+                account_circle
+              </span>
+            </button>
+            <p className="text-[28px] font-bold leading-none text-[#202124]">みんなのきろく</p>
+            <div className="h-9 w-9" />
           </div>
         </div>
       );
@@ -1879,85 +2831,81 @@ export function KajiApp() {
     if (tab === "stats") {
       return (
         <div ref={statsHeaderRef} className="space-y-2 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-          <ScreenTitle title="統計" />
-          <div className="flex flex-wrap gap-1">
-            {([
-              { key: "week" as const, label: "1週間" },
-              { key: "month" as const, label: "1か月" },
-              { key: "half" as const, label: "半年" },
-              { key: "year" as const, label: "1年" },
-              { key: "all" as const, label: "全期間" },
-              { key: "custom" as const, label: "カスタム", accent: true as const },
-            ] as const).map((item) => (
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                closeAssignment();
+                openStandaloneScreen("my-report", "stats");
+              }}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
+              aria-label="私のレポートを開く"
+            >
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
+                account_circle
+              </span>
+            </button>
+            <div className="text-center">
+              <p className="text-[28px] font-bold leading-none text-[#202124]">月間レポート</p>
+            </div>
+            <div className="w-9" />
+          </div>
+          <div className="flex gap-1 rounded-[12px] bg-[#E9EEF6] p-1">
+            {REPORT_MONTH_OFFSETS.map((offset) => (
               <button
-                key={item.key}
+                key={offset}
                 type="button"
-                onClick={async () => {
-                  try {
-                    setError("");
-                    setStatsAnimationSeed((prev) => prev + 1);
-                    if (item.key === "custom") {
-                      setCustomEditorOpen(true);
-                      await applyCustomDateRange(customDateRange);
-                      return;
-                    }
-                    setCustomEditorOpen(false);
-                    await loadStats(item.key);
-                  } catch (err: unknown) {
-                    setError((err as Error).message ?? "統計の読み込みに失敗しました。");
-                  }
-                }}
-                className={`inline-flex items-center gap-1 rounded-[11px] px-2 py-1.5 text-[13.2px] font-bold ${statsPeriod === item.key
-                  ? "bg-[#1A9BE8] text-white"
-                  : "accent" in item && item.accent
-                    ? "bg-[#EEF3FF] text-[#4D8BFF]"
-                    : "bg-[#F1F3F4] text-[#5F6368]"
-                  }`}
+                onClick={() => setReportMonthOffset(offset)}
+                className={`flex-1 rounded-[10px] px-2 py-1.5 text-[12.5px] font-bold ${reportMonthOffset === offset ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
               >
-                {item.label}
+                {REPORT_MONTH_LABELS[offset]}
               </button>
             ))}
           </div>
         </div>
       );
     }
-    return (
-      <div ref={settingsHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-        <ScreenTitle title="設定" />
-      </div>
-    );
+    return null;
   };
 
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
       return (
         <div className="space-y-[10px]" style={{ paddingTop: homeHeaderHeight }}>
-
           <div className="space-y-[10px]" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             {hasAnyUpcomingChores ? (
               <>
-                {homeSections.map((section) => (
-                  <div key={section.key} className="space-y-[6px]">
+                {homeSections.map((section) => {
+                  const sectionDateKey = getHomeSectionDateKey(section.key);
+                  return (
+                  <div
+                    key={section.key}
+                    className={`space-y-[6px] rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[#EEF4FE] px-1 py-1" : ""}`}
+                    onDragOver={(event) => {
+                      if (!draggingChore) return;
+                      event.preventDefault();
+                      setDragTargetDateKey(sectionDateKey);
+                    }}
+                    onDragLeave={() => {
+                      setDragTargetDateKey((prev) => (prev === sectionDateKey ? null : prev));
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      void dropDraggedChoreToDate(sectionDateKey);
+                    }}
+                  >
                     <div
                       className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
                       style={{ top: 0 }}
                     >
-                      <HomeSectionTitle title={section.title} />
+                      <HomeSectionTitle title={`${section.title}（${section.chores.length}）`} />
+                      {section.key === "tomorrow" ? (
+                        <p className="mt-0.5 text-[12px] font-medium text-[#5F6368]">今日やっちゃってもOK！</p>
+                      ) : null}
                     </div>
                     <div className="flex flex-col items-stretch gap-2">
                       {section.chores.map((chore) => {
-                        const todayKey = toJstDateKey(startOfJstDay(new Date()));
-                        const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
-                        const bigDueDateKey = chore.dueAt
-                          ? toJstDateKey(startOfJstDay(new Date(chore.dueAt)))
-                          : todayKey;
-                        const sectionDateKey =
-                          section.key === "tomorrow"
-                            ? tomorrowKey
-                            : section.key === "big"
-                              ? bigDueDateKey
-                              : todayKey;
                         const assignedEntry = assignments.find(
                           (x) => x.choreId === chore.id && x.date === sectionDateKey,
                         );
@@ -1966,36 +2914,41 @@ export function KajiApp() {
                         const assigneeName = assignedEntry?.userName ?? (isDefaultCleared ? null : chore.defaultAssigneeName) ?? null;
                         const assigneeUser = effectiveAssigneeId ? boot.users.find((u) => u.id === effectiveAssigneeId) : null;
                         const assigneeColor = assigneeUser?.color ?? null;
-                        const disableTomorrowDailyCheck =
-                          section.key === "tomorrow" && chore.intervalDays === 1;
+                        const disableTomorrowDailyCheck = false;
                         const performerUser = chore.lastPerformerId ? boot.users.find((u) => u.id === chore.lastPerformerId) : null;
                         const performerColor = performerUser?.color ?? null;
+                        const displayChore =
+                          section.key === "tomorrow" && chore.doneToday
+                            ? { ...chore, doneToday: false }
+                            : chore;
                         return (
-                          <HomeTaskRow
+                          <div
                             key={chore.id}
-                            chore={
-                              section.key === "tomorrow" && chore.doneToday
-                                ? { ...chore, doneToday: false }
-                                : chore
-                            }
-                            onRecord={openMemo}
-                            onUndo={undoRecord}
-                            isUpdating={recordUpdatingIds.includes(chore.id)}
-                            recordDisabled={disableTomorrowDailyCheck}
-                            assigneeName={assigneeName}
-                            assigneeColor={assigneeColor}
-                            performerColor={performerColor}
-                            meta={
-                              section.key === "big"
-                                ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
-                                : undefined
-                            }
-                          />
+                            draggable
+                            onDragStart={(event) => {
+                              beginChoreDrag(displayChore, sectionDateKey);
+                              event.dataTransfer.effectAllowed = "move";
+                              event.dataTransfer.setData("text/plain", chore.id);
+                            }}
+                            onDragEnd={clearDragState}
+                          >
+                            <HomeTaskRow
+                              chore={displayChore}
+                              onRecord={(target) => openMemo(target, sectionDateKey)}
+                              onUndo={requestUndoRecord}
+                              isUpdating={recordUpdatingIds.includes(chore.id)}
+                              recordDisabled={disableTomorrowDailyCheck}
+                              assigneeName={assigneeName}
+                              assigneeColor={assigneeColor}
+                              performerColor={performerColor}
+                            />
+                          </div>
                         );
                       })}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </>
             ) : (
               <div className="rounded-[24px] border border-dashed border-[#CFD8E3] bg-white px-5 py-8 text-center">
@@ -2012,215 +2965,784 @@ export function KajiApp() {
                 </button>
               </div>
             )}
+            {latestRecordItem ? (
+              <div className="space-y-[6px]">
+                <div className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85" style={{ top: 0 }}>
+                  <HomeSectionTitle title="さいしんのきろく" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 rounded-[12px] border border-[#E5EAF0] bg-white px-3 py-2.5">
+                    <span className="material-symbols-rounded text-[14px] text-[#33C28A]">check</span>
+                    <p className="text-[13.5px] font-bold text-[#202124]">{latestRecordItem.chore.title}</p>
+                    <p className="text-[12px] font-semibold text-[#5F6368]">{latestRecordItem.user.name}</p>
+                    <p className="ml-auto text-[11px] font-medium text-[#9AA0A6]">
+                      {new Intl.DateTimeFormat("ja-JP", {
+                        timeZone: "Asia/Tokyo",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }).format(new Date(latestRecordItem.performedAt))}
+                    </p>
+                  </div>
+                  {latestRecordItem.memo ? (
+                    <p className="px-1 text-[12px] font-medium text-[#5F6368]">「{latestRecordItem.memo}」</p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       );
     }
 
     if (tab === "list") {
+      const todayKey = toJstDateKey(startOfJstDay(new Date()));
+      const currentMonthKey = toMonthKey(calendarMonthCursor);
+      const calendarMonthLabel = new Intl.DateTimeFormat("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        year: "numeric",
+        month: "long",
+      }).format(calendarMonthCursor);
+      const selectedDate = startOfJstDay(new Date(`${calendarSelectedDateKey}T00:00:00+09:00`));
+      const selectedDateLabel = `${WEEKDAY_SHORT[selectedDate.getDay()]} ${selectedDate.getDate()}`;
+      const previousWeekTarget = shiftTargetDateByWeek(-1);
+      const nextWeekTarget = shiftTargetDateByWeek(1);
+
+      const renderCalendarChip = (chore: ChoreWithComputed, dateKey: string, emphasize = false) => {
+        const ChipIcon = iconByName(chore.icon);
+        const performerUser = chore.lastPerformerId
+          ? boot.users.find((user) => user.id === chore.lastPerformerId)
+          : null;
+        const doneColor = performerUser?.color ?? "#33C28A";
+        const performedDateKey =
+          chore.lastPerformedAt && !chore.lastRecordSkipped
+            ? toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)))
+            : null;
+        const isDone = performedDateKey === dateKey;
+        const chipClass = isDone
+          ? "border"
+          : emphasize
+            ? "border border-[#D2E3FC] bg-[#EEF4FE] text-[#202124]"
+            : "border border-[#E5EAF0] bg-white text-[#202124]";
+        const doneStyle: CSSProperties | undefined = isDone
+          ? {
+            backgroundColor: `${doneColor}14`,
+            borderColor: `${doneColor}66`,
+            color: darkenColor(doneColor, 18),
+          }
+          : undefined;
+        return (
+          <button
+            key={`${dateKey}-${chore.id}`}
+            type="button"
+            onClick={() => openReschedule(chore, dateKey)}
+            draggable
+            onDragStart={(event) => {
+              beginChoreDrag(chore, dateKey);
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", chore.id);
+            }}
+            onDragEnd={clearDragState}
+            className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
+            style={doneStyle}
+          >
+            <ChipIcon size={13} color={chore.iconColor} />
+            <span>{chore.title}</span>
+            {isDone ? <span className="material-symbols-rounded text-[14px]">check</span> : null}
+          </button>
+        );
+      };
+
       return (
         <div className="space-y-4" style={{ paddingTop: listHeaderHeight }}>
           <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
-            <div className="flex flex-col items-stretch gap-2">
-              {listChores.map((chore) => {
-                const meta = chore.isBigTask
-                  ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
-                  } / ${dueInDaysLabel(chore)}`
-                  : `${chore.intervalDays}日ごと / 前回:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "未設定"
-                  }`;
-                return (
-                  <SwipableListChoreRow
-                    key={chore.id}
-                    chore={chore}
-                    meta={meta}
-                    onOpenHistory={openHistory}
-                    onEdit={openEditChore}
-                    onSwipeDelete={handleSwipeDeleteChore}
-                    onDeleteSwipeActiveChange={handleListDeleteSwipeActiveChange}
-                    relaxedSwipeStart={pendingSwipeDeletes.length > 0}
-                  />
-                );
-              })}
+            {calendarExpanded ? (
+              <div className="space-y-1 rounded-[16px] border border-[#E5EAF0] bg-white px-2 py-3">
+                <div className="flex items-center justify-between px-1 pb-1">
+                  <button
+                    type="button"
+                    onClick={() => shiftCalendarMonth(-1)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#F8F9FA] text-[#5F6368]"
+                    aria-label="前月へ"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <p className="text-[13px] font-semibold text-[#5F6368]">{calendarMonthLabel}</p>
+                  <button
+                    type="button"
+                    onClick={() => shiftCalendarMonth(1)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#F8F9FA] text-[#5F6368]"
+                    aria-label="次月へ"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-y-1">
+                  {WEEKDAY_SHORT.map((day, index) => (
+                    <div key={`dow-${day}`} className={`text-center text-[10px] font-medium ${index === 0 ? "text-[#EA4335]" : index === 6 ? "text-[#4285F4]" : "text-[#9AA0A6]"}`}>
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-y-1">
+                  {calendarMonthGridDates.map((date) => {
+                    const dateKey = toJstDateKey(date);
+                    const monthKey = toMonthKey(date);
+                    const inMonth = monthKey === currentMonthKey;
+                    const isSelected = dateKey === calendarSelectedDateKey;
+                    const dayOfWeek = date.getDay();
+                    const weekendClass =
+                      dayOfWeek === 0 ? "text-[#EA4335]" : dayOfWeek === 6 ? "text-[#4285F4]" : "text-[#202124]";
+                    return (
+                      <button
+                        key={`month-cell-${dateKey}`}
+                        type="button"
+                        onClick={() => {
+                          focusCalendarDate(dateKey);
+                        }}
+                        className="flex min-h-[36px] flex-col items-center justify-center py-1"
+                      >
+                        <span
+                          className={`rounded-[8px] px-[6px] py-[1px] text-[13px] font-bold leading-none ${isSelected
+                            ? "bg-[#EEF4FE] text-[#202124]"
+                            : inMonth
+                              ? weekendClass
+                              : "text-[#BDC1C6]"
+                            }`}
+                        >
+                          {date.getDate()}
+                        </span>
+                        {inMonth ? renderDayDots(dateKey) : <span className="h-1 w-1" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="space-y-2 border-t border-[#E8EAED] pt-2">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-[10px] bg-[#EEF4FE] px-3 py-1 text-[14px] font-bold text-[#202124]">
+                      {selectedDateLabel}
+                      {calendarSelectedDateKey === todayKey ? " 今日" : ""}
+                    </span>
+                    <div className="h-px flex-1 bg-[#E5EAF0]" />
+                    <p className="text-[12px] font-medium text-[#9AA0A6]">{calendarSelectedDayEntries.length}件</p>
+                  </div>
+                  <div
+                    className="flex flex-wrap gap-[6px]"
+                    onClick={(event) => {
+                      handleCalendarSurfaceTap(event, calendarSelectedDateKey);
+                    }}
+                  >
+                    {calendarSelectedDayEntries.length === 0 ? (
+                      <p className="text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
+                    ) : (
+                      calendarSelectedDayEntries.map((chore) =>
+                        renderCalendarChip(chore, calendarSelectedDateKey, true),
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {!calendarExpanded ? (
+              <div className="rounded-[14px] border border-[#E5EAF0] bg-white px-2 py-2">
+                <div className="flex items-center justify-around">
+                  {calendarSelectedWeekEntries.map((entry) => {
+                    const weekday = WEEKDAY_SHORT[entry.date.getDay()];
+                    const dayNumber = entry.date.getDate();
+                    const isSelected = entry.dateKey === calendarSelectedDateKey;
+                    const isSun = entry.date.getDay() === 0;
+                    const isSat = entry.date.getDay() === 6;
+                    return (
+                      <button
+                        key={entry.dateKey}
+                        type="button"
+                        onClick={() => setCalendarSelectedDateKey(entry.dateKey)}
+                        className="flex min-w-[36px] flex-col items-center gap-[2px] py-1"
+                      >
+                        <span className={`text-[10px] font-medium ${isSun ? "text-[#EA4335]" : isSat ? "text-[#4285F4]" : "text-[#9AA0A6]"}`}>
+                          {weekday}
+                        </span>
+                        <span className={`rounded-[16px] px-2 py-[2px] text-[16px] font-bold leading-none ${isSelected ? "bg-[#EEF4FE] text-[#202124]" : isSun ? "text-[#EA4335]" : isSat ? "text-[#4285F4]" : "text-[#202124]"}`}>
+                          {dayNumber}
+                        </span>
+                        {renderDayDots(entry.dateKey)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {draggingChore ? (
+              <div
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  void dropDraggedChoreToDate(previousWeekTarget);
+                }}
+                className="rounded-[12px] border border-dashed border-[#F9AB00] bg-[#FFF8E8] px-3 py-2 text-center text-[12px] font-bold text-[#B06000]"
+              >
+                ↑ 1週間前へ移動
+              </div>
+            ) : null}
+
+            <div className="space-y-4">
+              {calendarSelectedWeekEntries.map((entry) => (
+                <div
+                  key={`week-group-${entry.dateKey}`}
+                  className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[#EEF4FE]" : ""}`}
+                  onClick={(event) => {
+                    handleCalendarSurfaceTap(event, entry.dateKey);
+                  }}
+                  onDragOver={(event) => {
+                    if (!draggingChore) return;
+                    event.preventDefault();
+                    setDragTargetDateKey(entry.dateKey);
+                  }}
+                  onDragLeave={() => {
+                    setDragTargetDateKey((prev) => (prev === entry.dateKey ? null : prev));
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    void dropDraggedChoreToDate(entry.dateKey);
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <p className="text-[14px] font-bold text-[#202124]">
+                      {WEEKDAY_SHORT[entry.date.getDay()]} {entry.date.getDate()}
+                      {entry.dateKey === todayKey ? " 今日" : ""}
+                    </p>
+                    <div className="h-px flex-1 bg-[#E5EAF0]" />
+                    <p className="text-[12px] font-medium text-[#9AA0A6]">{entry.items.length}件</p>
+                  </div>
+                  <div className="flex flex-wrap gap-[6px]">
+                    {entry.items.length === 0 ? (
+                      <p className="text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
+                    ) : (
+                      entry.items.map((chore) =>
+                        renderCalendarChip(chore, entry.dateKey, entry.dateKey === calendarSelectedDateKey),
+                      )
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
+
+            {draggingChore ? (
+              <div
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  void dropDraggedChoreToDate(nextWeekTarget);
+                }}
+                className="rounded-[12px] border border-dashed border-[#34A853] bg-[#E8F5E9] px-3 py-2 text-center text-[12px] font-bold text-[#1E8E3E]"
+              >
+                ↓ 1週間後へ移動
+              </div>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+
+    if (tab === "records") {
+      return (
+        <div className="space-y-4" style={{ paddingTop: recordsHeaderHeight }}>
+          <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
+            {renderInlinePullRefreshHint(tab)}
+            {records.length === 0 ? (
+              <div className="rounded-[20px] border border-dashed border-[#DADCE0] bg-white px-5 py-10 text-center">
+                <p className="text-[16px] font-bold text-[#202124]">まだ きろく がありません</p>
+                <p className="mt-2 text-[13px] font-medium text-[#5F6368]">家事を完了するとここにタイムライン表示されます。</p>
+              </div>
+            ) : (
+              groupedTimelineRecords.map((group) => (
+                <div key={`record-group-${group.dateKey}`} className="space-y-2">
+                  <p className="text-[16px] font-bold text-[#202124]">{group.label}</p>
+                  <div className="space-y-2">
+                    {group.items.map((record) => {
+                      const choreForIcon = chores.find((ch) => ch.id === record.chore.id);
+                      const RecordIcon = iconByName(choreForIcon?.icon ?? "sparkles");
+                      const myReaction = (record.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
+                      const reactionCounts = (record.reactions ?? []).reduce<Record<string, number>>((acc, reaction) => {
+                        acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
+                        return acc;
+                      }, {});
+                      const visibleReactions = REACTION_CHOICES.filter((emoji) => (reactionCounts[emoji] ?? 0) > 0);
+                      return (
+                        <div key={record.id} className="space-y-1">
+                          <div className="rounded-[14px] border border-[#E5EAF0] bg-white px-3 py-3">
+                            <div className="flex items-center gap-2">
+                              <RecordIcon size={16} color={choreForIcon?.iconColor ?? "#5F6368"} />
+                              <p className="text-[15px] font-bold text-[#202124]">{record.chore.title}</p>
+                              <span className="text-[12px] text-[#BDC1C6]">──</span>
+                              <p className="text-[13px] font-semibold text-[#5F6368]">{record.user.name}</p>
+                              <p className="ml-auto text-[11px] font-medium text-[#9AA0A6]">
+                                {new Intl.DateTimeFormat("ja-JP", {
+                                  timeZone: "Asia/Tokyo",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                }).format(new Date(record.performedAt))}
+                              </p>
+                            </div>
+                            {record.memo ? (
+                              <p className="mt-1 text-[12px] font-medium text-[#5F6368]">「{record.memo}」</p>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 px-1">
+                            {visibleReactions.map((emoji) => {
+                              const mapped = REACTION_ICON_MAP[emoji];
+                              const selected = myReaction?.emoji === emoji;
+                              const count = reactionCounts[emoji] ?? 0;
+                              return (
+                                <button
+                                  key={`${record.id}-${emoji}`}
+                                  type="button"
+                                  onClick={() => {
+                                    void toggleReaction(record, emoji);
+                                  }}
+                                  disabled={reactionUpdatingId === record.id}
+                                  className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold ${selected ? "bg-[#E8F2FF]" : "bg-transparent"} disabled:opacity-50`}
+                                >
+                                  <span className="material-symbols-rounded text-[18px]" style={{ color: mapped?.color ?? "#5F6368" }}>
+                                    {mapped?.icon ?? "add_reaction"}
+                                  </span>
+                                  {count > 1 ? <span className="text-[11px] text-[#5F6368]">{count}</span> : null}
+                                </button>
+                              );
+                            })}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReactionPickerRecordId((prev) => (prev === record.id ? null : record.id));
+                              }}
+                              disabled={reactionUpdatingId === record.id}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[#BDBDBD] disabled:opacity-50"
+                            >
+                              <span className="material-symbols-rounded text-[18px]">add_reaction</span>
+                            </button>
+                          </div>
+                          {reactionPickerRecordId === record.id ? (
+                            <div className="flex items-center gap-2 px-1">
+                              {REACTION_CHOICES.map((emoji) => {
+                                const mapped = REACTION_ICON_MAP[emoji];
+                                const selected = myReaction?.emoji === emoji;
+                                return (
+                                  <button
+                                    key={`${record.id}-picker-${emoji}`}
+                                    type="button"
+                                    onClick={() => {
+                                      void toggleReaction(record, emoji);
+                                      setReactionPickerRecordId(null);
+                                    }}
+                                    disabled={reactionUpdatingId === record.id}
+                                    className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${selected ? "bg-[#E8F2FF]" : "bg-white"} disabled:opacity-50`}
+                                  >
+                                    <span className="material-symbols-rounded text-[18px]" style={{ color: mapped.color }}>
+                                      {mapped.icon}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       );
     }
 
     if (tab === "stats") {
+      const topChores = householdReport?.choreCounts.slice(0, 3) ?? [];
+      const staleTasks = householdReport?.staleTasks.slice(0, 3) ?? [];
+      const monthDiffLabel =
+        householdReportDiff > 0 ? `+${householdReportDiff}` : `${householdReportDiff}`;
+
       return (
         <div className="space-y-5" style={{ paddingTop: statsHeaderHeight }}>
           <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
-            <StatsView
-              stats={stats}
-              activePeriod={statsPeriod}
-              isLoading={statsLoading}
-              animationSeed={statsAnimationSeed}
-              customDateRange={customDateRange}
-              userColors={(() => {
-                const map = new Map<string, string>();
-                for (const u of boot.users) {
-                  if (u.color) map.set(u.id, u.color);
-                }
-                return map;
-              })()}
-              onChangeCustomDateRange={setCustomDateRange}
-              onApplyCustomDateRange={async (range) => {
-                await applyCustomDateRange(range);
-                setCustomEditorOpen(false);
-              }}
-              customEditorOpen={customEditorOpen}
-              onBalanceSwipeActiveChange={setBalanceSwipeActive}
+            <button
+              type="button"
+              onClick={() => openStandaloneScreen("my-report", "stats")}
+              className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
+            >
+              <span className="text-[14px] font-semibold text-[#202124]">私のレポートを見る</span>
+              <ChevronRight size={16} color="#9AA0A6" />
+            </button>
+            <div className="space-y-3">
+              <div className="rounded-[16px] bg-white px-5 py-5">
+                <p className="text-[18px] font-bold text-[#202124]">今月のおうち 🏠</p>
+                {reportLoading ? (
+                  <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F6368]">
+                    <Loader2 size={14} className="animate-spin" />
+                    読み込み中...
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-2.5 flex items-end gap-2">
+                      <p className="text-[48px] font-bold leading-none text-[#1A9BE8]">{householdReport?.currentMonthTotal ?? 0}</p>
+                      <p className="text-[18px] font-semibold text-[#5F6368]">回</p>
+                      <span className={`mb-1 inline-flex rounded-full px-2.5 py-1 text-[13px] font-bold ${householdReportDiff >= 0 ? "bg-[#E6F4EA] text-[#1E8E3E]" : "bg-[#FCE8E6] text-[#C5221F]"}`}>
+                        {monthDiffLabel} 先月比
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[13px] font-medium text-[#9AA0A6]">みんなでたくさんやったね！</p>
+                  </>
+                )}
+              </div>
+
+              <div className="rounded-[16px] bg-white px-5 py-5">
+                <p className="text-[18px] font-bold text-[#202124]">よく回った家事 TOP3</p>
+                <div className="mt-3 space-y-2">
+                  {topChores.length === 0 ? (
+                    <p className="text-[13px] font-medium text-[#9AA0A6]">まだ記録がありません。</p>
+                  ) : (
+                    topChores.map((item) => {
+                      const ItemIcon = iconByName(item.icon);
+                      return (
+                        <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                          <ItemIcon size={14} color={item.iconColor} />
+                          <p className="flex-1 truncate text-[15px] font-bold text-[#202124]">{item.title}</p>
+                          <p className="text-[15px] font-bold text-[#1A9BE8]">{item.count}回</p>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[16px] bg-white px-5 py-5">
+                <p className="text-[18px] font-bold text-[#202124]">久しぶりかも？ 🤔</p>
+                <div className="mt-3 space-y-2">
+                  {staleTasks.length === 0 ? (
+                    <p className="text-[13px] font-medium text-[#9AA0A6]">問題のある家事はありません。</p>
+                  ) : (
+                    staleTasks.map((item) => {
+                      const ItemIcon = iconByName(item.icon);
+                      const lastPerformed = new Date(item.lastPerformedAt);
+                      const lastPerformedLabel = `${lastPerformed.getMonth() + 1}/${lastPerformed.getDate()}`;
+                      return (
+                        <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                          <ItemIcon size={14} color={item.iconColor} />
+                          <p className="flex-1 truncate text-[14px] font-bold text-[#202124]">{item.title}</p>
+                          <p className="text-[12px] font-medium text-[#5F6368]">最終: {lastPerformedLabel}</p>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const inviteCode = boot.householdInviteCode ?? "";
+    const inviteLink =
+      typeof window === "undefined"
+        ? `https://ietasuku.vercel.app/?invite=${inviteCode}`
+        : `${window.location.origin}/?invite=${inviteCode}`;
+
+    if (settingsView === "push") {
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[#202124]">プッシュ通知設定</p>
+          </div>
+          <SettingToggleRow title="プッシュ通知" subtitle="すべての通知をまとめてON/OFF" checked={pushEnabled} onChange={(next) => { void handleTogglePush(next); }} />
+          {pushEnabled && notificationSettings ? (
+            <div className="space-y-3 rounded-[14px] bg-white p-3">
+              <div className="space-y-2 rounded-[12px] border border-[#DADCE0] bg-[#F8F9FA] p-3">
+                <p className="text-[13px] font-bold text-[#202124]">通知時刻</p>
+                <div className="flex flex-wrap gap-2">
+                  {notificationSettings.reminderTimes.map((time) => (
+                    <button key={time} type="button" onClick={() => removeReminderTime(time)} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-[#1A73E8]">
+                      {time}
+                      {notificationSettings.reminderTimes.length > 1 ? <span className="text-[#9AA0A6]">×</span> : null}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => setReminderTimePickerOpen((prev) => !prev)} className="inline-flex h-[30px] items-center justify-center rounded-full border border-[#DADCE0] bg-white px-3 text-[12px] font-bold text-[#5F6368]">+ 追加</button>
+                </div>
+                {reminderTimePickerOpen ? (
+                  <div className="grid grid-cols-4 gap-2 pt-1">
+                    {REMINDER_HOUR_CHOICES.filter((time) => !notificationSettings.reminderTimes.includes(time)).map((time) => (
+                      <button key={time} type="button" onClick={() => addReminderTime(time)} className="rounded-[10px] border border-[#DADCE0] bg-white px-2 py-1.5 text-[12px] font-bold text-[#5F6368]">{time}</button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <SettingToggleRow title="リマインド通知" checked={notificationSettings.notifyReminder} onChange={(next) => { void updateNotificationSettings({ ...notificationSettings, notifyReminder: next }); }} />
+              <SettingToggleRow title="パートナーの完了通知" checked={notificationSettings.notifyCompletion} onChange={(next) => { void updateNotificationSettings({ ...notificationSettings, notifyCompletion: next }); }} />
+              <button type="button" onClick={handleTestNotification} disabled={pushLoading} className="w-full rounded-[10px] bg-[#C2A12F] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60">いま通知を送信</button>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (settingsView === "family") {
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[#202124]">家族招待・家族管理</p>
+          </div>
+          <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-5">
+            <p className="text-[14px] font-bold text-[#5F6368]">家族コード</p>
+            <p className="text-[30px] font-extrabold tracking-[0.16em] text-[#1A9BE8]">{inviteCode || "----"}</p>
+            <p className="text-[11px] font-medium text-[#9AA0A6]">パートナーにこのコードを共有してください</p>
+            <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(inviteCode); setInfoMessage("家族コードをコピーしました。"); } catch { setError("家族コードのコピーに失敗しました。"); } }} className="rounded-[12px] bg-[#1A9BE8] px-3 py-2 text-[14px] font-bold text-white">コードをコピー</button>
+          </div>
+          <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-5">
+            <p className="text-[14px] font-bold text-[#5F6368]">招待リンク</p>
+            <p className="truncate rounded-[10px] bg-[#F1F3F4] px-3 py-2 text-[13px] font-medium text-[#5F6368]">{inviteLink}</p>
+            <button type="button" onClick={async () => { if (navigator.share) { try { await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink }); return; } catch {} } try { await navigator.clipboard.writeText(inviteLink); setInfoMessage("招待リンクをコピーしました。"); } catch { setError("招待リンクの共有に失敗しました。"); } }} className="rounded-[12px] border-2 border-[#1A9BE8] bg-white px-3 py-2 text-[14px] font-bold text-[#1A9BE8]">リンクを共有</button>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[22px] font-bold text-[#202124]">家族メンバー</p>
+            {boot.users.map((member) => (
+              <div key={member.id} className="flex items-center gap-3 rounded-[14px] border border-[#E5EAF0] bg-white px-4 py-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full text-white" style={{ backgroundColor: member.color ?? "#1A9BE8" }}>
+                  <span className="material-symbols-rounded text-[20px]">person</span>
+                </div>
+                <p className="flex-1 text-[15px] font-semibold text-[#202124]">{member.name}{member.id === sessionUser.id ? "（あなた）" : ""}</p>
+                <span className={`text-[11px] font-bold ${member.id === sessionUser.id ? "text-[#1A9BE8]" : "text-[#34A853]"}`}>{member.id === sessionUser.id ? "管理者" : "参加中"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsView === "manage") {
+      return (
+        <div className="space-y-3 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => { if (standaloneScreen === "manage") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[#202124]">家事を管理</p>
+            <span className="text-[14px] font-medium text-[#9AA0A6]">{chores.length}件</span>
+          </div>
+          {listChores.map((chore) => {
+            const ChoreIcon = iconByName(chore.icon);
+            return (
+              <button key={chore.id} type="button" onClick={() => openEditChore(chore)} className="flex w-full items-center justify-between rounded-[14px] border border-[#E5EAF0] bg-white px-4 py-3 text-left">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: chore.bgColor }}>
+                    <ChoreIcon size={15} color={chore.iconColor} />
+                  </div>
+                  <div>
+                    <p className="text-[14px] font-bold text-[#202124]">{chore.title}</p>
+                    <p className="text-[11.5px] font-medium text-[#9AA0A6]">{chore.intervalDays}日ごと・{chore.defaultAssigneeName ?? "なし"}</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} color="#BDC1C6" />
+              </button>
+            );
+          })}
+          <button type="button" onClick={openAddChore} className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-[#E5EAF0] bg-white px-4 py-3 text-[15px] font-bold text-[#1A9BE8]"><Plus size={16} />家事を追加</button>
+        </div>
+      );
+    }
+
+    if (settingsView === "my-report") {
+      const myDiff = myReportPreviousTotal === null ? null : (myReport?.currentMonthTotal ?? 0) - myReportPreviousTotal;
+      const myTopChores = myReport?.choreCounts.slice(0, 3) ?? [];
+      const staleTasks = householdReport?.staleTasks.slice(0, 3) ?? [];
+      return (
+        <div className="space-y-3 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => { if (standaloneScreen === "my-report") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[#202124]">私のレポート</p>
+          </div>
+          <div className="rounded-[16px] bg-white px-5 py-5">
+            <p className="text-[18px] font-bold text-[#202124]">今月のわたし 🏠</p>
+            {myReportLoading ? (
+              <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F6368]">
+                <Loader2 size={14} className="animate-spin" />
+                読み込み中...
+              </div>
+            ) : (
+              <>
+                <div className="mt-2.5 flex items-end gap-2">
+                  <p className="text-[48px] font-bold leading-none text-[#1A9BE8]">{myReport?.currentMonthTotal ?? 0}</p>
+                  <p className="text-[18px] font-semibold text-[#5F6368]">回</p>
+                  <span className={`mb-1 inline-flex rounded-full px-2.5 py-1 text-[13px] font-bold ${myDiff !== null && myDiff >= 0 ? "bg-[#E6F4EA] text-[#1E8E3E]" : "bg-[#FCE8E6] text-[#C5221F]"}`}>
+                    {myDiff === null ? "-" : myDiff > 0 ? `+${myDiff}` : `${myDiff}`} 先月比
+                  </span>
+                </div>
+                <p className="mt-2 text-[13px] font-medium text-[#9AA0A6]">わたしの家事傾向をみてみよう</p>
+              </>
+            )}
+          </div>
+          <div className="rounded-[16px] bg-white px-5 py-5">
+            <p className="text-[18px] font-bold text-[#202124]">よく回った家事 TOP3</p>
+            <div className="mt-3 space-y-2">
+              {myTopChores.length === 0 ? (
+                <p className="text-[13px] font-medium text-[#9AA0A6]">まだ記録がありません。</p>
+              ) : (
+                myTopChores.map((item) => {
+                  const ItemIcon = iconByName(item.icon);
+                  return (
+                    <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                      <ItemIcon size={14} color={item.iconColor} />
+                      <p className="flex-1 truncate text-[15px] font-bold text-[#202124]">{item.title}</p>
+                      <p className="text-[15px] font-bold text-[#1A9BE8]">{item.count}回</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+          <div className="rounded-[16px] bg-white px-5 py-5">
+            <p className="text-[18px] font-bold text-[#202124]">久しぶりかも？ 🤔</p>
+            <div className="mt-3 space-y-2">
+              {staleTasks.length === 0 ? (
+                <p className="text-[13px] font-medium text-[#9AA0A6]">問題のある家事はありません。</p>
+              ) : (
+                staleTasks.map((item) => {
+                  const ItemIcon = iconByName(item.icon);
+                  const lastPerformed = new Date(item.lastPerformedAt);
+                  const lastPerformedLabel = `${lastPerformed.getMonth() + 1}/${lastPerformed.getDate()}`;
+                  return (
+                    <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                      <ItemIcon size={14} color={item.iconColor} />
+                      <p className="flex-1 truncate text-[14px] font-bold text-[#202124]">{item.title}</p>
+                      <p className="text-[12px] font-medium text-[#5F6368]">最終: {lastPerformedLabel}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsView === "sleep") {
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[#202124]">おやすみモード</p>
+          </div>
+          <p className="text-[13px] font-medium leading-relaxed text-[#5F6368]">
+            おやすみモード中はプッシュ通知が届きません。設定した時間帯は通知をミュートします。
+          </p>
+          <div className="rounded-[14px] border border-[#E5EAF0] bg-white p-2">
+            <SettingToggleRow
+              title="おやすみモード"
+              checked={sleepModeEnabled}
+              onChange={setSleepModeEnabled}
             />
+          </div>
+          <div className="space-y-2">
+            <p className="text-[14px] font-semibold text-[#5F6368]">おやすみ時間</p>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <select
+                value={sleepModeStart}
+                onChange={(event) => setSleepModeStart(event.target.value)}
+                disabled={!sleepModeEnabled}
+                className="h-12 rounded-[12px] border border-[#E5EAF0] bg-white px-3 text-center text-[30px] font-bold leading-none text-[#202124] disabled:opacity-50"
+              >
+                {REMINDER_HOUR_CHOICES.map((time) => (
+                  <option key={`sleep-start-inline-${time}`} value={time}>
+                    {time}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[22px] font-semibold text-[#5F6368]">〜</span>
+              <select
+                value={sleepModeEnd}
+                onChange={(event) => setSleepModeEnd(event.target.value)}
+                disabled={!sleepModeEnabled}
+                className="h-12 rounded-[12px] border border-[#E5EAF0] bg-white px-3 text-center text-[30px] font-bold leading-none text-[#202124] disabled:opacity-50"
+              >
+                {REMINDER_HOUR_CHOICES.map((time) => (
+                  <option key={`sleep-end-inline-${time}`} value={time}>
+                    {time}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-[11px] font-medium text-[#9AA0A6]">この時間帯はリマインド通知が届きません</p>
           </div>
         </div>
       );
     }
 
     return (
-      <div className="space-y-6" style={{ paddingTop: settingsHeaderHeight }}>
+      <div className="flex h-full flex-col">
         <div className="space-y-4">
-          <SettingToggleRow
-            title="期限当日通知"
-            subtitle="朝8時・夕方18時に通知"
-            checked={notificationSettings?.notifyDueToday ?? false}
-            onChange={(next) => {
-              if (!notificationSettings) return;
-              updateNotificationSettings({ ...notificationSettings, notifyDueToday: next });
-            }}
-          />
-
-          <SettingToggleRow
-            title="期限超過通知"
-            checked={notificationSettings?.remindDailyIfOverdue ?? false}
-            onChange={(next) => {
-              if (!notificationSettings) return;
-              updateNotificationSettings({ ...notificationSettings, remindDailyIfOverdue: next });
-            }}
-          />
-          <SettingToggleRow
-            title="完了時通知"
-            checked={notificationSettings?.notifyCompletion ?? false}
-            onChange={(next) => {
-              if (!notificationSettings) return;
-              updateNotificationSettings({ ...notificationSettings, notifyCompletion: next });
-            }}
-          />
-
-          <div className="rounded-[14px] bg-white p-4">
-            <p className="text-[15px] font-bold text-[#202124]">マイカラー</p>
-            <p className="mt-1 text-[12px] font-medium text-[#9AA0A6]">分担バランスのグラフに使う色</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {USER_COLOR_PALETTE.map((c) => {
-                const isActive = (sessionUser.color ?? USER_COLOR_PALETTE[0]) === c;
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        setError("");
-                        await apiFetch("/api/user", {
-                          method: "PATCH",
-                          body: JSON.stringify({ color: c }),
-                        });
-                        setBoot((prev) => {
-                          if (!prev || prev.needsRegistration) return prev;
-                          return {
-                            ...prev,
-                            sessionUser: prev.sessionUser ? { ...prev.sessionUser, color: c } : prev.sessionUser,
-                            users: prev.users.map((u) => (u.id === sessionUser.id ? { ...u, color: c } : u)),
-                          };
-                        });
-                      } catch (err: unknown) {
-                        setError((err as Error).message ?? "カラーの変更に失敗しました。");
-                      }
-                    }}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-transform ${isActive ? "scale-110 ring-2 ring-[#202124] ring-offset-2" : ""}`}
-                    style={{ backgroundColor: c }}
-                    aria-label={c}
-                  >
-                    {isActive ? (
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <path d="M2.5 7L5.5 10L11.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    ) : null}
-                  </button>
-                );
-              })}
+          <div className="space-y-1">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full text-white" style={{ backgroundColor: sessionUser.color ?? "#1A9BE8" }}>
+              <span className="material-symbols-rounded text-[20px]">person</span>
             </div>
+            <p className="text-[28px] font-bold leading-none text-[#202124]">{sessionUser.name}</p>
+            <p className="text-[13px] font-medium text-[#9AA0A6]">@{sessionUser.name.toLowerCase()} · いえたすく</p>
+            <p className="pt-1 text-[13px] font-semibold text-[#5F6368]">{myReport?.currentMonthTotal ?? 0} 今月の記録・ {chores.length} 連続日数</p>
           </div>
 
-          <FamilyCodeCard
-            inviteCode={boot.householdInviteCode}
-            partnerName={
-              boot.users.length > 1
-                ? boot.users.find((u) => u.id !== sessionUser.id)?.name ?? null
-                : null
-            }
-          />
+          <div className="h-px bg-[#DADCE0]" />
 
-          {boot.users.length <= 1 ? (
-            <JoinHouseholdCard
-              onJoin={async (code) => {
-                try {
-                  setError("");
-                  await apiFetch("/api/household/join", {
-                    method: "POST",
-                    body: JSON.stringify({ inviteCode: code }),
-                  });
-                  await refreshAll(statsPeriod);
-                } catch (err: unknown) {
-                  setError((err as Error).message ?? "参加に失敗しました。");
-                }
-              }}
-            />
-          ) : null}
-
-          <div className="rounded-[14px] bg-[#FFF8E8] p-4">
-            <p className="text-[17px] font-bold text-[#202124]">通知テスト</p>
-            <button
-              type="button"
-              onClick={handleTestNotification}
-              disabled={pushLoading}
-              className="mt-3 w-full rounded-[12px] bg-[#C2A12F] px-3 py-2 text-[14.4px] font-bold text-white disabled:opacity-60"
-            >
-              いま通知を送信
-            </button>
+          <div className="space-y-1">
+            <button type="button" onClick={() => openStandaloneScreen("my-report")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">trending_up</span><span className="text-[18px] leading-none font-semibold text-[#202124]">私のレポート</span></button>
+            <button type="button" onClick={() => openSettingsView("push")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">notifications</span><span className="text-[18px] leading-none font-semibold text-[#202124]">プッシュ通知設定</span></button>
+            <button type="button" onClick={() => openSettingsView("family")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">group</span><span className="text-[18px] leading-none font-semibold text-[#202124]">家族招待・家族管理</span></button>
+            <button type="button" onClick={() => openStandaloneScreen("manage")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">checklist</span><span className="text-[18px] leading-none font-semibold text-[#202124]">家事を管理</span></button>
+            <button type="button" onClick={() => openSettingsView("sleep")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">bedtime</span><span className="text-[18px] leading-none font-semibold text-[#202124]">おやすみモード</span></button>
           </div>
+        </div>
 
-          <div className="rounded-[14px] bg-white p-4">
-            <p className="text-[17px] font-bold text-[#202124]">アプリ更新</p>
-            <button
-              type="button"
-              onClick={handleManualAppUpdate}
-              disabled={appUpdateLoading}
-              className="mt-3 w-full rounded-[12px] bg-[#1A9BE8] px-3 py-2 text-[14.4px] font-bold text-white disabled:opacity-60"
-            >
-              {appUpdateLoading || appReloading
-                ? "最新化中..."
-                : "最新化"}
-            </button>
-          </div>
-
-          <div className="rounded-[14px] bg-white p-4">
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await apiFetch("/api/logout", { method: "POST" });
+        <div className="mt-auto pt-10">
+          <div className="h-px bg-[#DADCE0]" />
+          <button
+            type="button"
+            onClick={() => {
+              setInfoMessage("設定とサポートは準備中です。");
+            }}
+            className="mt-2 flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"
+          >
+            <span className="material-symbols-rounded text-[20px] text-[#5F6368]">settings</span>
+            <span className="text-[16px] font-medium text-[#202124]">設定とサポート</span>
+            <span className="material-symbols-rounded ml-auto text-[18px] text-[#5F6368]">expand_more</span>
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await apiFetch("/api/logout", { method: "POST", body: "{}" });
+                if (typeof window !== "undefined") {
                   window.location.reload();
-                } catch (err: unknown) {
-                  setError((err as Error).message ?? "ログアウトに失敗しました。");
                 }
-              }}
-              className="w-full rounded-[12px] bg-[#E8E8E8] px-3 py-2 text-[14.4px] font-bold text-[#5F6368]"
-            >
-              ログアウト
-            </button>
-          </div>
+              } catch (err: unknown) {
+                setError((err as Error).message ?? "ログアウトに失敗しました。");
+              }
+            }}
+            className="mt-2 flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"
+          >
+            <span className="material-symbols-rounded text-[20px] text-[#D93025]">logout</span>
+            <span className="text-[16px] font-medium text-[#D93025]">ログアウト</span>
+          </button>
         </div>
       </div>
     );
@@ -2248,7 +3770,7 @@ export function KajiApp() {
         }}
       >
         <div className="relative h-full overflow-hidden">
-          <div className="absolute left-0 right-0 top-0 z-30 overflow-hidden" style={isSwipeSheetMoving ? undefined : { height: activeTab === "home" ? homeHeaderHeight : activeTab === "list" ? listHeaderHeight : activeTab === "stats" ? statsHeaderHeight : settingsHeaderHeight }}>
+          <div className="absolute left-0 right-0 top-0 z-30 overflow-hidden" style={isSwipeSheetMoving ? undefined : { height: activeTab === "home" ? homeHeaderHeight : activeTab === "list" ? listHeaderHeight : activeTab === "records" ? recordsHeaderHeight : activeTab === "stats" ? statsHeaderHeight : settingsHeaderHeight }}>
             <div
               className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
               style={{
@@ -2434,6 +3956,44 @@ export function KajiApp() {
         </div>
       </section>
 
+      {settingsOpen ? (
+        <div className="fixed inset-0 z-[70]">
+          <button
+            type="button"
+            aria-label="設定を閉じる"
+            onClick={closeSettings}
+            className="absolute inset-0 bg-black/30"
+          />
+          <aside className={`absolute inset-y-0 left-0 w-[320px] max-w-[88%] ${settingsView === "menu" ? "bg-white" : "bg-[#F1F3F4]"} shadow-[12px_0_28px_rgba(0,0,0,0.2)]`}>
+            <div className="h-full overflow-y-auto px-4 pb-8 pt-6">
+              {renderMainTabContent("settings")}
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
+      {standaloneScreen ? (
+        <div className="fixed inset-0 z-[75] bg-[#F8F9FA]">
+          <div className="h-full overflow-y-auto px-5 pb-24 pt-5">
+            {renderMainTabContent("settings")}
+          </div>
+        </div>
+      ) : null}
+
+      {taskBanner ? (
+        <div className="pointer-events-none fixed left-0 right-0 top-3 z-[90] mx-auto max-w-[430px] px-4">
+          <div
+            className={`rounded-[12px] border px-4 py-2.5 text-center text-[14px] font-bold shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
+              taskBanner.tone === "green"
+                ? "border-[#CDE7D3] bg-[#E8F5E9] text-[#1E6A3A]"
+                : "border-[#CFE0FF] bg-[#E8F2FF] text-[#1A5AD8]"
+            }`}
+          >
+            {taskBanner.message}
+          </div>
+        </div>
+      ) : null}
+
       <div
         aria-hidden
         className="pointer-events-none fixed bottom-0 left-0 right-0 z-[45] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
@@ -2485,20 +4045,40 @@ export function KajiApp() {
 
       <nav className="fixed bottom-4 left-0 right-0 z-50 mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
-          <button type="button" onClick={() => { closeAssignment(); setActiveTab("home"); setRefreshAnimationSeed((p) => p + 1); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>home</span>
+          <button
+            type="button"
+            onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("home"); setRefreshAnimationSeed((p) => p + 1); }}
+            className="flex w-[62px] flex-col items-center gap-0.5 py-1"
+          >
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>home</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>ホーム</span>
           </button>
-          <button type="button" onClick={() => { closeAssignment(); setActiveTab("list"); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "#9AA0A6" }}>checklist</span>
+          <button
+            type="button"
+            onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("records"); }}
+            className="flex w-[62px] flex-col items-center gap-0.5 py-1"
+          >
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "records" ? PRIMARY_COLOR : "#9AA0A6" }}>menu_book</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "records" ? PRIMARY_COLOR : "#9AA0A6" }}>きろく</span>
           </button>
-          <button type="button" onClick={() => { closeAssignment(); openAddChore(); }} className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[#1A9BE8] text-white shadow-md">
+          <button type="button" onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); openAddChore(); }} className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[#1A9BE8] text-white shadow-md">
             <Plus size={20} strokeWidth={2.5} />
           </button>
-          <button type="button" onClick={() => { closeAssignment(); setActiveTab("stats"); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "#9AA0A6" }}>bar_chart</span>
+          <button
+            type="button"
+            onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("list"); }}
+            className="flex w-[62px] flex-col items-center gap-0.5 py-1"
+          >
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "#9AA0A6" }}>calendar_month</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "#9AA0A6" }}>カレンダー</span>
           </button>
-          <button type="button" onClick={() => { closeAssignment(); setActiveTab("settings"); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "settings" ? PRIMARY_COLOR : "#9AA0A6" }}>settings</span>
+          <button
+            type="button"
+            onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("stats"); }}
+            className="flex w-[62px] flex-col items-center gap-0.5 py-1"
+          >
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "#9AA0A6" }}>bar_chart</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "#9AA0A6" }}>レポート</span>
           </button>
         </div>
       </nav>
@@ -2562,24 +4142,48 @@ export function KajiApp() {
       </BottomSheet>
       <BottomSheet
         open={memoOpen}
-        onClose={() => setMemoOpen(false)}
+        onClose={() => {
+          setMemoOpen(false);
+          setMemoBaseDateKey(null);
+        }}
         title=""
         maxHeightClassName="min-h-[62vh] max-h-[88vh]"
       >
         <div className="space-y-3 pb-2">
-          <p className="text-[14.4px] font-bold text-[#5F6368]">メモ（任意）</p>
+          <p className="text-[14.4px] font-bold text-[#5F6368]">ひとこと（任意）</p>
           <textarea
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
-            placeholder="通知に添えるメモを入力"
+            placeholder="排水口もきれいにしたよ、など"
             className="h-[80px] w-full resize-none rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15.6px] font-medium text-[#202124] outline-none"
           />
+          <div className="space-y-2">
+            <p className="text-[14.4px] font-bold text-[#5F6368]">いつやった？</p>
+            {memoFutureBaseDateKey ? (
+              <div className="rounded-[12px] border border-[#D2E3FC] bg-[#EEF4FE] px-3 py-2">
+                <p className="text-[13px] font-semibold text-[#1A5AD8]">{memoFutureBaseDateKey} を実施日として記録します</p>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                {PERFORMED_DAY_OPTIONS.map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    onClick={() => setPerformedDayOffset(option.offset)}
+                    className={`rounded-[12px] px-3 py-2 text-[13px] font-bold ${performedDayOffset === option.offset ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={submitRecord}
             className="w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[15.6px] font-bold text-white"
           >
-            記録する
+            やったよ！
           </button>
           <button
             type="button"
@@ -2631,6 +4235,147 @@ export function KajiApp() {
           </AnimatedList>
         </div>
       </BottomSheet>
+
+      <BottomSheet
+        open={rescheduleOpen}
+        onClose={() => {
+          setRescheduleOpen(false);
+          setRescheduleTarget(null);
+        }}
+        title=""
+        maxHeightClassName="min-h-[56vh] max-h-[86vh]"
+      >
+        <div className="space-y-4 pb-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[22px] font-bold text-[#202124]">日にちを変更</p>
+            <button
+              type="button"
+              onClick={() => {
+                setRescheduleOpen(false);
+                setRescheduleTarget(null);
+              }}
+              className="text-[#5F6368]"
+            >
+              <span className="material-symbols-rounded text-[24px]">close</span>
+            </button>
+          </div>
+          {rescheduleTarget ? (
+            <div className="flex items-center gap-2 rounded-[12px] bg-[#F1F3F4] px-3 py-2">
+              {(() => {
+                const TaskIcon = iconByName(rescheduleTarget.icon);
+                return <TaskIcon size={16} color={rescheduleTarget.iconColor} />;
+              })()}
+              <p className="text-[14px] font-semibold text-[#202124]">{rescheduleTarget.title}</p>
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <p className="text-[14px] font-medium text-[#5F6368]">いつに移動しますか？</p>
+            <button
+              type="button"
+              onClick={() => setRescheduleChoice("tomorrow")}
+              className={`flex w-full items-center justify-between rounded-[12px] px-3 py-3 text-left ${rescheduleChoice === "tomorrow" ? "border-2 border-[#4CAF50] bg-[#E8F5E9]" : "border border-[#E5EAF0] bg-white"}`}
+            >
+              <div>
+                <span className="text-[14px] font-bold text-[#202124]">次の日に変更</span>
+                <p className="text-[11px] font-medium text-[#5F6368]">{shiftDateKey(rescheduleBaseDateKey, 1)}</p>
+              </div>
+              <span className="material-symbols-rounded text-[18px] text-[#9AA0A6]">
+                {rescheduleChoice === "tomorrow" ? "check_circle" : "radio_button_unchecked"}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRescheduleChoice("next_same_weekday")}
+              className={`flex w-full items-center justify-between rounded-[12px] px-3 py-3 text-left ${rescheduleChoice === "next_same_weekday" ? "border-2 border-[#4CAF50] bg-[#E8F5E9]" : "border border-[#E5EAF0] bg-white"}`}
+            >
+              <div>
+                <span className="text-[14px] font-bold text-[#202124]">来週の同じ曜日</span>
+                <p className="text-[11px] font-medium text-[#5F6368]">{shiftDateKey(rescheduleBaseDateKey, 7)}</p>
+              </div>
+              <span className="material-symbols-rounded text-[18px] text-[#9AA0A6]">
+                {rescheduleChoice === "next_same_weekday" ? "check_circle" : "radio_button_unchecked"}
+              </span>
+            </button>
+            <div className={`space-y-2 rounded-[12px] px-3 py-3 ${rescheduleChoice === "custom" ? "border-2 border-[#4CAF50] bg-[#E8F5E9]" : "border border-[#E5EAF0] bg-white"}`}>
+              <button
+                type="button"
+                onClick={() => setRescheduleChoice("custom")}
+                className="flex w-full items-center justify-between text-left"
+              >
+                <span className="text-[14px] font-bold text-[#202124]">日付を指定</span>
+                <span className="material-symbols-rounded text-[18px] text-[#9AA0A6]">
+                  {rescheduleChoice === "custom" ? "check_circle" : "radio_button_unchecked"}
+                </span>
+              </button>
+              <input
+                type="date"
+                value={rescheduleCustomDate}
+                onChange={(event) => {
+                  setRescheduleCustomDate(event.target.value);
+                  setRescheduleChoice("custom");
+                }}
+                className="h-11 w-full rounded-[10px] border border-[#DADCE0] bg-white px-3 text-[14px] font-semibold text-[#202124] outline-none"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void applyReschedule();
+            }}
+            className="w-full rounded-[12px] bg-[#4CAF50] px-4 py-3 text-[15px] font-bold text-white"
+          >
+            この日に変更
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!rescheduleTarget) return;
+              setRescheduleOpen(false);
+              openMemo(rescheduleTarget, rescheduleBaseDateKey);
+            }}
+            className="w-full rounded-[12px] border border-[#4CAF50] bg-white px-4 py-3 text-[15px] font-bold text-[#3EA84A]"
+          >
+            完了にする
+          </button>
+        </div>
+      </BottomSheet>
+
+      {undoConfirmTarget ? (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setUndoConfirmTarget(null)}
+        >
+          <div
+            className="mx-6 w-full max-w-[320px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-center text-[17px] font-bold text-[#202124]">
+              「{undoConfirmTarget.title}」の完了を
+              <br />
+              取り消しますか？
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setUndoConfirmTarget(null)}
+                className="rounded-[14px] border border-[#DADCE0] bg-white px-4 py-[11px] text-[15px] font-bold text-[#5F6368]"
+              >
+                やめる
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void confirmUndoRecord();
+                }}
+                className="rounded-[14px] bg-[#D45858] px-4 py-[11px] text-[15px] font-bold text-white"
+              >
+                取り消す
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {deleteConfirmOpen ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">

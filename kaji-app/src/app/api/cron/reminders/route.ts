@@ -26,9 +26,9 @@ export async function GET(request: Request) {
 
   const households = await prisma.household.findMany({
     where: {
-      OR: [{ notifyDueToday: true }, { remindDailyIfOverdue: true }],
+      OR: [{ notifyReminder: true }, { notifyDueToday: true }, { remindDailyIfOverdue: true }],
     },
-    select: { id: true, notifyDueToday: true, remindDailyIfOverdue: true },
+    select: { id: true, notifyReminder: true, notifyDueToday: true, remindDailyIfOverdue: true },
   });
 
   const householdIds = households.map((h) => h.id);
@@ -70,6 +70,10 @@ export async function GET(request: Request) {
 
   let sent = 0;
   for (const household of households) {
+    const notifyReminder =
+      household.notifyReminder ?? (household.notifyDueToday || household.remindDailyIfOverdue);
+    if (!notifyReminder) continue;
+
     const chores = choresByHousehold.get(household.id) ?? [];
 
     const dueChores = chores
@@ -83,23 +87,20 @@ export async function GET(request: Request) {
           : 0;
         return {
           title: c.title,
+          icon: c.icon,
           dueAt,
           isOverdue,
           isDueToday: dueAt >= todayStart && dueAt < tomorrowStart,
           overdueDays,
         };
       })
-      .filter(
-        (c) =>
-          (household.notifyDueToday && c.isDueToday) ||
-          (household.remindDailyIfOverdue && c.isOverdue),
-      );
+      .filter((c) => c.isDueToday || c.isOverdue);
 
     if (!dueChores.length) continue;
 
     const subs = subsByHousehold.get(household.id) ?? [];
     const payload = buildReminderPayload({
-      chores: dueChores.map((x) => ({ title: x.title, isOverdue: x.isOverdue, overdueDays: x.overdueDays })),
+      chores: dueChores.map((x) => ({ title: x.title, icon: x.icon })),
     });
 
     await Promise.all(

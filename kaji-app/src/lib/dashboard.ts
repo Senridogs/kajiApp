@@ -59,28 +59,9 @@ export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()
   );
   const tomorrowChores = chores.filter(
     (c) =>
-      (c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue))) &&
-      !(c.isBigTask && c.doneToday),
+      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || c.doneToday)),
   );
-  const priorityChoreIds = new Set(
-    [...todayChores, ...tomorrowChores].map((chore) => chore.id),
-  );
-  const bigTaskWindowEnd = addDays(startOfJstDay(now), 40).getTime();
-  const upcomingBigChores = chores
-    .filter((c) => {
-      if (!c.isBigTask || priorityChoreIds.has(c.id) || !c.dueAt) return false;
-      const dueDayTime = startOfJstDay(new Date(c.dueAt)).getTime();
-      return dueDayTime <= bigTaskWindowEnd;
-    })
-    .sort((a, b) => {
-      const aTime = a.dueAt
-        ? startOfJstDay(new Date(a.dueAt)).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      const bTime = b.dueAt
-        ? startOfJstDay(new Date(b.dueAt)).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      return aTime - bTime;
-    });
+  const upcomingBigChores: ChoreWithComputed[] = [];
 
   return { todayChores, tomorrowChores, upcomingBigChores };
 }

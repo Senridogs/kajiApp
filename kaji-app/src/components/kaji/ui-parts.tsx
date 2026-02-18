@@ -56,7 +56,7 @@ export function ScreenTitle({ title }: { title: string }) {
 }
 
 export function HomeSectionTitle({ title }: { title: string }) {
-  return <h2 className="text-[22px] font-bold leading-none text-[#202124]">{title}</h2>;
+  return <h2 className="text-[18px] font-bold leading-none text-[#202124]">{title}</h2>;
 }
 
 export function HomeTaskRow({
@@ -91,14 +91,18 @@ export function HomeTaskRow({
   // Determine styles based on state
   let containerStyle: React.CSSProperties = { backgroundColor: "#FFFFFF", borderColor: "#E5EAF0" };
   let titleColor = chore.isOverdue ? "#D93025" : "#202124";
-  let checkboxStyle: React.CSSProperties = { borderColor: "#C0C6CC", backgroundColor: "white" };
+  let checkboxStyle: React.CSSProperties = {
+    borderColor: "#AAB3BC",
+    backgroundColor: "white",
+    borderWidth: 2,
+  };
 
   if (done) {
     if (skipped) {
       // Skipped: Gray theme
       containerStyle = { backgroundColor: "#F1F3F4", borderColor: "#DADCE0" };
       titleColor = "#5F6368";
-      checkboxStyle = { backgroundColor: "#BDC1C6", borderColor: "#BDC1C6" };
+      checkboxStyle = { backgroundColor: "#BDC1C6", borderColor: "#BDC1C6", borderWidth: 2 };
     } else {
       // Done: Actor color theme (light background)
       containerStyle = {
@@ -106,10 +110,10 @@ export function HomeTaskRow({
         borderColor: `${actorColor}4D`, // ~30% opacity
       };
       titleColor = darkenColor(actorColor, 20);
-      checkboxStyle = { backgroundColor: actorColor, borderColor: actorColor };
+      checkboxStyle = { backgroundColor: actorColor, borderColor: actorColor, borderWidth: 2 };
     }
   } else if (assigneeColor) {
-    checkboxStyle = { borderColor: assigneeColor, backgroundColor: "white" };
+    checkboxStyle = { borderColor: assigneeColor, backgroundColor: "white", borderWidth: 2 };
   }
 
   return (
@@ -170,7 +174,7 @@ export function HomeTaskRow({
                 : `${chore.title}を完了にする`
         }
         aria-pressed={done}
-        className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${isUpdating
+        className={`flex h-12 w-12 items-center justify-center rounded-[14px] border transition-all active:scale-105 motion-safe:active:animate-[checkBounce_260ms_ease-out] ${isUpdating
           ? "border-[#DADCE0] bg-[#F1F3F4]"
           : done
             ? "text-white"
@@ -181,18 +185,22 @@ export function HomeTaskRow({
         style={isUpdating ? undefined : checkboxStyle}
       >
         {isUpdating ? (
-          <Loader2 size={14} className="animate-spin text-[#5F6368]" />
+          <Loader2 size={16} className="animate-spin text-[#5F6368]" />
         ) : (
           <span
             className={`flex items-center justify-center transition-opacity ${done
               ? "opacity-100 motion-safe:animate-[checkPop_220ms_ease-out_both]"
-              : "opacity-0"
+              : "opacity-100"
               }`}
           >
             {skipped ? (
-              <Minus size={15} strokeWidth={4} className="text-white" />
+              <Minus size={18} strokeWidth={4} className="text-white" />
             ) : (
-              <Check size={15} strokeWidth={3} className="text-white" />
+              <Check
+                size={18}
+                strokeWidth={3}
+                className={done ? "text-white" : "text-[#BCC3CA]"}
+              />
             )}
           </span>
         )}

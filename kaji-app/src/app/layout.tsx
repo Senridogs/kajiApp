@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+﻿import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 const SVG_ICON_URL = "/app-icon.svg";
@@ -10,7 +10,6 @@ const MANIFEST_URL = "/manifest.webmanifest?v=android-maskable-v3";
 export const metadata: Metadata = {
   title: "いえたすく",
   description: "家事分担を手軽に管理できるアプリ",
-  themeColor: "#4285F4",
   manifest: MANIFEST_URL,
   icons: {
     icon: [
@@ -21,6 +20,10 @@ export const metadata: Metadata = {
     shortcut: [{ url: ICON_192_URL, type: "image/png" }],
     apple: [{ url: APPLE_ICON_URL, sizes: "180x180", type: "image/png" }],
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#4285F4",
 };
 
 export default function RootLayout({

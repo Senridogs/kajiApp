@@ -16,7 +16,8 @@ async function createHouseholdWithUniqueInviteCode(maxRetries = 5) {
       return await prisma.household.create({
         data: {
           inviteCode: generateInviteCode(),
-          reminderTimes: ["06:00", "20:00"],
+          reminderTimes: ["08:00", "18:00"],
+          notifyReminder: true,
           notifyDueToday: false,
           remindDailyIfOverdue: false,
           notifyCompletion: false,
@@ -91,6 +92,8 @@ export async function POST(request: Request) {
       return NextResponse.json({
         user: { id: existingUser.id, name: existingUser.name },
         householdInviteCode: existingUser.household.inviteCode,
+        isExistingUser: true,
+        onboardingRequired: false,
       });
     }
 
@@ -131,6 +134,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       user: { id: user.id, name: user.name },
       householdInviteCode: household.inviteCode,
+      isExistingUser: false,
+      onboardingRequired: !inviteCodeInput,
     });
   } catch (error: unknown) {
     console.error("[api/register] failed", error);

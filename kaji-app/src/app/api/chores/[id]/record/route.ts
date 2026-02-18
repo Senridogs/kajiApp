@@ -22,7 +22,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   const [chore, user] = await Promise.all([
     prisma.chore.findFirst({
       where: { id, householdId: session.householdId, archived: false },
-      select: { id: true, title: true },
+      select: { id: true, title: true, icon: true },
     }),
     prisma.user.findUnique({ where: { id: session.userId } }),
   ]);
@@ -52,6 +52,12 @@ export async function POST(request: Request, { params }: RouteParams) {
     },
   });
 
+  // A completion/skipped record finalizes the current schedule.
+  // Any 1-shot date overrides can be discarded afterwards.
+  await prisma.choreScheduleOverride.deleteMany({
+    where: { choreId: chore.id },
+  });
+
   // Notify other devices about the change
   await touchHousehold(session.householdId);
 
@@ -72,6 +78,7 @@ export async function POST(request: Request, { params }: RouteParams) {
 
       const payload = buildCompletionPayload({
         choreTitle: chore.title,
+        choreIcon: chore.icon,
         userName: user.name,
         memo: record.memo,
       });

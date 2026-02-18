@@ -4,6 +4,7 @@ import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { computeChore } from "@/lib/dashboard";
 import { prisma } from "@/lib/prisma";
 import { touchHousehold } from "@/lib/sync";
+import { addDays, startOfJstDay } from "@/lib/time";
 
 type CreateChoreBody = {
   title?: string;
@@ -62,6 +63,15 @@ export async function POST(request: Request) {
     return badRequest("lastPerformedAt is invalid.");
   }
 
+  // If a future date is passed, treat it as "first scheduled date" (todo),
+  // not as an already completed record on that future day.
+  const todayStart = startOfJstDay(new Date());
+  const selectedDayStart = startOfJstDay(performedAt);
+  const initialPerformedAt =
+    selectedDayStart > todayStart
+      ? addDays(selectedDayStart, -intervalDays)
+      : performedAt;
+
   const chore = await prisma.$transaction(async (tx) => {
     const created = await tx.chore.create({
       data: {
@@ -81,7 +91,7 @@ export async function POST(request: Request) {
         householdId: session.householdId,
         choreId: created.id,
         userId: session.userId,
-        performedAt,
+        performedAt: initialPerformedAt,
         memo: null,
         isInitial: true,
       },

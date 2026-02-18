@@ -173,6 +173,18 @@ export function ChoreEditor({
     onChange({ ...value, intervalDays: next });
   };
 
+  const setIntervalDays = (rawValue: string) => {
+    const trimmed = rawValue.replace(/[^\d]/g, "");
+    if (!trimmed) {
+      onChange({ ...value, intervalDays: MIN_INTERVAL_DAYS });
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return;
+    const next = Math.min(MAX_INTERVAL_DAYS, Math.max(MIN_INTERVAL_DAYS, parsed));
+    onChange({ ...value, intervalDays: next });
+  };
+
   return (
     <div className="space-y-[10px] pb-0">
       <div>
@@ -191,10 +203,10 @@ export function ChoreEditor({
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => updateIntervalDays(-30)}
+              onClick={() => updateIntervalDays(-7)}
               className="rounded-full bg-[#F1F3F4] px-3 py-[5px] text-[12px] font-bold text-[#5F6368]"
             >
-              -30
+              -7
             </button>
             <button
               type="button"
@@ -204,7 +216,17 @@ export function ChoreEditor({
               <Minus size={16} className="text-[#6F5A4B]" />
             </button>
           </div>
-          <p className="text-[16.8px] font-bold text-[#202124]">{value.intervalDays}日ごと</p>
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={String(value.intervalDays)}
+              inputMode="numeric"
+              onChange={(e) => setIntervalDays(e.target.value)}
+              className="w-[58px] rounded-lg border border-[#DADCE0] bg-white px-2 py-1.5 text-center text-[16.8px] font-bold text-[#202124] outline-none"
+              aria-label="interval-days"
+            />
+            <span className="text-[15px] font-bold text-[#202124]">日ごと</span>
+          </div>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -215,17 +237,17 @@ export function ChoreEditor({
             </button>
             <button
               type="button"
-              onClick={() => updateIntervalDays(30)}
+              onClick={() => updateIntervalDays(7)}
               className="rounded-full bg-[#1A9BE8] px-3 py-[5px] text-[12px] font-bold text-white"
             >
-              +30
+              +7
             </button>
           </div>
         </div>
       </div>
 
       <div>
-        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">前回実施日時 *</p>
+        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">開始日 *</p>
         <input
           type="date"
           value={lastPerformedDate}
@@ -237,9 +259,10 @@ export function ChoreEditor({
           onPaste={(e) => e.preventDefault()}
           inputMode="none"
           max={maxDate}
+          disabled={mode === "edit"}
           required
-          aria-label="last-performed-date"
-          className="w-full rounded-[14px] border border-[#DADCE0] bg-white py-3 pl-3 pr-3 text-[16.8px] font-semibold text-[#202124] outline-none"
+          aria-label="start-date"
+          className={`w-full rounded-[14px] border border-[#DADCE0] py-3 pl-3 pr-3 text-[16.8px] font-semibold text-[#202124] outline-none ${mode === "edit" ? "bg-[#F1F3F4] text-[#5F6368]" : "bg-white"}`}
         />
       </div>
 
