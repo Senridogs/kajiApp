@@ -3311,7 +3311,7 @@ export function KajiApp() {
           chore.lastPerformedAt && !chore.lastRecordSkipped
             ? toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)))
             : null;
-        const isDone = performedDateKey === dateKey;
+        const isDone = performedDateKey === dateKey && dateKey < todayKey;
         const chipClass = isDone
           ? "border"
           : "border border-[#E5EAF0] bg-white text-[#202124]";
@@ -3339,7 +3339,7 @@ export function KajiApp() {
             onDragEnd={clearDragState}
             onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
             className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
-            style={doneStyle}
+            style={{ touchAction: "none", ...doneStyle }}
           >
             <ChipIcon size={13} color={chore.iconColor} />
             <span>{chore.title}</span>
@@ -3454,6 +3454,15 @@ export function KajiApp() {
                     );
                   })}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setCalendarExpanded(true)}
+                  className="mt-1 flex w-full items-center justify-center gap-1 rounded-[8px] py-1.5 text-[11px] font-semibold text-[#9AA0A6] hover:bg-[#F1F3F4] active:bg-[#E8EAED]"
+                  aria-label="カレンダー表示に拡大"
+                >
+                  <ChevronDown size={14} />
+                  <span>カレンダー表示に拡大</span>
+                </button>
               </div>
             ) : null}
 
