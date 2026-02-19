@@ -74,13 +74,15 @@ export function buildCalendarMonthCountsByDate(
   ) as Record<string, number>;
 
   for (const chore of chores) {
-    const dateKeysForChore = new Set<string>();
+    const countByDateForChore = new Map<string, number>();
+    const addCount = (dateKey: string) => {
+      if (!(dateKey in countsByDate)) return;
+      countByDateForChore.set(dateKey, (countByDateForChore.get(dateKey) ?? 0) + 1);
+    };
 
     if (chore.latestRecord && !chore.latestRecord.isSkipped) {
       const performedDateKey = toJstDateKey(startOfJstDay(chore.latestRecord.performedAt));
-      if (performedDateKey in countsByDate) {
-        dateKeysForChore.add(performedDateKey);
-      }
+      addCount(performedDateKey);
     }
 
     const overrideKeys = chore.scheduleOverrides
@@ -88,19 +90,19 @@ export function buildCalendarMonthCountsByDate(
       .filter((dateKey) => dateKey in countsByDate);
 
     if (overrideKeys.length > 0) {
-      overrideKeys.forEach((dateKey) => dateKeysForChore.add(dateKey));
+      overrideKeys.forEach((dateKey) => addCount(dateKey));
     } else {
       const dueBase = chore.latestRecord?.performedAt ?? chore.createdAt;
       const dueAt = addDays(dueBase, chore.intervalDays);
       for (const entry of dateEntries) {
         if (isScheduledOnDate(dueAt, chore.intervalDays, entry.date)) {
-          dateKeysForChore.add(entry.dateKey);
+          addCount(entry.dateKey);
         }
       }
     }
 
-    dateKeysForChore.forEach((dateKey) => {
-      countsByDate[dateKey] += 1;
+    countByDateForChore.forEach((count, dateKey) => {
+      countsByDate[dateKey] += count;
     });
   }
 

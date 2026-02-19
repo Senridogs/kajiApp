@@ -57,6 +57,14 @@ import {
   StatsPeriodKey,
   StatsResponse,
 } from "@/lib/types";
+import {
+  applyHomeStoredOrder,
+  sanitizeHomeOrderByDate,
+  moveAcrossDates,
+  reorderWithinDate,
+  type HomeOrderByDate,
+  type DropPosition,
+} from "@/lib/home-order";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const JA_COLLATOR = new Intl.Collator("ja");
@@ -75,11 +83,6 @@ const PULL_REFRESH_TRIGGER_PX = 74;
 const PULL_REFRESH_MAX_PX = 128;
 const PULL_REFRESH_HOLD_PX = 28;
 const REMINDER_HOUR_CHOICES = Array.from({ length: 18 }, (_, idx) => `${String(6 + idx).padStart(2, "0")}:00`);
-const PERFORMED_DAY_OPTIONS = [
-  { label: "今日", offset: 0 },
-  { label: "昨日", offset: 1 },
-  { label: "一昨日", offset: 2 },
-] as const;
 const REACTION_CHOICES = ["👏", "❤️", "✨", "🎉"] as const;
 const REACTION_ICON_MAP: Record<(typeof REACTION_CHOICES)[number], { icon: string; color: string }> = {
   "👏": { icon: "thumb_up", color: "#1A9BE8" },
@@ -104,7 +107,7 @@ type AssignmentTabKey = "daily" | "big";
 const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily", "big"] as const;
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
-type SettingsViewKey = "menu" | "my-report" | "push" | "push-guide" | "family" | "manage" | "sleep";
+type SettingsViewKey = "menu" | "my-report" | "my-records" | "push" | "push-guide" | "family" | "manage" | "sleep";
 type PushGuidePlatform = "android" | "iphone";
 type PushGuideContent = {
   setupTitle: string;
@@ -114,18 +117,40 @@ type PushGuideContent = {
 };
 type RescheduleChoice = "tomorrow" | "next_same_weekday" | "custom";
 type RescheduleConfirmOrigin = "sheet" | "drag" | "future-record" | "future-skip";
+type HomeDropInsert = {
+  targetDateKey: string;
+  targetChoreId: string;
+  position: DropPosition;
+};
 type PendingRescheduleConfirm = {
   origin: RescheduleConfirmOrigin;
   choreId: string;
   choreTitle: string;
   sourceDateKey: string;
   targetDateKey: string;
+  mergeIfDuplicate: boolean;
+  homeDropInsert?: HomeDropInsert;
 };
-type StandaloneScreenKey = "manage" | "my-report";
-type StandaloneOriginKey = "settings" | "list" | "stats";
+type PendingMergeDuplicateConfirm = {
+  origin: RescheduleConfirmOrigin;
+  choreId: string;
+  choreTitle: string;
+  sourceDateKey: string;
+  targetDateKey: string;
+  homeDropInsert?: HomeDropInsert;
+};
+type StandaloneScreenKey = "manage" | "my-report" | "my-records";
+type StandaloneOriginKey = "settings" | "list" | "stats" | "records";
+type TimelineRecordGroup = {
+  dateKey: string;
+  label: string;
+  items: ChoreRecordItem[];
+};
 const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
 const APP_UPDATE_TARGET_TAB_STORAGE_KEY = "kaji_app_update_target_tab";
 const ONBOARDING_PENDING_STORAGE_KEY = "kaji_onboarding_pending";
+const HOME_ORDER_STORAGE_KEY_PREFIX = "kaji_home_order_v1";
+const HOME_ORDER_RETENTION_DAYS = 120;
 const ONBOARDING_PRESET_CHORES = [
   { title: "食器洗い", icon: "cooking-pot", iconColor: "#33C28A", bgColor: "#EAF7EF", intervalDays: 1, isBigTask: false },
   { title: "洗濯", icon: "shirt", iconColor: "#7A6FF0", bgColor: "#EFEAFE", intervalDays: 2, isBigTask: false },
@@ -213,6 +238,35 @@ function onboardingPresetLastPerformedAt(intervalDays: number, now = new Date())
 
 function applyPullResistance(distance: number) {
   return Math.min(PULL_REFRESH_MAX_PX, Math.max(0, distance) * 0.5);
+}
+
+function buildGroupedTimelineRecords(items: ChoreRecordItem[]): TimelineRecordGroup[] {
+  const todayKey = toJstDateKey(startOfJstDay(new Date()));
+  const yesterdayKey = toJstDateKey(addDays(startOfJstDay(new Date()), -1));
+  const filtered = items
+    .filter((record) => !record.isInitial && !record.isSkipped)
+    .slice(0, 60);
+  const groups = new Map<string, ChoreRecordItem[]>();
+  filtered.forEach((record) => {
+    const key = toJstDateKey(startOfJstDay(new Date(record.performedAt)));
+    const list = groups.get(key) ?? [];
+    list.push(record);
+    groups.set(key, list);
+  });
+  return [...groups.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([dateKey, groupedItems]) => ({
+      dateKey,
+      label: isSameDateKey(dateKey, todayKey)
+        ? "今日"
+        : isSameDateKey(dateKey, yesterdayKey)
+          ? "昨日"
+          : (() => {
+            const [, m, d] = dateKey.split("-").map(Number);
+            return `${m}/${d}`;
+          })(),
+      items: groupedItems.sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime()),
+    }));
 }
 
 function toMonthKey(date: Date) {
@@ -406,6 +460,29 @@ function mergeAssignments(
   return merged;
 }
 
+function buildHomeDateKeys(now = new Date()) {
+  const base = startOfJstDay(now);
+  const today = toJstDateKey(base);
+  const yesterday = toJstDateKey(addDays(base, -1));
+  const tomorrow = toJstDateKey(addDays(base, 1));
+  return { today, yesterday, tomorrow };
+}
+
+function sameHomeOrderByDate(a: HomeOrderByDate, b: HomeOrderByDate) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    const left = a[key] ?? [];
+    const right = b[key] ?? [];
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) return false;
+    }
+  }
+  return true;
+}
+
 export function KajiApp() {
   const [boot, setBoot] = useState<BootstrapResponse | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -467,10 +544,13 @@ export function KajiApp() {
   );
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [pendingRescheduleConfirm, setPendingRescheduleConfirm] = useState<PendingRescheduleConfirm | null>(null);
+  const [pendingMergeDuplicateConfirm, setPendingMergeDuplicateConfirm] =
+    useState<PendingMergeDuplicateConfirm | null>(null);
   const [rescheduleConfirmLoading, setRescheduleConfirmLoading] = useState(false);
   const [draggingChore, setDraggingChore] = useState<ChoreWithComputed | null>(null);
   const [dragSourceDateKey, setDragSourceDateKey] = useState<string | null>(null);
   const [dragTargetDateKey, setDragTargetDateKey] = useState<string | null>(null);
+  const [homeDropTarget, setHomeDropTarget] = useState<HomeDropInsert | null>(null);
   const [touchDragging, setTouchDragging] = useState(false);
   const [touchDragPos, setTouchDragPos] = useState({ x: 0, y: 0 });
   const touchDragInfoRef = useRef<{
@@ -491,7 +571,12 @@ export function KajiApp() {
   const calendarSummaryEnabledRef = useRef(false);
   const calendarSwipeStartXRef = useRef<number | null>(null);
   const calendarSwipeStartYRef = useRef<number | null>(null);
-  const dropDraggedChoreToDateRef = useRef<(targetDateKey: string) => Promise<void>>(async () => {});
+  const dropDraggedChoreToDateRef = useRef<
+    (targetDateKey: string, options?: { homeDropInsert?: HomeDropInsert }) => Promise<void>
+  >(async () => {});
+  const handleHomeDropRef = useRef<(drop: HomeDropInsert) => void>(() => { });
+  const homeSectionChoreIdsRef = useRef<Record<string, string[]>>({});
+  const [homeOrderByDate, setHomeOrderByDate] = useState<HomeOrderByDate>({});
   const [reactionPickerRecordId, setReactionPickerRecordId] = useState<string | null>(null);
 
   const [registerName, setRegisterName] = useState("");
@@ -517,7 +602,6 @@ export function KajiApp() {
   const [memoTarget, setMemoTarget] = useState<ChoreWithComputed | null>(null);
   const [memoBaseDateKey, setMemoBaseDateKey] = useState<string | null>(null);
   const [memo, setMemo] = useState("");
-  const [performedDayOffset, setPerformedDayOffset] = useState<(typeof PERFORMED_DAY_OPTIONS)[number]["offset"]>(0);
   const [memoOpen, setMemoOpen] = useState(false);
   const [undoConfirmTarget, setUndoConfirmTarget] = useState<ChoreWithComputed | null>(null);
   const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
@@ -613,6 +697,10 @@ export function KajiApp() {
       setActiveTab("list");
       return;
     }
+    if (origin === "records") {
+      setActiveTab("records");
+      return;
+    }
     setActiveTab("stats");
   }, [closeStandaloneScreen, standaloneOrigin]);
   const swipe = useSwipeTab({
@@ -685,6 +773,62 @@ export function KajiApp() {
 
   const sessionUser = boot?.sessionUser ?? null;
   const chores = boot?.chores ?? [];
+  const homeDateKeys = buildHomeDateKeys();
+  const homeSectionDateKeySet = useMemo(
+    () => new Set([homeDateKeys.yesterday, homeDateKeys.today, homeDateKeys.tomorrow]),
+    [homeDateKeys.today, homeDateKeys.tomorrow, homeDateKeys.yesterday],
+  );
+  const homeOrderSanitizeOptions = useMemo(
+    () => ({
+      todayDateKey: homeDateKeys.today,
+      rollingWindowDays: HOME_ORDER_RETENTION_DAYS,
+    }),
+    [homeDateKeys.today],
+  );
+  const homeOrderStorageKey = useMemo(
+    () => (sessionUser?.id ? `${HOME_ORDER_STORAGE_KEY_PREFIX}:${sessionUser.id}` : null),
+    [sessionUser?.id],
+  );
+
+  useEffect(() => {
+    if (!homeOrderStorageKey) {
+      setHomeOrderByDate({});
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(homeOrderStorageKey);
+      if (!raw) {
+        setHomeOrderByDate({});
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setHomeOrderByDate(sanitizeHomeOrderByDate(parsed, homeOrderSanitizeOptions));
+    } catch {
+      setHomeOrderByDate({});
+    }
+  }, [homeOrderSanitizeOptions, homeOrderStorageKey]);
+
+  useEffect(() => {
+    setHomeOrderByDate((previous) => {
+      const sanitized = sanitizeHomeOrderByDate(previous, homeOrderSanitizeOptions);
+      return sameHomeOrderByDate(previous, sanitized) ? previous : sanitized;
+    });
+  }, [homeOrderSanitizeOptions]);
+
+  useEffect(() => {
+    if (!homeOrderStorageKey) return;
+    const sanitized = sanitizeHomeOrderByDate(homeOrderByDate, homeOrderSanitizeOptions);
+    try {
+      if (Object.keys(sanitized).length === 0) {
+        window.localStorage.removeItem(homeOrderStorageKey);
+      } else {
+        window.localStorage.setItem(homeOrderStorageKey, JSON.stringify(sanitized));
+      }
+    } catch {
+      // ignore storage errors (private mode / quota)
+    }
+  }, [homeOrderByDate, homeOrderSanitizeOptions, homeOrderStorageKey]);
+
   useEffect(() => {
     if (!manageDetailChoreId) return;
     if (chores.some((chore) => chore.id === manageDetailChoreId)) return;
@@ -823,6 +967,29 @@ export function KajiApp() {
     return map;
   }, [scheduleOverrides]);
 
+  const countScheduledOccurrencesOnDate = useCallback((choreId: string, dateKey: string) => {
+    const chore = chores.find((item) => item.id === choreId);
+    if (!chore) return 0;
+
+    const overrideList = scheduleOverridesByChore.get(choreId) ?? [];
+    if (overrideList.length > 0) {
+      return overrideList.filter((override) => override.date === dateKey).length;
+    }
+
+    const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
+    if (Number.isNaN(targetDate.getTime())) return 0;
+    return isScheduledOnDate(chore, targetDate) ? 1 : 0;
+  }, [chores, scheduleOverridesByChore]);
+
+  const hasDuplicateScheduleCollision = useCallback((
+    choreId: string,
+    sourceDateKey: string,
+    targetDateKey: string,
+  ) => {
+    if (sourceDateKey === targetDateKey) return false;
+    return countScheduledOccurrencesOnDate(choreId, targetDateKey) > 0;
+  }, [countScheduledOccurrencesOnDate]);
+
   const manageDetailTarget = useMemo(() => {
     if (!manageDetailChoreId) return null;
     return chores.find((chore) => chore.id === manageDetailChoreId) ?? null;
@@ -877,9 +1044,7 @@ export function KajiApp() {
     const map = new Map<string, ChoreWithComputed[]>();
     const addToMap = (dateKey: string, chore: ChoreWithComputed) => {
       const current = map.get(dateKey) ?? [];
-      if (!current.some((item) => item.id === chore.id)) {
-        current.push(chore);
-      }
+      current.push(chore);
       map.set(dateKey, current);
     };
 
@@ -913,7 +1078,11 @@ export function KajiApp() {
     });
 
     map.forEach((items) => {
-      items.sort((a, b) => JA_COLLATOR.compare(a.title, b.title));
+      items.sort((a, b) => {
+        const titleDiff = JA_COLLATOR.compare(a.title, b.title);
+        if (titleDiff !== 0) return titleDiff;
+        return JA_COLLATOR.compare(a.id, b.id);
+      });
     });
     return map;
   }, [calendarWindowEnd, calendarWindowStart, chores, scheduleOverridesByChore]);
@@ -1265,6 +1434,7 @@ export function KajiApp() {
       setDraggingChore(null);
       setDragSourceDateKey(null);
       setDragTargetDateKey(null);
+      setHomeDropTarget(null);
       setTouchDragging(false);
     }
   }, [activeTab]);
@@ -1724,7 +1894,6 @@ export function KajiApp() {
     setMemoTarget(chore);
     setMemoBaseDateKey(baseDateKey ?? null);
     setMemo("");
-    setPerformedDayOffset(0);
     setMemoOpen(true);
   };
 
@@ -1743,6 +1912,7 @@ export function KajiApp() {
     setRescheduleChoice("tomorrow");
     setRescheduleCustomDate(shiftDateKey(baseKey, 1));
     setPendingRescheduleConfirm(null);
+    setPendingMergeDuplicateConfirm(null);
     setRescheduleOpen(true);
   };
 
@@ -1756,18 +1926,31 @@ export function KajiApp() {
     return customDate;
   }, [shiftDateKey]);
 
+  const openRescheduleConfirmWithCollisionCheck = useCallback(
+    (payload: Omit<PendingRescheduleConfirm, "mergeIfDuplicate">) => {
+      if (hasDuplicateScheduleCollision(payload.choreId, payload.sourceDateKey, payload.targetDateKey)) {
+        setPendingMergeDuplicateConfirm(payload);
+        return;
+      }
+      setPendingRescheduleConfirm({ ...payload, mergeIfDuplicate: true });
+    },
+    [hasDuplicateScheduleCollision],
+  );
+
   const rescheduleChoreToDate = useCallback(
     async ({
       choreId,
       targetDateKey,
       sourceDateKey,
       recalculateFuture,
+      mergeIfDuplicate,
       sourceRecordId,
     }: {
       choreId: string;
       targetDateKey: string;
       sourceDateKey?: string;
       recalculateFuture?: boolean;
+      mergeIfDuplicate?: boolean;
       sourceRecordId?: string;
     }) => {
       await apiFetch("/api/schedule-override", {
@@ -1777,6 +1960,7 @@ export function KajiApp() {
           date: targetDateKey,
           ...(sourceDateKey ? { sourceDate: sourceDateKey } : {}),
           ...(typeof recalculateFuture === "boolean" ? { recalculateFuture } : {}),
+          ...(typeof mergeIfDuplicate === "boolean" ? { mergeIfDuplicate } : {}),
           ...(sourceRecordId ? { sourceRecordId } : {}),
         }),
       });
@@ -1805,24 +1989,46 @@ export function KajiApp() {
       setError("日付を指定してください。");
       return;
     }
-    setPendingRescheduleConfirm({
+    openRescheduleConfirmWithCollisionCheck({
       origin: "sheet",
       choreId: rescheduleTarget.id,
       choreTitle: rescheduleTarget.title,
       sourceDateKey: rescheduleBaseDateKey,
       targetDateKey: nextDate,
     });
-  }, [rescheduleBaseDateKey, rescheduleChoice, rescheduleCustomDate, rescheduleTarget, resolveRescheduleDateKey]);
+  }, [
+    openRescheduleConfirmWithCollisionCheck,
+    rescheduleBaseDateKey,
+    rescheduleChoice,
+    rescheduleCustomDate,
+    rescheduleTarget,
+    resolveRescheduleDateKey,
+  ]);
 
   const closePendingRescheduleConfirm = useCallback(() => {
     if (rescheduleConfirmLoading) return;
     setPendingRescheduleConfirm(null);
   }, [rescheduleConfirmLoading]);
 
+  const closePendingMergeDuplicateConfirm = useCallback(() => {
+    if (rescheduleConfirmLoading) return;
+    setPendingMergeDuplicateConfirm(null);
+  }, [rescheduleConfirmLoading]);
+
+  const resolvePendingMergeDuplicateConfirm = useCallback((mergeIfDuplicate: boolean) => {
+    if (!pendingMergeDuplicateConfirm || rescheduleConfirmLoading) return;
+    setPendingMergeDuplicateConfirm(null);
+    setPendingRescheduleConfirm({
+      ...pendingMergeDuplicateConfirm,
+      mergeIfDuplicate,
+    });
+  }, [pendingMergeDuplicateConfirm, rescheduleConfirmLoading]);
+
   const clearDragState = useCallback(() => {
     setDraggingChore(null);
     setDragSourceDateKey(null);
     setDragTargetDateKey(null);
+    setHomeDropTarget(null);
     setTouchDragging(false);
     if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
     dragNavHoveringRef.current = null;
@@ -1834,7 +2040,103 @@ export function KajiApp() {
     setDraggingChore(chore);
     setDragSourceDateKey(sourceDateKey);
     setDragTargetDateKey(null);
+    setHomeDropTarget(null);
   }, []);
+
+  const resolveDropPosition = useCallback((clientY: number, element: HTMLElement): DropPosition => {
+    const rect = element.getBoundingClientRect();
+    const centerY = rect.top + rect.height / 2;
+    return clientY < centerY ? "before" : "after";
+  }, []);
+
+  const reorderHomeWithinDate = useCallback(({
+    dateKey,
+    dragChoreId,
+    targetChoreId,
+    position,
+  }: {
+    dateKey: string;
+    dragChoreId: string;
+    targetChoreId: string;
+    position: DropPosition;
+  }) => {
+    if (!homeSectionDateKeySet.has(dateKey)) return;
+    setHomeOrderByDate((previous) => {
+      const baseIds = [
+        ...(homeSectionChoreIdsRef.current[dateKey] ?? previous[dateKey] ?? []),
+      ];
+      const reordered = reorderWithinDate(baseIds, dragChoreId, targetChoreId, position);
+      const next: HomeOrderByDate = { ...previous };
+      if (reordered.length === 0) {
+        delete next[dateKey];
+      } else {
+        next[dateKey] = reordered;
+      }
+      return sanitizeHomeOrderByDate(next, homeOrderSanitizeOptions);
+    });
+  }, [homeOrderSanitizeOptions, homeSectionDateKeySet]);
+
+  const applyHomeOrderAfterCrossDateMove = useCallback(({
+    sourceDateKey,
+    targetDateKey,
+    choreId,
+    homeDropInsert,
+  }: {
+    sourceDateKey: string;
+    targetDateKey: string;
+    choreId: string;
+    homeDropInsert?: HomeDropInsert;
+  }) => {
+    if (!homeSectionDateKeySet.has(sourceDateKey) || !homeSectionDateKeySet.has(targetDateKey)) return;
+    setHomeOrderByDate((previous) => {
+      const sourceIds = [
+        ...(homeSectionChoreIdsRef.current[sourceDateKey] ?? previous[sourceDateKey] ?? []),
+      ];
+      const targetIds = [
+        ...(homeSectionChoreIdsRef.current[targetDateKey] ?? previous[targetDateKey] ?? []),
+      ];
+      const next: HomeOrderByDate = { ...previous };
+
+      if (
+        homeDropInsert &&
+        homeDropInsert.targetDateKey === targetDateKey &&
+        homeDropInsert.targetChoreId !== choreId &&
+        targetIds.includes(homeDropInsert.targetChoreId)
+      ) {
+        const moved = moveAcrossDates(
+          sourceIds,
+          targetIds,
+          choreId,
+          homeDropInsert.targetChoreId,
+          homeDropInsert.position,
+        );
+        if (moved.sourceIds.length > 0) {
+          next[sourceDateKey] = moved.sourceIds;
+        } else {
+          delete next[sourceDateKey];
+        }
+        if (moved.targetIds.length > 0) {
+          next[targetDateKey] = moved.targetIds;
+        } else {
+          delete next[targetDateKey];
+        }
+      } else {
+        const filteredSource = sourceIds.filter((id) => id !== choreId);
+        if (filteredSource.length > 0) {
+          next[sourceDateKey] = filteredSource;
+        } else {
+          delete next[sourceDateKey];
+        }
+        if (targetIds.length > 0) {
+          next[targetDateKey] = targetIds;
+        } else {
+          delete next[targetDateKey];
+        }
+      }
+
+      return sanitizeHomeOrderByDate(next, homeOrderSanitizeOptions);
+    });
+  }, [homeOrderSanitizeOptions, homeSectionDateKeySet]);
 
   const handleChorePointerDown = useCallback(
     (chore: ChoreWithComputed, sourceDateKey: string, event: React.PointerEvent<HTMLElement>) => {
@@ -1855,7 +2157,10 @@ export function KajiApp() {
     [beginChoreDrag],
   );
 
-  const dropDraggedChoreToDate = useCallback(async (targetDateKey: string) => {
+  const dropDraggedChoreToDate = useCallback(async (
+    targetDateKey: string,
+    options?: { homeDropInsert?: HomeDropInsert },
+  ) => {
     if (!draggingChore) return;
     if (dragSourceDateKey === targetDateKey) {
       clearDragState();
@@ -1881,6 +2186,14 @@ export function KajiApp() {
           targetDateKey,
           sourceRecordId,
         });
+        if (dragSourceDateKey) {
+          applyHomeOrderAfterCrossDateMove({
+            sourceDateKey: dragSourceDateKey,
+            targetDateKey,
+            choreId: draggingChore.id,
+            homeDropInsert: options?.homeDropInsert,
+          });
+        }
         focusCalendarDate(targetDateKey);
         return;
       }
@@ -1888,19 +2201,45 @@ export function KajiApp() {
         setError("移動元の日付が取得できません。");
         return;
       }
-      setPendingRescheduleConfirm({
+      openRescheduleConfirmWithCollisionCheck({
         origin: "drag",
         choreId: draggingChore.id,
         choreTitle: draggingChore.title,
         sourceDateKey: dragSourceDateKey,
         targetDateKey,
+        homeDropInsert: options?.homeDropInsert,
       });
     } catch (err: unknown) {
       setError((err as Error).message ?? "日にち変更に失敗しました。");
     } finally {
       clearDragState();
     }
-  }, [clearDragState, dragSourceDateKey, draggingChore, focusCalendarDate, rescheduleChoreToDate]);
+  }, [
+    applyHomeOrderAfterCrossDateMove,
+    clearDragState,
+    dragSourceDateKey,
+    draggingChore,
+    focusCalendarDate,
+    openRescheduleConfirmWithCollisionCheck,
+    rescheduleChoreToDate,
+  ]);
+
+  const handleHomeDrop = useCallback((drop: HomeDropInsert) => {
+    if (!draggingChore) return;
+    if (dragSourceDateKey === drop.targetDateKey) {
+      reorderHomeWithinDate({
+        dateKey: drop.targetDateKey,
+        dragChoreId: draggingChore.id,
+        targetChoreId: drop.targetChoreId,
+        position: drop.position,
+      });
+      clearDragState();
+      return;
+    }
+    void dropDraggedChoreToDate(drop.targetDateKey, { homeDropInsert: drop });
+  }, [clearDragState, dragSourceDateKey, draggingChore, dropDraggedChoreToDate, reorderHomeWithinDate]);
+
+  handleHomeDropRef.current = handleHomeDrop;
 
   // ref を常に最新の関数に同期。useEffect 内のクロージャが古いスナップショットを
   // 参照しないよう、render 時点で更新しておく。
@@ -1947,8 +2286,25 @@ export function KajiApp() {
       const els = document.elementsFromPoint(event.clientX, event.clientY);
 
       // ドロップ先の判定
-      const dropEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dropDate) as HTMLElement | undefined;
-      setDragTargetDateKey(dropEl?.dataset.dropDate ?? null);
+      const homeDropEl = els.find(
+        (el) =>
+          el instanceof HTMLElement &&
+          (el as HTMLElement).dataset.homeDropDate &&
+          (el as HTMLElement).dataset.homeDropChoreId,
+      ) as HTMLElement | undefined;
+      if (homeDropEl?.dataset.homeDropDate && homeDropEl.dataset.homeDropChoreId) {
+        const position = resolveDropPosition(event.clientY, homeDropEl);
+        setHomeDropTarget({
+          targetDateKey: homeDropEl.dataset.homeDropDate,
+          targetChoreId: homeDropEl.dataset.homeDropChoreId,
+          position,
+        });
+        setDragTargetDateKey(homeDropEl.dataset.homeDropDate);
+      } else {
+        setHomeDropTarget(null);
+        const dropEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dropDate) as HTMLElement | undefined;
+        setDragTargetDateKey(dropEl?.dataset.dropDate ?? null);
+      }
 
       // 週ナビゲーションゾーンのホバー検出 — 600ms滞在で週移動
       const navEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dragNavigate) as HTMLElement | undefined;
@@ -1989,12 +2345,27 @@ export function KajiApp() {
       touchDragInfoRef.current = null;
       if (!info?.active) return;
       const els = document.elementsFromPoint(event.clientX, event.clientY);
+      const homeDropEl = els.find(
+        (el) =>
+          el instanceof HTMLElement &&
+          (el as HTMLElement).dataset.homeDropDate &&
+          (el as HTMLElement).dataset.homeDropChoreId,
+      ) as HTMLElement | undefined;
+      if (homeDropEl?.dataset.homeDropDate && homeDropEl.dataset.homeDropChoreId) {
+        const position = resolveDropPosition(event.clientY, homeDropEl);
+        handleHomeDropRef.current({
+          targetDateKey: homeDropEl.dataset.homeDropDate,
+          targetChoreId: homeDropEl.dataset.homeDropChoreId,
+          position,
+        });
+        return;
+      }
       const dropEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dropDate) as HTMLElement | undefined;
       if (dropEl?.dataset.dropDate) {
         void dropDraggedChoreToDateRef.current(dropEl.dataset.dropDate);
-      } else {
-        clearDragState();
+        return;
       }
+      clearDragState();
     };
 
     const handlePointerCancel = () => {
@@ -2017,7 +2388,7 @@ export function KajiApp() {
       if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
       if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
     };
-  }, [clearDragState, focusCalendarDate]);
+  }, [clearDragState, focusCalendarDate, resolveDropPosition]);
 
   const shiftCalendarMonth = useCallback((direction: -1 | 1) => {
     const nextMonthKey = monthKeyWithOffset(toMonthKey(calendarMonthCursor), direction === 1 ? -1 : 1);
@@ -2063,18 +2434,16 @@ export function KajiApp() {
     return toJstDateKey(target);
   }, [dragSourceDateKey]);
 
-  const resolveMemoPerformedAt = useCallback((now: Date) => {
-    return addDays(now, -performedDayOffset);
-  }, [performedDayOffset]);
-
   const submitMemoAction = useCallback(async ({
     skipped,
     recalculateFuture,
     bypassFutureConfirm = false,
+    mergeIfDuplicate = true,
   }: {
     skipped: boolean;
     recalculateFuture?: boolean;
     bypassFutureConfirm?: boolean;
+    mergeIfDuplicate?: boolean;
   }) => {
     if (!memoTarget) return;
     const targetId = memoTarget.id;
@@ -2084,14 +2453,15 @@ export function KajiApp() {
     const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrow = addDays(todayStart, 2);
     const sourceDateKey = memoBaseDateKey ?? undefined;
+    const shouldSendSourceDate = Boolean(sourceDateKey);
     let hasFutureMemoBase = false;
-    if (sourceDateKey && performedDayOffset === 0) {
+    if (sourceDateKey) {
       const baseDate = startOfJstDay(new Date(`${sourceDateKey}T00:00:00+09:00`));
       hasFutureMemoBase =
         !Number.isNaN(baseDate.getTime()) && baseDate.getTime() > todayStart.getTime();
     }
     if (hasFutureMemoBase && !bypassFutureConfirm && sourceDateKey) {
-      setPendingRescheduleConfirm({
+      openRescheduleConfirmWithCollisionCheck({
         origin: skipped ? "future-skip" : "future-record",
         choreId: memoTarget.id,
         choreTitle: memoTarget.title,
@@ -2101,9 +2471,9 @@ export function KajiApp() {
       return;
     }
 
-    const performedAt = resolveMemoPerformedAt(now);
+    const performedAt = now;
     const performedAtIso = performedAt.toISOString();
-    const completedTomorrowTask = memoTarget.isDueTomorrow && performedDayOffset === 0;
+    const completedTomorrowTask = memoTarget.isDueTomorrow;
 
     setMemoOpen(false);
     setRecordUpdating(targetId, true);
@@ -2118,6 +2488,7 @@ export function KajiApp() {
           lastPerformedAt: performedAtIso,
           lastPerformerName: skipped ? "スキップ" : sessionUser.name,
           lastPerformerId: sessionUser.id,
+          lastRecordIsInitial: false,
           lastRecordSkipped: skipped,
           lastRecordId: skipped
             ? chore.lastRecordId ?? `optimistic-skip-${now.getTime()}`
@@ -2137,9 +2508,11 @@ export function KajiApp() {
 
     try {
       const body: Record<string, unknown> = { memo, skipped, performedAt: performedAtIso };
-      if (hasFutureMemoBase && sourceDateKey) {
+      if (shouldSendSourceDate && sourceDateKey) {
+        const effectiveMergeIfDuplicate = hasFutureMemoBase ? mergeIfDuplicate : false;
         body.sourceDate = sourceDateKey;
         body.recalculateFuture = recalculateFuture === true;
+        body.mergeIfDuplicate = effectiveMergeIfDuplicate;
       }
       const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
         method: "POST",
@@ -2151,7 +2524,7 @@ export function KajiApp() {
           lastRecordId: result.record.id,
         }));
       }
-      if (hasFutureMemoBase && sourceDateKey) {
+      if (shouldSendSourceDate && sourceDateKey) {
         await Promise.all([
           loadBootstrap(),
           loadCalendarMonthSummary(calendarMonthKeyRef.current),
@@ -2171,7 +2544,22 @@ export function KajiApp() {
       setMemoTarget(null);
       setMemoBaseDateKey(null);
     }
-  }, [boot, loadBootstrap, loadCalendarMonthSummary, loadHistory, loadStats, memo, memoBaseDateKey, memoTarget, performedDayOffset, resolveMemoPerformedAt, sessionUser, setRecordUpdating, showTaskBanner, statsPeriod, updateBootChoreOptimistically]);
+  }, [
+    boot,
+    loadBootstrap,
+    loadCalendarMonthSummary,
+    loadHistory,
+    loadStats,
+    memo,
+    memoBaseDateKey,
+    memoTarget,
+    openRescheduleConfirmWithCollisionCheck,
+    sessionUser,
+    setRecordUpdating,
+    showTaskBanner,
+    statsPeriod,
+    updateBootChoreOptimistically,
+  ]);
 
   const submitRecord = useCallback(() => {
     void submitMemoAction({ skipped: false });
@@ -2194,6 +2582,7 @@ export function KajiApp() {
           skipped: pendingRescheduleConfirm.origin === "future-skip",
           recalculateFuture,
           bypassFutureConfirm: true,
+          mergeIfDuplicate: pendingRescheduleConfirm.mergeIfDuplicate,
         });
         setPendingRescheduleConfirm(null);
         return;
@@ -2203,7 +2592,16 @@ export function KajiApp() {
         targetDateKey: pendingRescheduleConfirm.targetDateKey,
         sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
         recalculateFuture,
+        mergeIfDuplicate: pendingRescheduleConfirm.mergeIfDuplicate,
       });
+      if (pendingRescheduleConfirm.origin === "drag") {
+        applyHomeOrderAfterCrossDateMove({
+          sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
+          targetDateKey: pendingRescheduleConfirm.targetDateKey,
+          choreId: pendingRescheduleConfirm.choreId,
+          homeDropInsert: pendingRescheduleConfirm.homeDropInsert,
+        });
+      }
       focusCalendarDate(pendingRescheduleConfirm.targetDateKey);
       if (pendingRescheduleConfirm.origin === "sheet") {
         setRescheduleOpen(false);
@@ -2215,7 +2613,7 @@ export function KajiApp() {
     } finally {
       setRescheduleConfirmLoading(false);
     }
-  }, [focusCalendarDate, pendingRescheduleConfirm, rescheduleChoreToDate, rescheduleConfirmLoading, submitMemoAction]);
+  }, [applyHomeOrderAfterCrossDateMove, focusCalendarDate, pendingRescheduleConfirm, rescheduleChoreToDate, rescheduleConfirmLoading, submitMemoAction]);
 
   const undoRecord = async (chore: ChoreWithComputed) => {
     if (!chore.lastRecordId) return;
@@ -2622,49 +3020,49 @@ export function KajiApp() {
       .filter((record) => !record.isInitial && !record.isSkipped)
       .sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime())[0] ?? null;
   }, [records]);
-  const groupedTimelineRecords = useMemo(() => {
-    const todayKey = toJstDateKey(startOfJstDay(new Date()));
-    const yesterdayKey = toJstDateKey(addDays(startOfJstDay(new Date()), -1));
-    const filtered = records
-      .filter((record) => !record.isInitial && !record.isSkipped)
-      .slice(0, 60);
-    const groups = new Map<string, ChoreRecordItem[]>();
-    filtered.forEach((record) => {
-      const key = toJstDateKey(startOfJstDay(new Date(record.performedAt)));
-      const list = groups.get(key) ?? [];
-      list.push(record);
-      groups.set(key, list);
-    });
-    return [...groups.entries()]
-      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-      .map(([dateKey, items]) => ({
-        dateKey,
-        label: isSameDateKey(dateKey, todayKey)
-          ? "今日"
-          : isSameDateKey(dateKey, yesterdayKey)
-            ? "昨日"
-            : (() => {
-              const [y, m, d] = dateKey.split("-").map(Number);
-              return `${m}/${d}`;
-            })(),
-        items: items.sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime()),
-      }));
-  }, [records]);
+  const groupedTimelineRecords = useMemo(() => buildGroupedTimelineRecords(records), [records]);
+  const myTimelineRecords = useMemo(() => {
+    if (!sessionUser?.id) return [];
+    return records.filter(
+      (record) => !record.isInitial && !record.isSkipped && record.user.id === sessionUser.id,
+    );
+  }, [records, sessionUser?.id]);
+  const myGroupedTimelineRecords = useMemo(
+    () => buildGroupedTimelineRecords(myTimelineRecords),
+    [myTimelineRecords],
+  );
+
+  const orderCalendarItemsByHomePreference = useCallback(
+    (items: ChoreWithComputed[], dateKey: string) => {
+      const baseIds = items.map((item) => item.id);
+      if (new Set(baseIds).size !== baseIds.length) {
+        return items;
+      }
+      const orderedIds = applyHomeStoredOrder(baseIds, homeOrderByDate[dateKey] ?? []);
+      const itemById = new Map(items.map((item) => [item.id, item]));
+      return orderedIds
+        .map((id) => itemById.get(id))
+        .filter((item): item is ChoreWithComputed => Boolean(item));
+    },
+    [homeOrderByDate],
+  );
 
   const calendarSelectedWeekEntries = useMemo(() => {
     return calendarSelectedWeekDates.map((date) => {
       const dateKey = toJstDateKey(date);
       const items = calendarScheduleMap.get(dateKey) ?? [];
+      const orderedItems = orderCalendarItemsByHomePreference(items, dateKey);
       return {
         date,
         dateKey,
-        items,
+        items: orderedItems,
       };
     });
-  }, [calendarScheduleMap, calendarSelectedWeekDates]);
+  }, [calendarScheduleMap, calendarSelectedWeekDates, orderCalendarItemsByHomePreference]);
   const calendarSelectedDayEntries = useMemo(() => {
-    return calendarScheduleMap.get(calendarSelectedDateKey) ?? [];
-  }, [calendarScheduleMap, calendarSelectedDateKey]);
+    const items = calendarScheduleMap.get(calendarSelectedDateKey) ?? [];
+    return orderCalendarItemsByHomePreference(items, calendarSelectedDateKey);
+  }, [calendarScheduleMap, calendarSelectedDateKey, orderCalendarItemsByHomePreference]);
   const reportMonthKey = useMemo(
     () => monthKeyWithOffset(toMonthKey(new Date()), reportMonthOffset),
     [reportMonthOffset],
@@ -3060,9 +3458,9 @@ export function KajiApp() {
     );
   }
 
-  const todayKey = toJstDateKey(startOfJstDay(new Date()));
-  const yesterdayKey = toJstDateKey(addDays(startOfJstDay(new Date()), -1));
-  const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
+  const todayKey = homeDateKeys.today;
+  const yesterdayKey = homeDateKeys.yesterday;
+  const tomorrowKey = homeDateKeys.tomorrow;
   const getHomeSectionDateKey = (sectionKey: "today" | "yesterday" | "tomorrow") => {
     if (sectionKey === "yesterday") return yesterdayKey;
     if (sectionKey === "tomorrow") return tomorrowKey;
@@ -3095,41 +3493,41 @@ export function KajiApp() {
     if (Number.isNaN(targetDate.getTime())) return [];
 
     const results: ChoreWithComputed[] = [];
-    const pushUnique = (chore: ChoreWithComputed) => {
-      if (!results.some((item) => item.id === chore.id)) {
-        results.push(chore);
-      }
-    };
 
     chores.forEach((chore) => {
       if (chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial) {
         const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
         if (performedDateKey === dateKey) {
-          pushUnique(chore);
+          results.push(chore);
         }
       }
 
       const overrideList = scheduleOverridesByChore.get(chore.id) ?? [];
       if (overrideList.length > 0) {
-        if (overrideList.some((override) => override.date === dateKey)) {
-          pushUnique(chore);
+        const occurrences = overrideList.filter((override) => override.date === dateKey).length;
+        for (let index = 0; index < occurrences; index += 1) {
+          results.push(chore);
         }
         return;
       }
 
       if (isScheduledOnDate(chore, targetDate)) {
-        pushUnique(chore);
+        results.push(chore);
       }
     });
 
-    results.sort((a, b) => JA_COLLATOR.compare(a.title, b.title));
+    results.sort((a, b) => {
+      const titleDiff = JA_COLLATOR.compare(a.title, b.title);
+      if (titleDiff !== 0) return titleDiff;
+      return JA_COLLATOR.compare(a.id, b.id);
+    });
     return results;
   };
 
   const yesterdayChoresForHome = resolveHomeChoresByDate(yesterdayKey);
   const todayChoresForHome = resolveHomeChoresByDate(todayKey);
   const tomorrowChoresForHome = resolveHomeChoresByDate(tomorrowKey);
-  const yesterdayChores = sortHomeSectionChores(
+  const yesterdaySortedChores = sortHomeSectionChores(
     "yesterday",
     yesterdayChoresForHome,
     sessionUser?.id ?? null,
@@ -3139,30 +3537,62 @@ export function KajiApp() {
     },
     customIcons,
   );
+  const todaySortedChores = sortHomeSectionChores(
+    "today",
+    todayChoresForHome,
+    sessionUser?.id ?? null,
+    (choreId) => {
+      const c = todayChoresForHome.find((ch) => ch.id === choreId);
+      return resolveAssigneeForSort(choreId, "today", c);
+    },
+    customIcons,
+  );
+  const tomorrowSortedChores = sortHomeSectionChores(
+    "tomorrow",
+    tomorrowChoresForHome,
+    sessionUser?.id ?? null,
+    (choreId) => {
+      const c = tomorrowChoresForHome.find((ch) => ch.id === choreId);
+      return resolveAssigneeForSort(choreId, "tomorrow", c);
+    },
+    customIcons,
+  );
+
+  const applyStoredOrderToSection = (dateKey: string, sectionChores: ChoreWithComputed[]) => {
+    const baseIds = sectionChores.map((chore) => chore.id);
+    if (new Set(baseIds).size !== baseIds.length) {
+      return sectionChores;
+    }
+    const orderedIds = applyHomeStoredOrder(baseIds, homeOrderByDate[dateKey] ?? []);
+    const map = new Map(sectionChores.map((chore) => [chore.id, chore]));
+    return orderedIds
+      .map((id) => map.get(id))
+      .filter((chore): chore is ChoreWithComputed => Boolean(chore));
+  };
 
   const homeSections = [
     {
       key: "yesterday" as const,
       title: "きのうのにんむ",
-      chores: yesterdayChores,
+      chores: applyStoredOrderToSection(yesterdayKey, yesterdaySortedChores),
     },
     {
       key: "today" as const,
       title: "きょうのにんむ",
-      chores: sortHomeSectionChores("today", todayChoresForHome, sessionUser?.id ?? null, (choreId) => {
-        const c = todayChoresForHome.find((ch) => ch.id === choreId);
-        return resolveAssigneeForSort(choreId, "today", c);
-      }, customIcons),
+      chores: applyStoredOrderToSection(todayKey, todaySortedChores),
     },
     {
       key: "tomorrow" as const,
       title: "あしたのにんむ",
-      chores: sortHomeSectionChores("tomorrow", tomorrowChoresForHome, sessionUser?.id ?? null, (choreId) => {
-        const c = tomorrowChoresForHome.find((ch) => ch.id === choreId);
-        return resolveAssigneeForSort(choreId, "tomorrow", c);
-      }, customIcons),
+      chores: applyStoredOrderToSection(tomorrowKey, tomorrowSortedChores),
     },
   ];
+  homeSectionChoreIdsRef.current = Object.fromEntries(
+    homeSections.map((section) => [
+      getHomeSectionDateKey(section.key),
+      section.chores.map((chore) => chore.id),
+    ]),
+  );
   const hasAnyUpcomingChores = homeSections.some((section) => section.chores.length > 0);
   const swipeProgress = swipe.visual.progress;
   const swipeFromTabIndex = Math.max(0, TAB_ORDER.indexOf(swipe.visual.fromTab));
@@ -3487,6 +3917,114 @@ export function KajiApp() {
     return null;
   };
 
+  const renderTimelineRecords = (timelineGroups: TimelineRecordGroup[], emptyMessage: string) => {
+    if (timelineGroups.length === 0) {
+      return (
+        <div className="rounded-[20px] border border-dashed border-[#DADCE0] bg-white px-5 py-10 text-center">
+          <p className="text-[16px] font-bold text-[#202124]">まだ きろく がありません</p>
+          <p className="mt-2 text-[13px] font-medium text-[#5F6368]">{emptyMessage}</p>
+        </div>
+      );
+    }
+
+    return timelineGroups.map((group) => (
+      <div key={`record-group-${group.dateKey}`} className="space-y-2">
+        <p className="text-[16px] font-bold text-[#202124]">{group.label}</p>
+        <div className="space-y-2">
+          {group.items.map((record) => {
+            const choreForIcon = chores.find((ch) => ch.id === record.chore.id);
+            const RecordIcon = iconByName(choreForIcon?.icon ?? "sparkles");
+            const myReaction = (record.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
+            const reactionCounts = (record.reactions ?? []).reduce<Record<string, number>>((acc, reaction) => {
+              acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
+              return acc;
+            }, {});
+            const visibleReactions = REACTION_CHOICES.filter((emoji) => (reactionCounts[emoji] ?? 0) > 0);
+            return (
+              <div key={record.id} className="space-y-1">
+                <div className="rounded-[14px] border border-[#E5EAF0] bg-white px-3 py-3">
+                  <div className="flex items-center gap-2">
+                    <RecordIcon size={16} color={choreForIcon?.iconColor ?? "#5F6368"} />
+                    <p className="text-[15px] font-bold text-[#202124]">{record.chore.title}</p>
+                    <span className="text-[12px] text-[#BDC1C6]">──</span>
+                    <p className="text-[13px] font-semibold text-[#5F6368]">{record.user.name}</p>
+                    <p className="ml-auto text-[11px] font-medium text-[#9AA0A6]">
+                      {new Intl.DateTimeFormat("ja-JP", {
+                        timeZone: "Asia/Tokyo",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }).format(new Date(record.performedAt))}
+                    </p>
+                  </div>
+                  {record.memo ? (
+                    <p className="mt-1 text-[12px] font-medium text-[#5F6368]">「{record.memo}」</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 px-1">
+                  {visibleReactions.map((emoji) => {
+                    const mapped = REACTION_ICON_MAP[emoji];
+                    const selected = myReaction?.emoji === emoji;
+                    const count = reactionCounts[emoji] ?? 0;
+                    return (
+                      <button
+                        key={`${record.id}-${emoji}`}
+                        type="button"
+                        onClick={() => {
+                          void toggleReaction(record, emoji);
+                        }}
+                        disabled={reactionUpdatingId === record.id}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold ${selected ? "bg-[#E8F2FF]" : "bg-transparent"} disabled:opacity-50`}
+                      >
+                        <span className="material-symbols-rounded text-[18px]" style={{ color: mapped?.color ?? "#5F6368" }}>
+                          {mapped?.icon ?? "add_reaction"}
+                        </span>
+                        {count > 1 ? <span className="text-[11px] text-[#5F6368]">{count}</span> : null}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReactionPickerRecordId((prev) => (prev === record.id ? null : record.id));
+                    }}
+                    disabled={reactionUpdatingId === record.id}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[#BDBDBD] disabled:opacity-50"
+                  >
+                    <span className="material-symbols-rounded text-[18px]">add_reaction</span>
+                  </button>
+                </div>
+                {reactionPickerRecordId === record.id ? (
+                  <div className="flex items-center gap-2 px-1">
+                    {REACTION_CHOICES.map((emoji) => {
+                      const mapped = REACTION_ICON_MAP[emoji];
+                      const selected = myReaction?.emoji === emoji;
+                      return (
+                        <button
+                          key={`${record.id}-picker-${emoji}`}
+                          type="button"
+                          onClick={() => {
+                            void toggleReaction(record, emoji);
+                            setReactionPickerRecordId(null);
+                          }}
+                          disabled={reactionUpdatingId === record.id}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${selected ? "bg-[#E8F2FF]" : "bg-white"} disabled:opacity-50`}
+                        >
+                          <span className="material-symbols-rounded text-[18px]" style={{ color: mapped.color }}>
+                            {mapped.icon}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    ));
+  };
+
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
       return (
@@ -3506,12 +4044,20 @@ export function KajiApp() {
                       if (!draggingChore) return;
                       event.preventDefault();
                       setDragTargetDateKey(sectionDateKey);
+                      setHomeDropTarget(null);
                     }}
                     onDragLeave={() => {
                       setDragTargetDateKey((prev) => (prev === sectionDateKey ? null : prev));
+                      setHomeDropTarget(null);
                     }}
                     onDrop={(event) => {
+                      if (!draggingChore) return;
                       event.preventDefault();
+                      setHomeDropTarget(null);
+                      if (dragSourceDateKey === sectionDateKey) {
+                        clearDragState();
+                        return;
+                      }
                       void dropDraggedChoreToDate(sectionDateKey);
                     }}
                   >
@@ -3527,7 +4073,7 @@ export function KajiApp() {
                     <div className="flex flex-col items-stretch gap-2">
                       {section.chores.length === 0 ? (
                         <p className="py-2 text-center text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
-                      ) : section.chores.map((chore) => {
+                      ) : section.chores.map((chore, choreIndex) => {
                         const assignedEntry = assignments.find(
                           (x) => x.choreId === chore.id && x.date === sectionDateKey,
                         );
@@ -3552,17 +4098,63 @@ export function KajiApp() {
                             : section.key === "tomorrow" && chore.doneToday
                               ? { ...chore, doneToday: false }
                               : chore;
+                        const isHomeDropTarget =
+                          homeDropTarget?.targetDateKey === sectionDateKey &&
+                          homeDropTarget.targetChoreId === chore.id;
+                        const showDropBefore = isHomeDropTarget && homeDropTarget.position === "before";
+                        const showDropAfter = isHomeDropTarget && homeDropTarget.position === "after";
+                        const homeRowKey = `${sectionDateKey}-${chore.id}-${choreIndex}`;
                         return (
                           <div
-                            key={chore.id}
+                            key={homeRowKey}
                             draggable
+                            data-home-drop-date={sectionDateKey}
+                            data-home-drop-chore-id={chore.id}
+                            className={`${showDropBefore ? "border-t-2 border-[#1A73E8] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[#1A73E8] pb-1" : ""}`}
                             onDragStart={(event) => {
                               beginChoreDrag(displayChore, sectionDateKey);
                               event.dataTransfer.effectAllowed = "move";
                               event.dataTransfer.setData("text/plain", chore.id);
                             }}
+                            onDragOver={(event) => {
+                              if (!draggingChore) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              const position = resolveDropPosition(event.clientY, event.currentTarget);
+                              setDragTargetDateKey(sectionDateKey);
+                              setHomeDropTarget({
+                                targetDateKey: sectionDateKey,
+                                targetChoreId: chore.id,
+                                position,
+                              });
+                            }}
+                            onDragLeave={(event) => {
+                              event.stopPropagation();
+                              setHomeDropTarget((previous) => {
+                                if (
+                                  previous &&
+                                  previous.targetDateKey === sectionDateKey &&
+                                  previous.targetChoreId === chore.id
+                                ) {
+                                  return null;
+                                }
+                                return previous;
+                              });
+                            }}
+                            onDrop={(event) => {
+                              if (!draggingChore) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              const position = resolveDropPosition(event.clientY, event.currentTarget);
+                              handleHomeDrop({
+                                targetDateKey: sectionDateKey,
+                                targetChoreId: chore.id,
+                                position,
+                              });
+                            }}
                             onDragEnd={clearDragState}
                             onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
+                            style={{ touchAction: "none" }}
                           >
                             <HomeTaskRow
                               chore={displayChore}
@@ -3640,7 +4232,7 @@ export function KajiApp() {
       const previousWeekTarget = shiftTargetDateByWeek(-1);
       const nextWeekTarget = shiftTargetDateByWeek(1);
 
-      const renderCalendarChip = (chore: ChoreWithComputed, dateKey: string) => {
+      const renderCalendarChip = (chore: ChoreWithComputed, dateKey: string, chipIndex: number) => {
         const ChipIcon = iconByName(chore.icon);
         const performerUser = chore.lastPerformerId
           ? boot.users.find((user) => user.id === chore.lastPerformerId)
@@ -3663,7 +4255,7 @@ export function KajiApp() {
           : undefined;
         return (
           <button
-            key={`${dateKey}-${chore.id}`}
+            key={`${dateKey}-${chore.id}-${chipIndex}`}
             type="button"
             onClick={() => {
               if (suppressChipClickRef.current) { suppressChipClickRef.current = false; return; }
@@ -3855,8 +4447,8 @@ export function KajiApp() {
                     {entry.items.length === 0 ? (
                       <p className="text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
                     ) : (
-                      entry.items.map((chore) =>
-                        renderCalendarChip(chore, entry.dateKey),
+                      entry.items.map((chore, chipIndex) =>
+                        renderCalendarChip(chore, entry.dateKey, chipIndex),
                       )
                     )}
                   </div>
@@ -3888,109 +4480,15 @@ export function KajiApp() {
         <div className="space-y-4" style={{ paddingTop: recordsHeaderHeight }}>
           <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
-            {groupedTimelineRecords.length === 0 ? (
-              <div className="rounded-[20px] border border-dashed border-[#DADCE0] bg-white px-5 py-10 text-center">
-                <p className="text-[16px] font-bold text-[#202124]">まだ きろく がありません</p>
-                <p className="mt-2 text-[13px] font-medium text-[#5F6368]">家事を完了するとここにタイムライン表示されます。</p>
-              </div>
-            ) : (
-              groupedTimelineRecords.map((group) => (
-                <div key={`record-group-${group.dateKey}`} className="space-y-2">
-                  <p className="text-[16px] font-bold text-[#202124]">{group.label}</p>
-                  <div className="space-y-2">
-                    {group.items.map((record) => {
-                      const choreForIcon = chores.find((ch) => ch.id === record.chore.id);
-                      const RecordIcon = iconByName(choreForIcon?.icon ?? "sparkles");
-                      const myReaction = (record.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
-                      const reactionCounts = (record.reactions ?? []).reduce<Record<string, number>>((acc, reaction) => {
-                        acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
-                        return acc;
-                      }, {});
-                      const visibleReactions = REACTION_CHOICES.filter((emoji) => (reactionCounts[emoji] ?? 0) > 0);
-                      return (
-                        <div key={record.id} className="space-y-1">
-                          <div className="rounded-[14px] border border-[#E5EAF0] bg-white px-3 py-3">
-                            <div className="flex items-center gap-2">
-                              <RecordIcon size={16} color={choreForIcon?.iconColor ?? "#5F6368"} />
-                              <p className="text-[15px] font-bold text-[#202124]">{record.chore.title}</p>
-                              <span className="text-[12px] text-[#BDC1C6]">──</span>
-                              <p className="text-[13px] font-semibold text-[#5F6368]">{record.user.name}</p>
-                              <p className="ml-auto text-[11px] font-medium text-[#9AA0A6]">
-                                {new Intl.DateTimeFormat("ja-JP", {
-                                  timeZone: "Asia/Tokyo",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                }).format(new Date(record.performedAt))}
-                              </p>
-                            </div>
-                            {record.memo ? (
-                              <p className="mt-1 text-[12px] font-medium text-[#5F6368]">「{record.memo}」</p>
-                            ) : null}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 px-1">
-                            {visibleReactions.map((emoji) => {
-                              const mapped = REACTION_ICON_MAP[emoji];
-                              const selected = myReaction?.emoji === emoji;
-                              const count = reactionCounts[emoji] ?? 0;
-                              return (
-                                <button
-                                  key={`${record.id}-${emoji}`}
-                                  type="button"
-                                  onClick={() => {
-                                    void toggleReaction(record, emoji);
-                                  }}
-                                  disabled={reactionUpdatingId === record.id}
-                                  className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold ${selected ? "bg-[#E8F2FF]" : "bg-transparent"} disabled:opacity-50`}
-                                >
-                                  <span className="material-symbols-rounded text-[18px]" style={{ color: mapped?.color ?? "#5F6368" }}>
-                                    {mapped?.icon ?? "add_reaction"}
-                                  </span>
-                                  {count > 1 ? <span className="text-[11px] text-[#5F6368]">{count}</span> : null}
-                                </button>
-                              );
-                            })}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReactionPickerRecordId((prev) => (prev === record.id ? null : record.id));
-                              }}
-                              disabled={reactionUpdatingId === record.id}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[#BDBDBD] disabled:opacity-50"
-                            >
-                              <span className="material-symbols-rounded text-[18px]">add_reaction</span>
-                            </button>
-                          </div>
-                          {reactionPickerRecordId === record.id ? (
-                            <div className="flex items-center gap-2 px-1">
-                              {REACTION_CHOICES.map((emoji) => {
-                                const mapped = REACTION_ICON_MAP[emoji];
-                                const selected = myReaction?.emoji === emoji;
-                                return (
-                                  <button
-                                    key={`${record.id}-picker-${emoji}`}
-                                    type="button"
-                                    onClick={() => {
-                                      void toggleReaction(record, emoji);
-                                      setReactionPickerRecordId(null);
-                                    }}
-                                    disabled={reactionUpdatingId === record.id}
-                                    className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${selected ? "bg-[#E8F2FF]" : "bg-white"} disabled:opacity-50`}
-                                  >
-                                    <span className="material-symbols-rounded text-[18px]" style={{ color: mapped.color }}>
-                                      {mapped.icon}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))
-            )}
+            <button
+              type="button"
+              onClick={() => openStandaloneScreen("my-records", "records")}
+              className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
+            >
+              <span className="text-[14px] font-semibold text-[#202124]">わたしのきろくを見る</span>
+              <ChevronRight size={16} color="#9AA0A6" />
+            </button>
+            {renderTimelineRecords(groupedTimelineRecords, "家事を完了するとここにタイムライン表示されます。")}
           </div>
         </div>
       );
@@ -4440,6 +4938,26 @@ export function KajiApp() {
       );
     }
 
+    if (settingsView === "my-records") {
+      return (
+        <div className="space-y-3 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => { if (standaloneScreen === "my-records") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[#202124]">わたしのきろく</p>
+          </div>
+          <div className="space-y-4">
+            {renderTimelineRecords(myGroupedTimelineRecords, "あなたの記録がここに表示されます。")}
+          </div>
+        </div>
+      );
+    }
+
     if (settingsView === "sleep") {
       return (
         <div className="space-y-4 pb-4">
@@ -4510,6 +5028,7 @@ export function KajiApp() {
 
           <div className="space-y-1">
             <button type="button" onClick={() => openStandaloneScreen("my-report")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">trending_up</span><span className="text-[18px] leading-none font-semibold text-[#202124]">私のレポート</span></button>
+            <button type="button" onClick={() => openStandaloneScreen("my-records")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">menu_book</span><span className="text-[18px] leading-none font-semibold text-[#202124]">わたしのきろく</span></button>
             <button type="button" onClick={() => openSettingsView("push")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">notifications</span><span className="text-[18px] leading-none font-semibold text-[#202124]">プッシュ通知設定</span></button>
             <button type="button" onClick={() => openSettingsView("family")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">group</span><span className="text-[18px] leading-none font-semibold text-[#202124]">家族招待・家族管理</span></button>
             <button type="button" onClick={() => openStandaloneScreen("manage")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">checklist</span><span className="text-[18px] leading-none font-semibold text-[#202124]">家事を管理</span></button>
@@ -4779,7 +5298,7 @@ export function KajiApp() {
             className="absolute inset-0 bg-black/30"
           />
           <aside className={`absolute inset-y-0 left-0 w-[320px] max-w-[88%] ${settingsView === "menu" ? "bg-white" : "bg-[#F1F3F4]"} shadow-[12px_0_28px_rgba(0,0,0,0.2)]`}>
-            <div className="h-full overflow-y-auto px-4 pb-8 pt-6">
+            <div className="h-full overflow-y-auto px-4 pb-24 pt-6">
               {renderMainTabContent("settings")}
             </div>
           </aside>
@@ -4810,7 +5329,7 @@ export function KajiApp() {
 
       <div
         aria-hidden
-        className="pointer-events-none fixed bottom-0 left-0 right-0 z-[45] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-[74] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
       />
 
       {pendingSwipeDeletes.map((pending, index) => (
@@ -4875,7 +5394,7 @@ export function KajiApp() {
         </div>
       ) : null}
 
-      <nav className="fixed bottom-4 left-0 right-0 z-50 mx-auto max-w-[430px] px-4">
+      <nav className="fixed bottom-4 left-0 right-0 z-[76] mx-auto max-w-[430px] px-4">
         <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
           <button
             type="button"
@@ -4933,21 +5452,6 @@ export function KajiApp() {
             placeholder="排水口もきれいにしたよ、など"
             className="h-[80px] w-full resize-none rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15.6px] font-medium text-[#202124] outline-none"
           />
-          <div className="space-y-2">
-            <p className="text-[14.4px] font-bold text-[#5F6368]">いつやった？</p>
-            <div className="flex gap-2">
-              {PERFORMED_DAY_OPTIONS.map((option) => (
-                <button
-                  key={option.label}
-                  type="button"
-                  onClick={() => setPerformedDayOffset(option.offset)}
-                  className={`rounded-[12px] px-3 py-2 text-[13px] font-bold ${performedDayOffset === option.offset ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
           <button
             type="button"
             onClick={submitRecord}
@@ -5069,6 +5573,50 @@ export function KajiApp() {
           </button>
         </div>
       </BottomSheet>
+
+      {pendingMergeDuplicateConfirm ? (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={closePendingMergeDuplicateConfirm}
+        >
+          <div
+            className="mx-6 w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-center text-[17px] font-bold text-[#202124]">
+              同じ日に同じタスクが存在します。統合しますか
+            </p>
+            <p className="mt-2 text-center text-[13px] font-medium text-[#5F6368]">
+              「{pendingMergeDuplicateConfirm.choreTitle}」
+            </p>
+            <p className="mt-1 text-center text-[12.5px] font-medium text-[#5F6368]">
+              {pendingMergeDuplicateConfirm.sourceDateKey} → {pendingMergeDuplicateConfirm.targetDateKey}
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={rescheduleConfirmLoading}
+                onClick={() => {
+                  resolvePendingMergeDuplicateConfirm(false);
+                }}
+                className="rounded-[14px] border border-[#DADCE0] bg-white px-3 py-[11px] text-[14px] font-bold text-[#5F6368] disabled:opacity-60"
+              >
+                NO
+              </button>
+              <button
+                type="button"
+                disabled={rescheduleConfirmLoading}
+                onClick={() => {
+                  resolvePendingMergeDuplicateConfirm(true);
+                }}
+                className="rounded-[14px] bg-[#4CAF50] px-3 py-[11px] text-[14px] font-bold text-white disabled:opacity-60"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {pendingRescheduleConfirm ? (
         <div

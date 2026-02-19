@@ -21,6 +21,34 @@ export function uniqueSortedDateKeys(dateKeys: string[]) {
   return [...new Set(dateKeys)].sort((a, b) => a.localeCompare(b));
 }
 
+export function sortedDateKeys(dateKeys: string[]) {
+  return [...dateKeys].sort((a, b) => a.localeCompare(b));
+}
+
+function removeOneOccurrence(dateKeys: string[], targetDateKey: string) {
+  const next = [...dateKeys];
+  const index = next.findIndex((dateKey) => dateKey === targetDateKey);
+  if (index >= 0) {
+    next.splice(index, 1);
+  }
+  return next;
+}
+
+function mergeTargetDateKey(dateKeys: string[], targetDateKey: string) {
+  let seenTarget = false;
+  const merged: string[] = [];
+  for (const dateKey of dateKeys) {
+    if (dateKey !== targetDateKey) {
+      merged.push(dateKey);
+      continue;
+    }
+    if (seenTarget) continue;
+    seenTarget = true;
+    merged.push(dateKey);
+  }
+  return merged;
+}
+
 export function resolveScheduleWindow(sourceDateKey: string, targetDateKey: string): WindowRange {
   const nowStart = startOfJstDay(new Date());
   const fallbackFrom = toJstDateKey(addDays(nowStart, -PAST_WINDOW_DAYS));
@@ -75,7 +103,7 @@ export function resolveCurrentScheduleDateKeys(params: {
 }) {
   const { overrideDateKeys, dueDateKey, intervalDays, window } = params;
   if (overrideDateKeys.length > 0) {
-    return uniqueSortedDateKeys(
+    return sortedDateKeys(
       overrideDateKeys.filter(
         (dateKey) => dateKey >= window.fromDateKey && dateKey <= window.toDateKey,
       ),
@@ -94,6 +122,7 @@ export function rebuildScheduleDateKeys(params: {
   sourceDateKey: string;
   targetDateKey: string;
   recalculateFuture: boolean;
+  mergeIfDuplicate: boolean;
   intervalDays: number;
   window: WindowRange;
 }) {
@@ -102,13 +131,17 @@ export function rebuildScheduleDateKeys(params: {
     sourceDateKey,
     targetDateKey,
     recalculateFuture,
+    mergeIfDuplicate,
     intervalDays,
     window,
   } = params;
   if (!recalculateFuture) {
-    const moved = currentDateKeys.filter((dateKey) => dateKey !== sourceDateKey);
+    const moved = removeOneOccurrence(currentDateKeys, sourceDateKey);
     moved.push(targetDateKey);
-    return uniqueSortedDateKeys(moved);
+    const normalized = mergeIfDuplicate
+      ? mergeTargetDateKey(moved, targetDateKey)
+      : moved;
+    return sortedDateKeys(normalized);
   }
 
   const keepBefore = currentDateKeys.filter((dateKey) => dateKey < sourceDateKey);
@@ -121,5 +154,9 @@ export function rebuildScheduleDateKeys(params: {
       cursor = addDays(cursor, intervalDays);
     }
   }
-  return uniqueSortedDateKeys([...keepBefore, ...futureDates]);
+  const rebuilt = [...keepBefore, ...futureDates];
+  const normalized = mergeIfDuplicate
+    ? mergeTargetDateKey(rebuilt, targetDateKey)
+    : rebuilt;
+  return sortedDateKeys(normalized);
 }

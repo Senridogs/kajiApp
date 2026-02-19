@@ -277,6 +277,128 @@ async function main() {
     .map((item: { date: string }) => item.date);
   assert.equal(recalcDates.includes(nextIfRecalc), true);
   assert.equal(recalcDates.includes(nextIfNoRecalc), false);
+
+  const duplicateBaseDate = startOfJstDay(new Date());
+  const duplicateTargetDateKey = toJstDateKey(duplicateBaseDate);
+  const duplicateSourceDateKey = toJstDateKey(addDays(duplicateBaseDate, 1));
+  const duplicateLastPerformedAt = addDays(duplicateBaseDate, -1).toISOString();
+  const duplicateRecordPerformedAt = new Date(`${duplicateTargetDateKey}T09:00:00+09:00`).toISOString();
+
+  const createDuplicateNoMergeChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "duplicate-no-merge",
+      intervalDays: 1,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: duplicateLastPerformedAt,
+    }),
+  });
+  assert.equal(createDuplicateNoMergeChoreRes.status, 200);
+  const createDuplicateNoMergeChoreBody = await createDuplicateNoMergeChoreRes.json();
+  const duplicateNoMergeChoreId: string = createDuplicateNoMergeChoreBody.chore.id;
+
+  const moveNoMergeRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: duplicateNoMergeChoreId,
+      sourceDate: duplicateSourceDateKey,
+      date: duplicateTargetDateKey,
+      recalculateFuture: false,
+      mergeIfDuplicate: false,
+    }),
+  });
+  assert.equal(moveNoMergeRes.status, 200);
+
+  const noMergeAfterMoveRes = await request("/api/schedule-overrides");
+  assert.equal(noMergeAfterMoveRes.status, 200);
+  const noMergeAfterMoveBody = await noMergeAfterMoveRes.json();
+  const noMergeTargetCountAfterMove = noMergeAfterMoveBody.overrides.filter(
+    (item: { choreId: string; date: string }) =>
+      item.choreId === duplicateNoMergeChoreId && item.date === duplicateTargetDateKey,
+  ).length;
+  assert.equal(noMergeTargetCountAfterMove, 2);
+
+  const firstConsumeNoMergeRes = await request(`/api/chores/${duplicateNoMergeChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      memo: "dup-consume-1",
+      performedAt: duplicateRecordPerformedAt,
+      sourceDate: duplicateTargetDateKey,
+      recalculateFuture: false,
+      mergeIfDuplicate: false,
+    }),
+  });
+  assert.equal(firstConsumeNoMergeRes.status, 200);
+
+  const noMergeAfterFirstConsumeRes = await request("/api/schedule-overrides");
+  assert.equal(noMergeAfterFirstConsumeRes.status, 200);
+  const noMergeAfterFirstConsumeBody = await noMergeAfterFirstConsumeRes.json();
+  const noMergeTargetCountAfterFirstConsume = noMergeAfterFirstConsumeBody.overrides.filter(
+    (item: { choreId: string; date: string }) =>
+      item.choreId === duplicateNoMergeChoreId && item.date === duplicateTargetDateKey,
+  ).length;
+  assert.equal(noMergeTargetCountAfterFirstConsume, 1);
+
+  const secondConsumeNoMergeRes = await request(`/api/chores/${duplicateNoMergeChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      memo: "dup-consume-2",
+      performedAt: duplicateRecordPerformedAt,
+      sourceDate: duplicateTargetDateKey,
+      recalculateFuture: false,
+      mergeIfDuplicate: false,
+    }),
+  });
+  assert.equal(secondConsumeNoMergeRes.status, 200);
+
+  const noMergeAfterSecondConsumeRes = await request("/api/schedule-overrides");
+  assert.equal(noMergeAfterSecondConsumeRes.status, 200);
+  const noMergeAfterSecondConsumeBody = await noMergeAfterSecondConsumeRes.json();
+  const noMergeTargetCountAfterSecondConsume = noMergeAfterSecondConsumeBody.overrides.filter(
+    (item: { choreId: string; date: string }) =>
+      item.choreId === duplicateNoMergeChoreId && item.date === duplicateTargetDateKey,
+  ).length;
+  assert.equal(noMergeTargetCountAfterSecondConsume, 0);
+
+  const createDuplicateMergeChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "duplicate-merge",
+      intervalDays: 1,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: duplicateLastPerformedAt,
+    }),
+  });
+  assert.equal(createDuplicateMergeChoreRes.status, 200);
+  const createDuplicateMergeChoreBody = await createDuplicateMergeChoreRes.json();
+  const duplicateMergeChoreId: string = createDuplicateMergeChoreBody.chore.id;
+
+  const moveMergeRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: duplicateMergeChoreId,
+      sourceDate: duplicateSourceDateKey,
+      date: duplicateTargetDateKey,
+      recalculateFuture: false,
+      mergeIfDuplicate: true,
+    }),
+  });
+  assert.equal(moveMergeRes.status, 200);
+
+  const mergeAfterMoveRes = await request("/api/schedule-overrides");
+  assert.equal(mergeAfterMoveRes.status, 200);
+  const mergeAfterMoveBody = await mergeAfterMoveRes.json();
+  const mergeTargetCountAfterMove = mergeAfterMoveBody.overrides.filter(
+    (item: { choreId: string; date: string }) =>
+      item.choreId === duplicateMergeChoreId && item.date === duplicateTargetDateKey,
+  ).length;
+  assert.equal(mergeTargetCountAfterMove, 1);
 }
 
 await main();

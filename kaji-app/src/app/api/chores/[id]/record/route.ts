@@ -18,10 +18,20 @@ type Body = {
   skipped?: boolean;
   sourceDate?: string;
   recalculateFuture?: boolean;
+  mergeIfDuplicate?: boolean;
 };
 
 type RouteParams = { params: Promise<{ id: string }> };
 const SOURCE_DATE_NOT_SCHEDULED = "sourceDate is not currently scheduled.";
+
+function removeOneOccurrence(dateKeys: string[], targetDateKey: string) {
+  const next = [...dateKeys];
+  const index = next.findIndex((dateKey) => dateKey === targetDateKey);
+  if (index >= 0) {
+    next.splice(index, 1);
+  }
+  return next;
+}
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { session, response } = await requireSession();
@@ -71,10 +81,10 @@ export async function POST(request: Request, { params }: RouteParams) {
 
   const skipped = body.skipped ?? false;
   const recalculateFuture = body?.recalculateFuture === true;
+  const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
   const isFuturePerformedAt = requestedPerformedAt >= tomorrowStart;
   const performedAt = isFuturePerformedAt ? now : requestedPerformedAt;
   const targetDateKey = toJstDateKey(startOfJstDay(performedAt));
-  const shouldApplyFutureSchedulePolicy = isFuturePerformedAt && Boolean(sourceDate);
 
   let record: { id: string; performedAt: Date; memo: string | null };
   try {
@@ -90,12 +100,17 @@ export async function POST(request: Request, { params }: RouteParams) {
         },
       });
 
-      if (shouldApplyFutureSchedulePolicy && sourceDate) {
+      if (sourceDate) {
         const currentOverrides = await tx.choreScheduleOverride.findMany({
           where: { choreId: chore.id },
           orderBy: [{ date: "asc" }, { createdAt: "asc" }],
           select: { date: true },
         });
+        const shouldApplySchedulePolicy = isFuturePerformedAt || currentOverrides.length > 0;
+        if (!shouldApplySchedulePolicy) {
+          await tx.choreScheduleOverride.deleteMany({ where: { choreId: chore.id } });
+          return created;
+        }
         const dueBase = chore.records[0]?.performedAt ?? chore.createdAt;
         const dueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
         const window = resolveScheduleWindow(sourceDate, targetDateKey);
@@ -113,10 +128,11 @@ export async function POST(request: Request, { params }: RouteParams) {
           sourceDateKey: sourceDate,
           targetDateKey,
           recalculateFuture,
+          mergeIfDuplicate,
           intervalDays: chore.intervalDays,
           window,
         });
-        const remainingDateKeys = nextDateKeys.filter((dateKey) => dateKey !== targetDateKey);
+        const remainingDateKeys = removeOneOccurrence(nextDateKeys, targetDateKey);
         await tx.choreScheduleOverride.deleteMany({ where: { choreId: chore.id } });
         if (remainingDateKeys.length > 0) {
           await tx.choreScheduleOverride.createMany({

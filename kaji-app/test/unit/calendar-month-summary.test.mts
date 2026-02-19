@@ -62,3 +62,23 @@ test("same month summary is deterministic regardless of selected week context", 
 
   assert.deepEqual(summaryA, summaryB);
 });
+
+test("duplicate override dates are counted as separate occurrences", () => {
+  const counts = buildCalendarMonthCountsByDate("2026-03", [
+    {
+      id: "dup-override",
+      intervalDays: 7,
+      createdAt: new Date("2026-02-01T00:00:00+09:00"),
+      latestRecord: {
+        performedAt: new Date("2026-03-10T09:00:00+09:00"),
+        isSkipped: false,
+      },
+      scheduleOverrides: [
+        { date: "2026-03-10" },
+        { date: "2026-03-10" },
+      ],
+    },
+  ]);
+
+  assert.equal(counts["2026-03-10"], 3);
+});

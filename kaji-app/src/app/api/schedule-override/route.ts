@@ -14,6 +14,7 @@ type Body = {
   date?: string;
   sourceDate?: string;
   recalculateFuture?: boolean;
+  mergeIfDuplicate?: boolean;
   sourceRecordId?: string;
 };
 
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
   const sourceDate = body?.sourceDate?.trim();
   const sourceRecordId = body?.sourceRecordId?.trim();
   const recalculateFuture = body?.recalculateFuture === true;
+  const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
   const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
 
   if (!choreId || !date) return badRequest("choreId and date are required.");
@@ -125,6 +127,7 @@ export async function POST(request: Request) {
     sourceDateKey: sourceDate,
     targetDateKey: date,
     recalculateFuture,
+    mergeIfDuplicate,
     intervalDays: chore.intervalDays,
     window,
   });
@@ -148,6 +151,7 @@ export async function POST(request: Request) {
     sourceDate,
     date,
     recalculateFuture,
+    mergeIfDuplicate,
     overrides: savedOverrides.map((override) => ({
       id: override.id,
       choreId: override.choreId,

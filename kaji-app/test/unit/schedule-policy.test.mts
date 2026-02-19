@@ -4,87 +4,66 @@ import test from "node:test";
 import {
   rebuildScheduleDateKeys,
   resolveCurrentScheduleDateKeys,
-  resolveScheduleWindow,
 } from "../../src/lib/schedule-policy.js";
 
-test("rebuildScheduleDateKeys keeps later cadence when recalculateFuture is false", () => {
-  const sourceDateKey = "2026-02-20";
-  const targetDateKey = "2026-02-19";
-  const window = resolveScheduleWindow(sourceDateKey, targetDateKey);
-  const currentDateKeys = resolveCurrentScheduleDateKeys({
-    overrideDateKeys: [],
-    dueDateKey: sourceDateKey,
-    intervalDays: 2,
-    window,
+const windowRange = {
+  fromDateKey: "2026-03-01",
+  toDateKey: "2026-03-31",
+} as const;
+
+test("resolveCurrentScheduleDateKeys keeps duplicate override entries", () => {
+  const result = resolveCurrentScheduleDateKeys({
+    overrideDateKeys: [
+      "2026-03-10",
+      "2026-03-10",
+      "2026-03-12",
+    ],
+    dueDateKey: "2026-03-05",
+    intervalDays: 7,
+    window: windowRange,
   });
 
-  const moved = rebuildScheduleDateKeys({
-    currentDateKeys,
-    sourceDateKey,
-    targetDateKey,
-    recalculateFuture: false,
-    intervalDays: 2,
-    window,
-  });
-
-  assert.equal(moved.includes("2026-02-19"), true);
-  assert.equal(moved.includes("2026-02-20"), false);
-  assert.equal(moved.includes("2026-02-22"), true);
+  assert.deepEqual(result, ["2026-03-10", "2026-03-10", "2026-03-12"]);
 });
 
-test("rebuildScheduleDateKeys recalculates cadence from target date when recalculateFuture is true", () => {
-  const sourceDateKey = "2026-02-20";
-  const targetDateKey = "2026-02-19";
-  const window = resolveScheduleWindow(sourceDateKey, targetDateKey);
-  const currentDateKeys = resolveCurrentScheduleDateKeys({
-    overrideDateKeys: [],
-    dueDateKey: sourceDateKey,
-    intervalDays: 2,
-    window,
+test("rebuildScheduleDateKeys merges only target date when mergeIfDuplicate=true", () => {
+  const result = rebuildScheduleDateKeys({
+    currentDateKeys: ["2026-03-10", "2026-03-12"],
+    sourceDateKey: "2026-03-10",
+    targetDateKey: "2026-03-12",
+    recalculateFuture: false,
+    mergeIfDuplicate: true,
+    intervalDays: 7,
+    window: windowRange,
   });
 
-  const moved = rebuildScheduleDateKeys({
-    currentDateKeys,
-    sourceDateKey,
-    targetDateKey,
-    recalculateFuture: true,
-    intervalDays: 2,
-    window,
-  });
-
-  assert.equal(moved.includes("2026-02-19"), true);
-  assert.equal(moved.includes("2026-02-21"), true);
-  assert.equal(moved.includes("2026-02-22"), false);
+  assert.deepEqual(result, ["2026-03-12"]);
 });
 
-test("future-date completion can consume target date while preserving selected schedule policy", () => {
-  const sourceDateKey = "2026-02-20";
-  const targetDateKey = "2026-02-19";
-  const window = resolveScheduleWindow(sourceDateKey, targetDateKey);
-  const currentDateKeys = resolveCurrentScheduleDateKeys({
-    overrideDateKeys: [],
-    dueDateKey: sourceDateKey,
-    intervalDays: 2,
-    window,
+test("rebuildScheduleDateKeys keeps duplicates when mergeIfDuplicate=false", () => {
+  const result = rebuildScheduleDateKeys({
+    currentDateKeys: ["2026-03-10", "2026-03-12"],
+    sourceDateKey: "2026-03-10",
+    targetDateKey: "2026-03-12",
+    recalculateFuture: false,
+    mergeIfDuplicate: false,
+    intervalDays: 7,
+    window: windowRange,
   });
 
-  const noRecalc = rebuildScheduleDateKeys({
-    currentDateKeys,
-    sourceDateKey,
-    targetDateKey,
-    recalculateFuture: false,
-    intervalDays: 2,
-    window,
-  }).filter((dateKey) => dateKey !== targetDateKey);
-  const recalc = rebuildScheduleDateKeys({
-    currentDateKeys,
-    sourceDateKey,
-    targetDateKey,
-    recalculateFuture: true,
-    intervalDays: 2,
-    window,
-  }).filter((dateKey) => dateKey !== targetDateKey);
+  assert.deepEqual(result, ["2026-03-12", "2026-03-12"]);
+});
 
-  assert.equal(noRecalc[0], "2026-02-22");
-  assert.equal(recalc[0], "2026-02-21");
+test("rebuildScheduleDateKeys removes exactly one source occurrence", () => {
+  const result = rebuildScheduleDateKeys({
+    currentDateKeys: ["2026-03-10", "2026-03-10", "2026-03-12"],
+    sourceDateKey: "2026-03-10",
+    targetDateKey: "2026-03-12",
+    recalculateFuture: false,
+    mergeIfDuplicate: false,
+    intervalDays: 7,
+    window: windowRange,
+  });
+
+  assert.deepEqual(result, ["2026-03-10", "2026-03-12", "2026-03-12"]);
 });
