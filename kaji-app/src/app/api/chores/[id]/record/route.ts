@@ -83,7 +83,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   const recalculateFuture = body?.recalculateFuture === true;
   const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
   const isFuturePerformedAt = requestedPerformedAt >= tomorrowStart;
-  const performedAt = isFuturePerformedAt ? now : requestedPerformedAt;
+  const performedAt = requestedPerformedAt;
   const targetDateKey = toJstDateKey(startOfJstDay(performedAt));
 
   let record: { id: string; performedAt: Date; memo: string | null };

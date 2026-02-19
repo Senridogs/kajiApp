@@ -28,13 +28,14 @@ test("Main app keeps mobile-first shell and editor sheet behavior", () => {
   assert.match(app, /open=\{choreEditorOpen && !customIconOpen\}/);
 });
 
-test("Stats header account icon opens settings and keeps single my-report CTA transition", () => {
+test("Stats header account icon toggles settings and keeps single my-report CTA transition", () => {
   const app = read("src/components/kaji/kaji-app.tsx");
   const myReportFromStats = app.match(/openStandaloneScreen\("my-report", "stats"\)/g) ?? [];
 
   assert.equal(myReportFromStats.length, 1);
   assert.doesNotMatch(app, /aria-label="\u79C1\u306E\u30EC\u30DD\u30FC\u30C8\u3092\u958B\u304F"/);
-  assert.match(app, /onClick=\{\(\) => \{[\s\S]*closeAssignment\(\);[\s\S]*openSettings\(\);[\s\S]*\}\}[\s\S]*aria-label="\u8A2D\u5B9A\u3092\u958B\u304F"/);
+  assert.match(app, /const toggleSettingsFromHeader = useCallback\([\s\S]*if \(settingsOpen\) \{[\s\S]*closeSettings\(\);[\s\S]*openSettings\(\);/);
+  assert.match(app, /onClick=\{toggleSettingsFromHeader\}[\s\S]*aria-label=\{settingsOpen \? "\u8A2D\u5B9A\u3092\u9589\u3058\u308B" : "\u8A2D\u5B9A\u3092\u958B\u304F"\}/);
 });
 
 test("Records and settings include my-records standalone transitions", () => {
@@ -60,6 +61,15 @@ test("Optimistic completion marks initial flag false to avoid temporary disappea
   assert.match(app, /submitMemoAction[\s\S]*lastRecordIsInitial:\s*false/);
 });
 
+test("Calendar blank tap opens action sheet and quick record buttons", () => {
+  const app = read("src/components/kaji/kaji-app.tsx");
+  assert.match(app, /handleCalendarSurfaceTap[\s\S]*setCalendarBlankActionOpen\(true\)/);
+  assert.match(app, /calendarBlankActionMode === "record"/);
+  assert.match(app, /完了にする/);
+  assert.match(app, /予定を登録/);
+  assert.match(app, /memoFlowMode === "calendar-quick"/);
+});
+
 test("Editor interaction keeps interval controls", () => {
   const editor = read("src/components/kaji/chore-editor.tsx");
   assert.match(editor, /updateIntervalDays\(-7\)/);
@@ -82,4 +92,31 @@ test("Manage screen has detail flow and upcoming schedule section", () => {
   assert.match(app, /formatDateKeyMonthDayWeekday/);
   assert.match(app, /manageUpcomingDateKeys\.map\(\(dateKey, index\) => \([\s\S]*openReschedule\(manageDetailTarget,\s*dateKey\)/);
   assert.match(app, /planned-\$\{dateKey\}-\$\{index\}/);
+});
+
+test("Completion date choice dialog is wired for non-today record only", () => {
+  const app = read("src/components/kaji/kaji-app.tsx");
+  assert.match(app, /pendingRecordDateChoice/);
+  assert.match(app, /recordDateChoiceDialogCopy/);
+  assert.match(app, /if \(memoTarget && memoBaseDateKey && memoBaseDateKey !== todayDateKey\)[\s\S]*setPendingRecordDateChoice/);
+  assert.match(app, /submitMemoAction\(\{ skipped: false, performedAtMode: "source" \}\)/);
+  assert.match(app, /submitMemoAction\(\{ skipped: false, performedAtMode: "today" \}\)/);
+  assert.match(app, /submitSkip[\s\S]*submitMemoAction\(\{ skipped: true \}\)/);
+});
+
+test("Reschedule confirmation is centralized for drag and sheet flows", () => {
+  const app = read("src/components/kaji/kaji-app.tsx");
+  assert.match(app, /const resolveSourceRecordIdForDate = useCallback/);
+  assert.match(app, /applyReschedule[\s\S]*sourceRecordId[\s\S]*openRescheduleConfirmWithCollisionCheck/);
+  assert.match(app, /dropDraggedChoreToDate[\s\S]*sourceRecordId[\s\S]*openRescheduleConfirmWithCollisionCheck/);
+  assert.doesNotMatch(app, /dropDraggedChoreToDate[\s\S]*await rescheduleChoreToDate\([\s\S]*sourceRecordId/);
+});
+
+test("Reschedule sheet header exposes chore edit action", () => {
+  const app = read("src/components/kaji/kaji-app.tsx");
+  assert.match(app, /const openRescheduleEditChore = \(\) => \{/);
+  assert.match(app, /if \(!rescheduleTarget\) return;[\s\S]*const target = rescheduleTarget;/);
+  assert.match(app, /setRescheduleOpen\(false\);[\s\S]*setRescheduleTarget\(null\);[\s\S]*openEditChore\(target\);/);
+  assert.match(app, /aria-label="家事を編集"/);
+  assert.match(app, /家事を編集/);
 });

@@ -26,6 +26,7 @@ import {
   deleteChoreDialogCopy,
   infoDialogCopy,
   mergeDuplicateDialogCopy,
+  recordDateChoiceDialogCopy,
   rescheduleConfirmDialogCopy,
   undoRecordDialogCopy,
 } from "@/components/kaji/dialog-copy";
@@ -85,6 +86,7 @@ const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
 ];
 
 const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
+const TAB_HEADER_HEIGHT_FALLBACK = 72;
 const ASSIGNMENT_SHEET_SLIDE_MS = 240;
 const ASSIGNMENT_BACK_SWIPE_EDGE_PX = 72;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -149,6 +151,19 @@ type PendingMergeDuplicateConfirm = {
   targetDateKey: string;
   sourceRecordId?: string;
   homeDropInsert?: HomeDropInsert;
+};
+type PendingRecordDateChoice = {
+  choreId: string;
+  choreTitle: string;
+  sourceDateKey: string;
+};
+type PerformedAtMode = "today" | "source";
+type MemoFlowMode = "default" | "calendar-quick";
+type CalendarBlankActionMode = "choice" | "record";
+type PendingCalendarPlanDuplicateConfirm = {
+  choreId: string;
+  choreTitle: string;
+  dateKey: string;
 };
 type StandaloneScreenKey = "manage" | "my-report" | "my-records";
 type StandaloneOriginKey = "settings" | "list" | "stats" | "records";
@@ -249,6 +264,29 @@ function onboardingPresetLastPerformedAt(intervalDays: number, now = new Date())
 
 function applyPullResistance(distance: number) {
   return Math.min(PULL_REFRESH_MAX_PX, Math.max(0, distance) * 0.5);
+}
+
+function compareDateKey(left: string, right: string) {
+  return left.localeCompare(right);
+}
+
+function resolvePerformedAtForDateKey(dateKey: string, now = new Date()) {
+  const todayKey = toJstDateKey(startOfJstDay(now));
+  if (compareDateKey(dateKey, todayKey) > 0) {
+    return now;
+  }
+
+  const targetDayStart = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
+  if (Number.isNaN(targetDayStart.getTime())) {
+    return now;
+  }
+
+  const jstOffsetMs = 9 * 60 * 60 * 1000;
+  const nowJst = new Date(now.getTime() + jstOffsetMs);
+  const elapsedMs =
+    ((nowJst.getUTCHours() * 60 + nowJst.getUTCMinutes()) * 60 + nowJst.getUTCSeconds()) * 1000 +
+    nowJst.getUTCMilliseconds();
+  return new Date(targetDayStart.getTime() + elapsedMs);
 }
 
 function buildGroupedTimelineRecords(items: ChoreRecordItem[]): TimelineRecordGroup[] {
@@ -614,6 +652,15 @@ export function KajiApp() {
   const [memoBaseDateKey, setMemoBaseDateKey] = useState<string | null>(null);
   const [memo, setMemo] = useState("");
   const [memoOpen, setMemoOpen] = useState(false);
+  const [pendingRecordDateChoice, setPendingRecordDateChoice] =
+    useState<PendingRecordDateChoice | null>(null);
+  const [memoFlowMode, setMemoFlowMode] = useState<MemoFlowMode>("default");
+  const [memoQuickDateKey, setMemoQuickDateKey] = useState<string | null>(null);
+  const [calendarBlankActionOpen, setCalendarBlankActionOpen] = useState(false);
+  const [calendarBlankActionDateKey, setCalendarBlankActionDateKey] = useState<string | null>(null);
+  const [calendarBlankActionMode, setCalendarBlankActionMode] = useState<CalendarBlankActionMode>("choice");
+  const [pendingCalendarPlanDuplicateConfirm, setPendingCalendarPlanDuplicateConfirm] =
+    useState<PendingCalendarPlanDuplicateConfirm | null>(null);
   const [undoConfirmTarget, setUndoConfirmTarget] = useState<ChoreWithComputed | null>(null);
   const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
   const [reactionUpdatingId, setReactionUpdatingId] = useState<string | null>(null);
@@ -680,6 +727,14 @@ export function KajiApp() {
     setSettingsView("menu");
     setSettingsOpen(false);
   }, []);
+  const toggleSettingsFromHeader = useCallback(() => {
+    closeAssignment();
+    if (settingsOpen) {
+      closeSettings();
+      return;
+    }
+    openSettings();
+  }, [closeAssignment, closeSettings, openSettings, settingsOpen]);
   const openStandaloneScreen = useCallback(
     (screen: StandaloneScreenKey, origin: StandaloneOriginKey = "settings") => {
       if (screen === "manage") {
@@ -766,10 +821,10 @@ export function KajiApp() {
   const recordsHeaderRef = useRef<HTMLDivElement | null>(null);
   const statsHeaderRef = useRef<HTMLDivElement | null>(null);
   const settingsHeaderRef = useRef<HTMLDivElement | null>(null);
-  const [listHeaderHeight, setListHeaderHeight] = useState(0);
-  const [recordsHeaderHeight, setRecordsHeaderHeight] = useState(0);
-  const [statsHeaderHeight, setStatsHeaderHeight] = useState(0);
-  const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(0);
+  const [listHeaderHeight, setListHeaderHeight] = useState(TAB_HEADER_HEIGHT_FALLBACK);
+  const [recordsHeaderHeight, setRecordsHeaderHeight] = useState(TAB_HEADER_HEIGHT_FALLBACK);
+  const [statsHeaderHeight, setStatsHeaderHeight] = useState(TAB_HEADER_HEIGHT_FALLBACK);
+  const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(TAB_HEADER_HEIGHT_FALLBACK);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
   const sectionTouchStartRef = useRef<{ x: number; y: number } | null>(null);
   const pullStartYRef = useRef(0);
@@ -784,6 +839,17 @@ export function KajiApp() {
 
   const sessionUser = boot?.sessionUser ?? null;
   const chores = boot?.chores ?? [];
+  const calendarQuickRecordChores = useMemo(
+    () =>
+      [...chores]
+        .filter((chore) => !chore.archived)
+        .sort((left, right) => {
+          const titleDiff = JA_COLLATOR.compare(left.title, right.title);
+          if (titleDiff !== 0) return titleDiff;
+          return JA_COLLATOR.compare(left.id, right.id);
+        }),
+    [chores],
+  );
   const homeDateKeys = buildHomeDateKeys();
   const homeSectionDateKeySet = useMemo(
     () => new Set([homeDateKeys.yesterday, homeDateKeys.today, homeDateKeys.tomorrow]),
@@ -1538,15 +1604,18 @@ export function KajiApp() {
       [statsHeaderRef, setStatsHeaderHeight],
       [settingsHeaderRef, setSettingsHeaderHeight],
     ];
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
+    const updateHeaderHeights = () => {
       for (const [ref, setter] of entries) {
         const el = ref.current;
         if (!el) continue;
         const h = Math.ceil(el.getBoundingClientRect().height);
         if (Number.isFinite(h) && h > 0) setter((prev) => (prev === h ? prev : h));
       }
-    });
+    };
+
+    updateHeaderHeights();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateHeaderHeights);
     for (const [ref] of entries) {
       if (ref.current) observer.observe(ref.current);
     }
@@ -1769,10 +1838,18 @@ export function KajiApp() {
     setChoreEditorOpen(true);
   };
 
+  const closeCalendarBlankActionSheet = useCallback(() => {
+    setCalendarBlankActionOpen(false);
+    setCalendarBlankActionDateKey(null);
+    setCalendarBlankActionMode("choice");
+  }, []);
+
   const handleCalendarSurfaceTap = (event: MouseEvent<HTMLElement>, dateKey: string) => {
     const target = event.target as HTMLElement | null;
     if (target?.closest("button, a, input, textarea, select, [role='button']")) return;
-    openAddChoreForDate(dateKey);
+    setCalendarBlankActionDateKey(dateKey);
+    setCalendarBlankActionMode("choice");
+    setCalendarBlankActionOpen(true);
   };
 
   const openEditChore = (chore: ChoreWithComputed) => {
@@ -1906,9 +1983,22 @@ export function KajiApp() {
   const openMemo = (chore: ChoreWithComputed, baseDateKey?: string) => {
     setMemoTarget(chore);
     setMemoBaseDateKey(baseDateKey ?? null);
+    setPendingRecordDateChoice(null);
+    setMemoFlowMode("default");
+    setMemoQuickDateKey(null);
     setMemo("");
     setMemoOpen(true);
   };
+
+  const openCalendarQuickMemo = useCallback((chore: ChoreWithComputed, dateKey: string) => {
+    setMemoTarget(chore);
+    setMemoBaseDateKey(null);
+    setPendingRecordDateChoice(null);
+    setMemoFlowMode("calendar-quick");
+    setMemoQuickDateKey(dateKey);
+    setMemo("");
+    setMemoOpen(true);
+  }, []);
 
   const shiftDateKey = useCallback((dateKey: string, days: number) => {
     const parsed = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
@@ -1927,6 +2017,14 @@ export function KajiApp() {
     setPendingRescheduleConfirm(null);
     setPendingMergeDuplicateConfirm(null);
     setRescheduleOpen(true);
+  };
+
+  const openRescheduleEditChore = () => {
+    if (!rescheduleTarget) return;
+    const target = rescheduleTarget;
+    setRescheduleOpen(false);
+    setRescheduleTarget(null);
+    openEditChore(target);
   };
 
   const resolveRescheduleDateKey = useCallback((choice: RescheduleChoice, customDate: string, baseDateKey: string) => {
@@ -2432,16 +2530,194 @@ export function KajiApp() {
     return toJstDateKey(target);
   }, [dragSourceDateKey]);
 
+  const submitCalendarQuickCompletion = useCallback(async ({
+    chore,
+    dateKey,
+    memoText,
+  }: {
+    chore: ChoreWithComputed;
+    dateKey: string;
+    memoText: string;
+  }) => {
+    const targetId = chore.id;
+    const previousBoot = boot;
+    const now = new Date();
+    const todayStart = startOfJstDay(now);
+    const tomorrowStart = addDays(todayStart, 1);
+    const dayAfterTomorrow = addDays(todayStart, 2);
+    const performedAt = resolvePerformedAtForDateKey(dateKey, now);
+    const performedAtIso = performedAt.toISOString();
+    const performedAtDateKey = toJstDateKey(startOfJstDay(performedAt));
+    const completedTomorrowTask = chore.isDueTomorrow;
+
+    setMemoOpen(false);
+    setRecordUpdating(targetId, true);
+
+    if (sessionUser) {
+      updateBootChoreOptimistically(targetId, (current) => {
+        const nextDueAt = addDays(performedAt, current.intervalDays);
+        const nextDueAtTime = nextDueAt.getTime();
+        return {
+          ...current,
+          doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
+          lastPerformedAt: performedAtIso,
+          lastPerformerName: sessionUser.name,
+          lastPerformerId: sessionUser.id,
+          lastRecordIsInitial: false,
+          lastRecordSkipped: false,
+          lastRecordId: current.lastRecordId ?? `optimistic-${now.getTime()}`,
+          dueAt: nextDueAt.toISOString(),
+          isDueToday: nextDueAt >= todayStart && nextDueAt < tomorrowStart,
+          isDueTomorrow: nextDueAt >= tomorrowStart && nextDueAt < dayAfterTomorrow,
+          isOverdue: nextDueAt < todayStart,
+          overdueDays:
+            nextDueAt < todayStart
+              ? Math.floor((todayStart.getTime() - nextDueAtTime) / DAY_IN_MS)
+              : 0,
+          daysSinceLast: 0,
+        };
+      });
+    }
+
+    try {
+      const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
+        method: "POST",
+        body: JSON.stringify({ memo: memoText, skipped: false, performedAt: performedAtIso }),
+      });
+      if (result?.record?.id) {
+        updateBootChoreOptimistically(targetId, (current) => ({
+          ...current,
+          lastRecordId: result.record.id,
+        }));
+      }
+
+      await Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
+
+      if (!chore.doneToday && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
+        showTaskBanner("👏 明日のものをやってえらい！", "blue");
+      }
+
+      void Promise.all([loadStats(statsPeriod), loadHistory()]);
+    } catch (err: unknown) {
+      if (previousBoot) {
+        setBoot(previousBoot);
+      }
+      setError((err as Error).message ?? "記録に失敗しました。");
+    } finally {
+      setRecordUpdating(targetId, false);
+      setMemoTarget(null);
+      setMemoBaseDateKey(null);
+      setMemo("");
+      setMemoFlowMode("default");
+      setMemoQuickDateKey(null);
+    }
+  }, [
+    boot,
+    loadBootstrap,
+    loadCalendarMonthSummary,
+    loadHistory,
+    loadStats,
+    sessionUser,
+    setRecordUpdating,
+    showTaskBanner,
+    statsPeriod,
+    updateBootChoreOptimistically,
+  ]);
+
+  const addCalendarPlannedOccurrence = useCallback(async (
+    chore: ChoreWithComputed,
+    dateKey: string,
+    allowDuplicate = false,
+  ) => {
+    const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+    if (compareDateKey(dateKey, todayDateKey) < 0) {
+      setError("過去の日付には予定登録できません。");
+      return;
+    }
+
+    setError("");
+    setRecordUpdating(chore.id, true);
+    try {
+      await apiFetch("/api/schedule-override", {
+        method: "POST",
+        body: JSON.stringify({
+          choreId: chore.id,
+          date: dateKey,
+          mode: "add",
+          allowDuplicate,
+        }),
+      });
+      setPendingCalendarPlanDuplicateConfirm(null);
+      await Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
+      setInfoMessage(`「${chore.title}」を${dateKey}に予定登録しました。`);
+      closeCalendarBlankActionSheet();
+    } catch (err: unknown) {
+      const message = (err as Error).message ?? "予定登録に失敗しました。";
+      if (!allowDuplicate && message.includes("A matching chore already exists on that date")) {
+        setPendingCalendarPlanDuplicateConfirm({
+          choreId: chore.id,
+          choreTitle: chore.title,
+          dateKey,
+        });
+        return;
+      }
+      setError(message);
+    } finally {
+      setRecordUpdating(chore.id, false);
+    }
+  }, [
+    closeCalendarBlankActionSheet,
+    loadBootstrap,
+    loadCalendarMonthSummary,
+    setRecordUpdating,
+  ]);
+
+  const resolveCalendarPlanDuplicateConfirm = useCallback((allowDuplicate: boolean) => {
+    if (!pendingCalendarPlanDuplicateConfirm) return;
+    const pending = pendingCalendarPlanDuplicateConfirm;
+    setPendingCalendarPlanDuplicateConfirm(null);
+    if (!allowDuplicate) return;
+    const target = chores.find((chore) => chore.id === pending.choreId);
+    if (!target) {
+      setError("対象の家事が見つかりません。");
+      return;
+    }
+    void addCalendarPlannedOccurrence(target, pending.dateKey, true);
+  }, [addCalendarPlannedOccurrence, chores]);
+
+  const handleCalendarBlankComplete = useCallback((chore: ChoreWithComputed, dateKey: string) => {
+    const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+    if (compareDateKey(dateKey, todayDateKey) < 0) {
+      closeCalendarBlankActionSheet();
+      openCalendarQuickMemo(chore, dateKey);
+      return;
+    }
+    closeCalendarBlankActionSheet();
+    void submitCalendarQuickCompletion({ chore, dateKey, memoText: "" });
+  }, [closeCalendarBlankActionSheet, openCalendarQuickMemo, submitCalendarQuickCompletion]);
+
+  const handleCalendarBlankPlanned = useCallback((chore: ChoreWithComputed, dateKey: string) => {
+    void addCalendarPlannedOccurrence(chore, dateKey, false);
+  }, [addCalendarPlannedOccurrence]);
+
   const submitMemoAction = useCallback(async ({
     skipped,
     recalculateFuture,
     bypassFutureConfirm = false,
     mergeIfDuplicate = true,
+    performedAtMode = "today",
   }: {
     skipped: boolean;
     recalculateFuture?: boolean;
     bypassFutureConfirm?: boolean;
     mergeIfDuplicate?: boolean;
+    performedAtMode?: PerformedAtMode;
   }) => {
     if (!memoTarget) return;
     const targetId = memoTarget.id;
@@ -2458,7 +2734,7 @@ export function KajiApp() {
       hasFutureMemoBase =
         !Number.isNaN(baseDate.getTime()) && baseDate.getTime() > todayStart.getTime();
     }
-    if (hasFutureMemoBase && !bypassFutureConfirm && sourceDateKey) {
+    if (performedAtMode === "today" && hasFutureMemoBase && !bypassFutureConfirm && sourceDateKey) {
       openRescheduleConfirmWithCollisionCheck({
         origin: skipped ? "future-skip" : "future-record",
         choreId: memoTarget.id,
@@ -2469,8 +2745,16 @@ export function KajiApp() {
       return;
     }
 
-    const performedAt = now;
+    let performedAt = now;
+    if (performedAtMode === "source" && sourceDateKey) {
+      const sourceDayStart = startOfJstDay(new Date(`${sourceDateKey}T00:00:00+09:00`));
+      if (!Number.isNaN(sourceDayStart.getTime())) {
+        const elapsedTodayMs = Math.max(0, now.getTime() - todayStart.getTime());
+        performedAt = new Date(sourceDayStart.getTime() + elapsedTodayMs);
+      }
+    }
     const performedAtIso = performedAt.toISOString();
+    const performedAtDateKey = toJstDateKey(startOfJstDay(performedAt));
     const completedTomorrowTask = memoTarget.isDueTomorrow;
 
     setMemoOpen(false);
@@ -2507,7 +2791,9 @@ export function KajiApp() {
     try {
       const body: Record<string, unknown> = { memo, skipped, performedAt: performedAtIso };
       if (shouldSendSourceDate && sourceDateKey) {
-        const effectiveMergeIfDuplicate = hasFutureMemoBase ? mergeIfDuplicate : false;
+        const targetMatchesSource = sourceDateKey === performedAtDateKey;
+        const effectiveMergeIfDuplicate =
+          hasFutureMemoBase && !targetMatchesSource ? mergeIfDuplicate : false;
         body.sourceDate = sourceDateKey;
         body.recalculateFuture = recalculateFuture === true;
         body.mergeIfDuplicate = effectiveMergeIfDuplicate;
@@ -2528,7 +2814,7 @@ export function KajiApp() {
           loadCalendarMonthSummary(calendarMonthKeyRef.current),
         ]);
       }
-      if (!skipped && completedTomorrowTask) {
+      if (!skipped && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
         showTaskBanner("👏 明日のものをやってえらい！", "blue");
       }
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
@@ -2541,6 +2827,8 @@ export function KajiApp() {
       setRecordUpdating(targetId, false);
       setMemoTarget(null);
       setMemoBaseDateKey(null);
+      setMemoFlowMode("default");
+      setMemoQuickDateKey(null);
     }
   }, [
     boot,
@@ -2560,10 +2848,37 @@ export function KajiApp() {
   ]);
 
   const submitRecord = useCallback(() => {
-    void submitMemoAction({ skipped: false });
-  }, [submitMemoAction]);
+    if (memoFlowMode === "calendar-quick" && memoTarget && memoQuickDateKey) {
+      void submitCalendarQuickCompletion({
+        chore: memoTarget,
+        dateKey: memoQuickDateKey,
+        memoText: memo,
+      });
+      return;
+    }
+    const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+    if (memoTarget && memoBaseDateKey && memoBaseDateKey !== todayDateKey) {
+      setPendingRecordDateChoice({
+        choreId: memoTarget.id,
+        choreTitle: memoTarget.title,
+        sourceDateKey: memoBaseDateKey,
+      });
+      return;
+    }
+    setPendingRecordDateChoice(null);
+    void submitMemoAction({ skipped: false, performedAtMode: "today" });
+  }, [
+    memo,
+    memoBaseDateKey,
+    memoFlowMode,
+    memoQuickDateKey,
+    memoTarget,
+    submitCalendarQuickCompletion,
+    submitMemoAction,
+  ]);
 
   const submitSkip = useCallback(() => {
+    setPendingRecordDateChoice(null);
     void submitMemoAction({ skipped: true });
   }, [submitMemoAction]);
 
@@ -3760,12 +4075,9 @@ export function KajiApp() {
           <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={() => {
-                closeAssignment();
-                openSettings();
-              }}
+              onClick={toggleSettingsFromHeader}
               className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
-              aria-label="設定を開く"
+              aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
             >
               <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
                 account_circle
@@ -3788,12 +4100,9 @@ export function KajiApp() {
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
-              onClick={() => {
-                closeAssignment();
-                openSettings();
-              }}
+              onClick={toggleSettingsFromHeader}
               className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
-              aria-label="設定を開く"
+              aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
             >
               <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
                 account_circle
@@ -3859,12 +4168,9 @@ export function KajiApp() {
           <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={() => {
-                closeAssignment();
-                openSettings();
-              }}
+              onClick={toggleSettingsFromHeader}
               className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
-              aria-label="設定を開く"
+              aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
             >
               <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
                 account_circle
@@ -3882,12 +4188,9 @@ export function KajiApp() {
           <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={() => {
-                closeAssignment();
-                openSettings();
-              }}
+              onClick={toggleSettingsFromHeader}
               className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
-              aria-label="設定を開く"
+              aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
             >
               <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
                 account_circle
@@ -5020,9 +5323,15 @@ export function KajiApp() {
       <div className="flex h-full flex-col">
         <div className="space-y-4">
           <div className="space-y-1">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full text-white" style={{ backgroundColor: sessionUser.color ?? "#1A9BE8" }}>
+            <button
+              type="button"
+              onClick={closeSettings}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-white"
+              style={{ backgroundColor: sessionUser.color ?? "#1A9BE8" }}
+              aria-label="設定を閉じる"
+            >
               <span className="material-symbols-rounded text-[20px]">person</span>
-            </div>
+            </button>
             <p className="text-[28px] font-bold leading-none text-[#202124]">{sessionUser.name}</p>
             <p className="text-[13px] font-medium text-[#9AA0A6]">@{sessionUser.name.toLowerCase()} · いえたすく</p>
             <p className="pt-1 text-[13px] font-semibold text-[#5F6368]">{myReport?.currentMonthTotal ?? 0} 今月の記録・ {chores.length} 連続日数</p>
@@ -5435,10 +5744,126 @@ export function KajiApp() {
 
       {renderChoreEditorSheets()}
       <BottomSheet
+        open={calendarBlankActionOpen}
+        onClose={closeCalendarBlankActionSheet}
+        title=""
+        maxHeightClassName="min-h-[52vh] max-h-[86vh]"
+      >
+        {calendarBlankActionDateKey ? (() => {
+          const selectedDate = startOfJstDay(new Date(`${calendarBlankActionDateKey}T00:00:00+09:00`));
+          const selectedDateLabel = Number.isNaN(selectedDate.getTime())
+            ? calendarBlankActionDateKey
+            : `${WEEKDAY_SHORT[new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay()]} ${new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDate()}`;
+          const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+          const isPastDate = compareDateKey(calendarBlankActionDateKey, todayDateKey) < 0;
+
+          return (
+            <div className="space-y-4 pb-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[21px] font-bold text-[#202124]">この日の操作</p>
+                  <p className="text-[12px] font-medium text-[#5F6368]">{calendarBlankActionDateKey} ({selectedDateLabel})</p>
+                </div>
+                {calendarBlankActionMode === "record" ? (
+                  <button
+                    type="button"
+                    onClick={() => setCalendarBlankActionMode("choice")}
+                    className="rounded-[10px] border border-[#DADCE0] px-3 py-1.5 text-[12px] font-semibold text-[#5F6368]"
+                  >
+                    戻る
+                  </button>
+                ) : null}
+              </div>
+
+              {calendarBlankActionMode === "choice" ? (
+                <div className="space-y-3">
+                  <ActionButton
+                    type="button"
+                    onClick={() => {
+                      closeCalendarBlankActionSheet();
+                      openAddChoreForDate(calendarBlankActionDateKey);
+                    }}
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                  >
+                    家事の新規登録
+                  </ActionButton>
+                  <ActionButton
+                    type="button"
+                    onClick={() => setCalendarBlankActionMode("record")}
+                    variant="secondary"
+                    size="lg"
+                    fullWidth
+                  >
+                    実績を記録する
+                  </ActionButton>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {calendarQuickRecordChores.length === 0 ? (
+                    <p className="rounded-[12px] border border-[#E5EAF0] bg-[#F8F9FA] px-3 py-3 text-[13px] font-medium text-[#5F6368]">
+                      登録済みの家事がありません。まずは新規登録してください。
+                    </p>
+                  ) : (
+                    calendarQuickRecordChores.map((chore) => {
+                      const TaskIcon = iconByName(chore.icon);
+                      const updating = recordUpdatingIds.includes(chore.id);
+                      return (
+                        <div
+                          key={`calendar-blank-record-${calendarBlankActionDateKey}-${chore.id}`}
+                          className="space-y-2 rounded-[12px] border border-[#E5EAF0] bg-white px-3 py-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <TaskIcon size={15} color={chore.iconColor} />
+                            <p className="truncate text-[14px] font-bold text-[#202124]">{chore.title}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              disabled={updating}
+                              onClick={() => {
+                                handleCalendarBlankComplete(chore, calendarBlankActionDateKey);
+                              }}
+                              className="rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                            >
+                              完了にする
+                            </button>
+                            <button
+                              type="button"
+                              disabled={updating || isPastDate}
+                              onClick={() => {
+                                handleCalendarBlankPlanned(chore, calendarBlankActionDateKey);
+                              }}
+                              className="rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#202124] disabled:opacity-40"
+                            >
+                              予定を登録
+                            </button>
+                          </div>
+                          {isPastDate ? (
+                            <p className="text-[11px] font-medium text-[#9AA0A6]">
+                              過去日は「完了にする」のみ選べます。
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })() : null}
+      </BottomSheet>
+      <BottomSheet
         open={memoOpen}
         onClose={() => {
           setMemoOpen(false);
           setMemoBaseDateKey(null);
+          setPendingRecordDateChoice(null);
+          setMemoFlowMode("default");
+          setMemoQuickDateKey(null);
+          setMemoTarget(null);
         }}
         title=""
         maxHeightClassName="min-h-[62vh] max-h-[88vh]"
@@ -5458,18 +5883,20 @@ export function KajiApp() {
             size="lg"
             fullWidth
           >
-            やったよ！
+            {memoFlowMode === "calendar-quick" ? "この内容で完了にする" : "やったよ！"}
           </ActionButton>
-          <ActionButton
-            type="button"
-            onClick={submitSkip}
-            variant="secondary"
-            size="lg"
-            fullWidth
-            className="mt-3"
-          >
-            スキップ
-          </ActionButton>
+          {memoFlowMode === "default" ? (
+            <ActionButton
+              type="button"
+              onClick={submitSkip}
+              variant="secondary"
+              size="lg"
+              fullWidth
+              className="mt-3"
+            >
+              スキップ
+            </ActionButton>
+          ) : null}
         </div>
       </BottomSheet>
 
@@ -5485,16 +5912,33 @@ export function KajiApp() {
         <div className="space-y-4 pb-2">
           <div className="flex items-center justify-between">
             <p className="text-[22px] font-bold text-[#202124]">日にちを変更</p>
-            <button
-              type="button"
-              onClick={() => {
-                setRescheduleOpen(false);
-                setRescheduleTarget(null);
-              }}
-              className="text-[#5F6368]"
-            >
-              <span className="material-symbols-rounded text-[24px]">close</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openRescheduleEditChore}
+                disabled={!rescheduleTarget}
+                aria-label="家事を編集"
+                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-bold ${
+                  rescheduleTarget
+                    ? "border-[#E5EAF0] bg-white text-[#1A9BE8]"
+                    : "cursor-not-allowed border-[#E5EAF0] bg-[#F1F3F4] text-[#9AA0A6]"
+                }`}
+              >
+                <span className="material-symbols-rounded text-[16px]">edit</span>
+                家事を編集
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRescheduleOpen(false);
+                  setRescheduleTarget(null);
+                }}
+                className="text-[#5F6368]"
+                aria-label="閉じる"
+              >
+                <span className="material-symbols-rounded text-[24px]">close</span>
+              </button>
+            </div>
           </div>
           {rescheduleTarget ? (
             <div className="flex items-center gap-2 rounded-[12px] bg-[#F1F3F4] px-3 py-2">
@@ -5582,6 +6026,49 @@ export function KajiApp() {
           </ActionButton>
         </div>
       </BottomSheet>
+
+      {pendingRecordDateChoice ? (() => {
+        const copy = recordDateChoiceDialogCopy({
+          choreTitle: pendingRecordDateChoice.choreTitle,
+          sourceDateKey: pendingRecordDateChoice.sourceDateKey,
+        });
+        return (
+          <ConfirmDialog
+            open={Boolean(pendingRecordDateChoice)}
+            onClose={() => setPendingRecordDateChoice(null)}
+            onCancel={() => {
+              setPendingRecordDateChoice(null);
+              void submitMemoAction({ skipped: false, performedAtMode: "today" });
+            }}
+            onConfirm={() => {
+              setPendingRecordDateChoice(null);
+              void submitMemoAction({ skipped: false, performedAtMode: "source" });
+            }}
+            title={copy.title}
+            description={copy.description}
+            detail={copy.detail}
+            cancelLabel={copy.cancelLabel}
+            confirmLabel={copy.confirmLabel}
+            confirmVariant="success"
+          />
+        );
+      })() : null}
+
+      {pendingCalendarPlanDuplicateConfirm ? (
+        <ConfirmDialog
+          open={Boolean(pendingCalendarPlanDuplicateConfirm)}
+          onClose={() => setPendingCalendarPlanDuplicateConfirm(null)}
+          onCancel={() => resolveCalendarPlanDuplicateConfirm(false)}
+          onConfirm={() => resolveCalendarPlanDuplicateConfirm(true)}
+          title="同じ日に同じ家事があります"
+          description={`「${pendingCalendarPlanDuplicateConfirm.choreTitle}」を追加しますか？`}
+          detail={`${pendingCalendarPlanDuplicateConfirm.dateKey} に重複登録します`}
+          cancelLabel="やめる"
+          confirmLabel="追加する"
+          confirmVariant="success"
+          loading={recordUpdatingIds.includes(pendingCalendarPlanDuplicateConfirm.choreId)}
+        />
+      ) : null}
 
       {pendingMergeDuplicateConfirm ? (() => {
         const copy = mergeDuplicateDialogCopy({

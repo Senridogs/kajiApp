@@ -189,7 +189,6 @@ async function main() {
   assert.equal(settingsBody.notifyReminder, true);
 
   const todayStart = startOfJstDay(new Date());
-  const todayDateKey = toJstDateKey(todayStart);
   const sourceDateKey = toJstDateKey(addDays(todayStart, 1));
   const nextIfNoRecalc = toJstDateKey(addDays(todayStart, 3));
   const nextIfRecalc = toJstDateKey(addDays(todayStart, 2));
@@ -225,7 +224,7 @@ async function main() {
   const futureNoRecalcRecordBody = await futureNoRecalcRecordRes.json();
   assert.equal(
     toJstDateKey(new Date(futureNoRecalcRecordBody.record.performedAt)),
-    todayDateKey,
+    sourceDateKey,
   );
 
   const noRecalcOverridesRes = await request("/api/schedule-overrides");
@@ -266,7 +265,7 @@ async function main() {
   const futureRecalcRecordBody = await futureRecalcRecordRes.json();
   assert.equal(
     toJstDateKey(new Date(futureRecalcRecordBody.record.performedAt)),
-    todayDateKey,
+    sourceDateKey,
   );
 
   const recalcOverridesRes = await request("/api/schedule-overrides");
@@ -399,6 +398,218 @@ async function main() {
       item.choreId === duplicateMergeChoreId && item.date === duplicateTargetDateKey,
   ).length;
   assert.equal(mergeTargetCountAfterMove, 1);
+
+  const recordMoveBaseDate = startOfJstDay(new Date());
+  const recordMoveSourceDateKey = toJstDateKey(recordMoveBaseDate);
+  const recordMoveTargetDateKey = toJstDateKey(addDays(recordMoveBaseDate, 1));
+  const recordMoveNextIfNoRecalc = toJstDateKey(addDays(recordMoveBaseDate, 2));
+  const recordMoveNextIfRecalc = toJstDateKey(addDays(recordMoveBaseDate, 3));
+  const recordMoveSeedLastPerformedAt = addDays(recordMoveBaseDate, -2).toISOString();
+  const recordMoveSourcePerformedAt = new Date(`${recordMoveSourceDateKey}T09:00:00+09:00`).toISOString();
+
+  const createRecordMoveNoRecalcChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "record-move-no-recalc",
+      intervalDays: 2,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: recordMoveSeedLastPerformedAt,
+    }),
+  });
+  assert.equal(createRecordMoveNoRecalcChoreRes.status, 200);
+  const createRecordMoveNoRecalcChoreBody = await createRecordMoveNoRecalcChoreRes.json();
+  const recordMoveNoRecalcChoreId: string = createRecordMoveNoRecalcChoreBody.chore.id;
+
+  const recordMoveNoRecalcRecordRes = await request(`/api/chores/${recordMoveNoRecalcChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      memo: "record-move-source-no-recalc",
+      performedAt: recordMoveSourcePerformedAt,
+    }),
+  });
+  assert.equal(recordMoveNoRecalcRecordRes.status, 200);
+  const recordMoveNoRecalcRecordBody = await recordMoveNoRecalcRecordRes.json();
+  const recordMoveNoRecalcRecordId: string = recordMoveNoRecalcRecordBody.record.id;
+
+  const moveRecordNoRecalcRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: recordMoveNoRecalcChoreId,
+      sourceRecordId: recordMoveNoRecalcRecordId,
+      date: recordMoveTargetDateKey,
+      recalculateFuture: false,
+      mergeIfDuplicate: true,
+    }),
+  });
+  assert.equal(moveRecordNoRecalcRes.status, 200);
+
+  const overridesAfterRecordNoRecalcRes = await request("/api/schedule-overrides");
+  assert.equal(overridesAfterRecordNoRecalcRes.status, 200);
+  const overridesAfterRecordNoRecalcBody = await overridesAfterRecordNoRecalcRes.json();
+  const recordNoRecalcDates: string[] = overridesAfterRecordNoRecalcBody.overrides
+    .filter((item: { choreId: string }) => item.choreId === recordMoveNoRecalcChoreId)
+    .map((item: { date: string }) => item.date);
+  assert.equal(recordNoRecalcDates.includes(recordMoveNextIfNoRecalc), true);
+  assert.equal(recordNoRecalcDates.includes(recordMoveNextIfRecalc), false);
+
+  const createRecordMoveRecalcChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "record-move-recalc",
+      intervalDays: 2,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: recordMoveSeedLastPerformedAt,
+    }),
+  });
+  assert.equal(createRecordMoveRecalcChoreRes.status, 200);
+  const createRecordMoveRecalcChoreBody = await createRecordMoveRecalcChoreRes.json();
+  const recordMoveRecalcChoreId: string = createRecordMoveRecalcChoreBody.chore.id;
+
+  const recordMoveRecalcRecordRes = await request(`/api/chores/${recordMoveRecalcChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      memo: "record-move-source-recalc",
+      performedAt: recordMoveSourcePerformedAt,
+    }),
+  });
+  assert.equal(recordMoveRecalcRecordRes.status, 200);
+  const recordMoveRecalcRecordBody = await recordMoveRecalcRecordRes.json();
+  const recordMoveRecalcRecordId: string = recordMoveRecalcRecordBody.record.id;
+
+  const moveRecordRecalcRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: recordMoveRecalcChoreId,
+      sourceRecordId: recordMoveRecalcRecordId,
+      date: recordMoveTargetDateKey,
+      recalculateFuture: true,
+      mergeIfDuplicate: true,
+    }),
+  });
+  assert.equal(moveRecordRecalcRes.status, 200);
+
+  const overridesAfterRecordRecalcRes = await request("/api/schedule-overrides");
+  assert.equal(overridesAfterRecordRecalcRes.status, 200);
+  const overridesAfterRecordRecalcBody = await overridesAfterRecordRecalcRes.json();
+  const recordRecalcDates: string[] = overridesAfterRecordRecalcBody.overrides
+    .filter((item: { choreId: string }) => item.choreId === recordMoveRecalcChoreId)
+    .map((item: { date: string }) => item.date);
+  assert.equal(recordRecalcDates.includes(recordMoveNextIfRecalc), true);
+  assert.equal(recordRecalcDates.includes(recordMoveNextIfNoRecalc), false);
+
+  const duplicateRecordMoveLastPerformedAt = addDays(recordMoveBaseDate, -1).toISOString();
+  const createRecordDupNoMergeChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "record-dup-no-merge",
+      intervalDays: 1,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: duplicateRecordMoveLastPerformedAt,
+    }),
+  });
+  assert.equal(createRecordDupNoMergeChoreRes.status, 200);
+  const createRecordDupNoMergeChoreBody = await createRecordDupNoMergeChoreRes.json();
+  const recordDupNoMergeChoreId: string = createRecordDupNoMergeChoreBody.chore.id;
+
+  const recordDupNoMergeSourceRes = await request(`/api/chores/${recordDupNoMergeChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      memo: "record-dup-no-merge-source",
+      performedAt: recordMoveSourcePerformedAt,
+    }),
+  });
+  assert.equal(recordDupNoMergeSourceRes.status, 200);
+  const recordDupNoMergeSourceBody = await recordDupNoMergeSourceRes.json();
+  const recordDupNoMergeRecordId: string = recordDupNoMergeSourceBody.record.id;
+
+  const moveRecordDupNoMergeRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: recordDupNoMergeChoreId,
+      sourceRecordId: recordDupNoMergeRecordId,
+      date: recordMoveTargetDateKey,
+      recalculateFuture: false,
+      mergeIfDuplicate: false,
+    }),
+  });
+  assert.equal(moveRecordDupNoMergeRes.status, 200);
+
+  const overridesAfterRecordDupNoMergeRes = await request("/api/schedule-overrides");
+  assert.equal(overridesAfterRecordDupNoMergeRes.status, 200);
+  const overridesAfterRecordDupNoMergeBody = await overridesAfterRecordDupNoMergeRes.json();
+  const recordDupNoMergeTargetCount = overridesAfterRecordDupNoMergeBody.overrides.filter(
+    (item: { choreId: string; date: string }) =>
+      item.choreId === recordDupNoMergeChoreId && item.date === recordMoveTargetDateKey,
+  ).length;
+  assert.equal(recordDupNoMergeTargetCount, 1);
+
+  const createRecordDupMergeChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "record-dup-merge",
+      intervalDays: 1,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: duplicateRecordMoveLastPerformedAt,
+    }),
+  });
+  assert.equal(createRecordDupMergeChoreRes.status, 200);
+  const createRecordDupMergeChoreBody = await createRecordDupMergeChoreRes.json();
+  const recordDupMergeChoreId: string = createRecordDupMergeChoreBody.chore.id;
+
+  const recordDupMergeSourceRes = await request(`/api/chores/${recordDupMergeChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      memo: "record-dup-merge-source",
+      performedAt: recordMoveSourcePerformedAt,
+    }),
+  });
+  assert.equal(recordDupMergeSourceRes.status, 200);
+  const recordDupMergeSourceBody = await recordDupMergeSourceRes.json();
+  const recordDupMergeRecordId: string = recordDupMergeSourceBody.record.id;
+
+  const moveRecordDupMergeRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: recordDupMergeChoreId,
+      sourceRecordId: recordDupMergeRecordId,
+      date: recordMoveTargetDateKey,
+      recalculateFuture: false,
+      mergeIfDuplicate: true,
+    }),
+  });
+  assert.equal(moveRecordDupMergeRes.status, 200);
+
+  const overridesAfterRecordDupMergeRes = await request("/api/schedule-overrides");
+  assert.equal(overridesAfterRecordDupMergeRes.status, 200);
+  const overridesAfterRecordDupMergeBody = await overridesAfterRecordDupMergeRes.json();
+  const recordDupMergeTargetCount = overridesAfterRecordDupMergeBody.overrides.filter(
+    (item: { choreId: string; date: string }) =>
+      item.choreId === recordDupMergeChoreId && item.date === recordMoveTargetDateKey,
+  ).length;
+  assert.equal(recordDupMergeTargetCount, 0);
+
+  const mismatchRecordMoveRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: recordMoveNoRecalcChoreId,
+      sourceRecordId: recordDupMergeRecordId,
+      date: recordMoveTargetDateKey,
+      recalculateFuture: true,
+    }),
+  });
+  assert.equal(mismatchRecordMoveRes.status, 404);
 }
 
 await main();

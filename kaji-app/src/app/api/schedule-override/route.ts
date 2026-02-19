@@ -16,7 +16,48 @@ type Body = {
   recalculateFuture?: boolean;
   mergeIfDuplicate?: boolean;
   sourceRecordId?: string;
+  mode?: "move" | "add";
+  allowDuplicate?: boolean;
 };
+
+function removeOneOccurrence(dateKeys: string[], targetDateKey: string) {
+  const next = [...dateKeys];
+  const index = next.findIndex((dateKey) => dateKey === targetDateKey);
+  if (index >= 0) {
+    next.splice(index, 1);
+  }
+  return next;
+}
+
+function includeSourceDateIfMissing(dateKeys: string[], sourceDateKey: string) {
+  if (dateKeys.includes(sourceDateKey)) return dateKeys;
+  return [...dateKeys, sourceDateKey].sort((a, b) => a.localeCompare(b));
+}
+
+function mapOverridesForResponse(
+  overrides: Array<{ id: string; choreId: string; date: string; createdAt: Date }>,
+) {
+  return overrides.map((override) => ({
+    id: override.id,
+    choreId: override.choreId,
+    date: override.date,
+    createdAt: override.createdAt.toISOString(),
+  }));
+}
+
+function moveDateKeepingTimeOfDay(
+  originalPerformedAt: Date,
+  targetDateKey: string,
+) {
+  const targetMidnightJst = new Date(`${targetDateKey}T00:00:00+09:00`);
+  const jstOffsetMs = 9 * 60 * 60 * 1000;
+  const originalJst = new Date(originalPerformedAt.getTime() + jstOffsetMs);
+  return new Date(
+    targetMidnightJst.getTime() +
+    (originalJst.getUTCHours() * 60 + originalJst.getUTCMinutes()) * 60 * 1000 +
+    originalJst.getUTCSeconds() * 1000,
+  );
+}
 
 export async function POST(request: Request) {
   const { session, response } = await requireSession();
@@ -27,8 +68,11 @@ export async function POST(request: Request) {
   const date = body?.date?.trim();
   const sourceDate = body?.sourceDate?.trim();
   const sourceRecordId = body?.sourceRecordId?.trim();
+  const mode = body?.mode;
   const recalculateFuture = body?.recalculateFuture === true;
   const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
+  const allowDuplicate = body?.allowDuplicate === true;
+  const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
   const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
 
   if (!choreId || !date) return badRequest("choreId and date are required.");
@@ -53,35 +97,117 @@ export async function POST(request: Request) {
   });
   if (!chore) return badRequest("Target chore was not found.", 404);
 
+  if (mode === "add") {
+    if (date < todayDateKey) {
+      return badRequest("Cannot add planned occurrence to a past date.");
+    }
+
+    const currentOverrides = await prisma.choreScheduleOverride.findMany({
+      where: { choreId },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      select: { date: true },
+    });
+    const dueBase = chore.records[0]?.performedAt ?? chore.createdAt;
+    const dueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
+    const window = resolveScheduleWindow(date, date);
+    const currentDateKeys = resolveCurrentScheduleDateKeys({
+      overrideDateKeys: currentOverrides.map((entry) => entry.date),
+      dueDateKey,
+      intervalDays: chore.intervalDays,
+      window,
+    });
+    const scheduledCount = currentDateKeys.filter((dateKey) => dateKey === date).length;
+    if (scheduledCount > 0 && !allowDuplicate) {
+      return badRequest("A matching chore already exists on that date.", 409);
+    }
+
+    const override = await prisma.choreScheduleOverride.create({
+      data: { choreId, date },
+    });
+
+    await touchHousehold(session.householdId);
+
+    return Response.json({
+      added: true,
+      choreId,
+      date,
+      allowDuplicate,
+      override: {
+        id: override.id,
+        choreId: override.choreId,
+        date: override.date,
+        createdAt: override.createdAt.toISOString(),
+      },
+    });
+  }
+
   if (sourceRecordId) {
-    // Move mode: update the completion record's date and clear any schedule overrides.
     const record = await prisma.choreRecord.findFirst({
-      where: { id: sourceRecordId, householdId: session.householdId },
+      where: { id: sourceRecordId, householdId: session.householdId, choreId },
       select: { id: true, performedAt: true },
     });
     if (!record) return badRequest("Target record was not found.", 404);
+    const sourceRecordDateKey = toJstDateKey(startOfJstDay(new Date(record.performedAt)));
 
-    // Preserve the original time-of-day; only change the date portion.
-    const original = record.performedAt;
-    const targetMidnightJst = new Date(`${date}T00:00:00+09:00`);
-    const jstOffsetMs = 9 * 60 * 60 * 1000;
-    const originalJst = new Date(original.getTime() + jstOffsetMs);
-    const newPerformedAt = new Date(
-      targetMidnightJst.getTime() +
-      (originalJst.getUTCHours() * 60 + originalJst.getUTCMinutes()) * 60 * 1000 +
-      originalJst.getUTCSeconds() * 1000,
+    const currentOverrides = await prisma.choreScheduleOverride.findMany({
+      where: { choreId },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      select: { date: true },
+    });
+    const dueBase = chore.records[0]?.performedAt ?? chore.createdAt;
+    const dueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
+    const window = resolveScheduleWindow(sourceRecordDateKey, date);
+    const currentDateKeys = resolveCurrentScheduleDateKeys({
+      overrideDateKeys: currentOverrides.map((entry) => entry.date),
+      dueDateKey,
+      intervalDays: chore.intervalDays,
+      window,
+    });
+    const currentDateKeysForMove = includeSourceDateIfMissing(
+      currentDateKeys,
+      sourceRecordDateKey,
     );
+    const nextDateKeys = rebuildScheduleDateKeys({
+      currentDateKeys: currentDateKeysForMove,
+      sourceDateKey: sourceRecordDateKey,
+      targetDateKey: date,
+      recalculateFuture,
+      mergeIfDuplicate,
+      intervalDays: chore.intervalDays,
+      window,
+    });
+    const remainingDateKeys = removeOneOccurrence(nextDateKeys, date);
+    const newPerformedAt = moveDateKeepingTimeOfDay(record.performedAt, date);
 
-    await prisma.$transaction(async (tx) => {
+    const savedOverrides = await prisma.$transaction(async (tx) => {
       await tx.choreRecord.update({
         where: { id: sourceRecordId },
         data: { performedAt: newPerformedAt },
       });
       await tx.choreScheduleOverride.deleteMany({ where: { choreId } });
+      if (remainingDateKeys.length > 0) {
+        await tx.choreScheduleOverride.createMany({
+          data: remainingDateKeys.map((dateKey) => ({ choreId, date: dateKey })),
+        });
+      }
+      return tx.choreScheduleOverride.findMany({
+        where: { choreId },
+        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+        select: { id: true, choreId: true, date: true, createdAt: true },
+      });
     });
 
     await touchHousehold(session.householdId);
-    return Response.json({ moved: true, choreId, date });
+    return Response.json({
+      moved: true,
+      choreId,
+      sourceDate: sourceRecordDateKey,
+      date,
+      recalculateFuture,
+      mergeIfDuplicate,
+      sourceRecordId,
+      overrides: mapOverridesForResponse(savedOverrides),
+    });
   }
 
   // Backward-compatible mode for old clients that only send "date".
@@ -152,11 +278,6 @@ export async function POST(request: Request) {
     date,
     recalculateFuture,
     mergeIfDuplicate,
-    overrides: savedOverrides.map((override) => ({
-      id: override.id,
-      choreId: override.choreId,
-      date: override.date,
-      createdAt: override.createdAt.toISOString(),
-    })),
+    overrides: mapOverridesForResponse(savedOverrides),
   });
 }
