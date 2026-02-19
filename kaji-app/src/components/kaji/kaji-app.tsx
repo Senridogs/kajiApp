@@ -457,6 +457,8 @@ export function KajiApp() {
   const dragScrollRafRef = useRef<number | null>(null);
   const dragScrollSpeedRef = useRef<number>(0);
   const calendarWeekStartRef = useRef<Date>(new Date());
+  const calendarSwipeStartXRef = useRef<number | null>(null);
+  const calendarSwipeStartYRef = useRef<number | null>(null);
   const dropDraggedChoreToDateRef = useRef<(targetDateKey: string) => Promise<void>>(async () => {});
   const [reactionPickerRecordId, setReactionPickerRecordId] = useState<string | null>(null);
 
@@ -941,6 +943,11 @@ export function KajiApp() {
   const activeTabRef = useRef(activeTab);
   useEffect(() => { statsPeriodRef.current = statsPeriod; }, [statsPeriod]);
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  useEffect(() => {
+    if (activeTab === "records" && sessionUser) {
+      void loadHistory();
+    }
+  }, [activeTab, sessionUser, loadHistory]);
 
   const syncCheck = useCallback(async () => {
     if (!boot || boot.needsRegistration || !sessionUser) return;
@@ -1434,8 +1441,6 @@ export function KajiApp() {
   }, [onboardingPresetSelections, onboardingSubmitting, refreshAll]);
 
   const openAddChore = () => {
-    closeSettings();
-    closeStandaloneScreen();
     setEditingChore({
       title: "",
       intervalDays: 7,
@@ -1863,6 +1868,31 @@ export function KajiApp() {
     setCalendarExpanded(true);
   }, [calendarMonthCursor, focusCalendarDate]);
 
+  const handleCalendarTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    calendarSwipeStartXRef.current = touch.clientX;
+    calendarSwipeStartYRef.current = touch.clientY;
+  }, []);
+
+  const handleCalendarTouchEnd = useCallback((e: React.TouchEvent) => {
+    const startX = calendarSwipeStartXRef.current;
+    const startY = calendarSwipeStartYRef.current;
+    calendarSwipeStartXRef.current = null;
+    calendarSwipeStartYRef.current = null;
+    const touch = e.changedTouches[0];
+    if (!touch || startX === null || startY === null) return;
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+    const direction = dx < 0 ? 1 : -1;  // left = next (1), right = prev (-1)
+    if (calendarExpanded) {
+      shiftCalendarMonth(direction);
+    } else {
+      focusCalendarDate(toJstDateKey(addDays(calendarWeekStart, direction * 7)));
+    }
+  }, [calendarExpanded, shiftCalendarMonth, focusCalendarDate, calendarWeekStart]);
+
   const shiftTargetDateByWeek = useCallback((direction: -1 | 1) => {
     const source = dragSourceDateKey ?? toJstDateKey(startOfJstDay(new Date()));
     const sourceDate = startOfJstDay(new Date(`${source}T00:00:00+09:00`));
@@ -2024,9 +2054,9 @@ export function KajiApp() {
 
     // Recalculate due-date flags from the pre-check dueAt.
     // submitRecord shifted dueAt forward by intervalDays, so we reverse it.
-    const origDueAt = chore.lastPerformedAt
-      ? addDays(new Date(chore.lastPerformedAt), chore.intervalDays).toISOString()
-      : chore.dueAt;
+    const origDueAt = chore.dueAt
+      ? addDays(new Date(chore.dueAt), -chore.intervalDays).toISOString()
+      : null;
     const todayStart = startOfJstDay(new Date());
     const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrow = addDays(todayStart, 2);
@@ -3558,7 +3588,7 @@ export function KajiApp() {
         <div className="space-y-4" style={{ paddingTop: recordsHeaderHeight }}>
           <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
-            {records.length === 0 ? (
+            {groupedTimelineRecords.length === 0 ? (
               <div className="rounded-[20px] border border-dashed border-[#DADCE0] bg-white px-5 py-10 text-center">
                 <p className="text-[16px] font-bold text-[#202124]">まだ きろく がありません</p>
                 <p className="mt-2 text-[13px] font-medium text-[#5F6368]">家事を完了するとここにタイムライン表示されます。</p>
@@ -3687,7 +3717,7 @@ export function KajiApp() {
             <div className="space-y-3">
               <div className="rounded-[16px] bg-white px-5 py-5">
                 <p className="text-[18px] font-bold text-[#202124]">今月のおうち 🏠</p>
-                {reportLoading ? (
+                {reportLoading && !householdReport ? (
                   <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F6368]">
                     <Loader2 size={14} className="animate-spin" />
                     読み込み中...
