@@ -80,4 +80,6 @@ test("Manage screen has detail flow and upcoming schedule section", () => {
   assert.match(app, /openManageDetail/);
   assert.match(app, /manageUpcomingDateKeys/);
   assert.match(app, /formatDateKeyMonthDayWeekday/);
+  assert.match(app, /manageUpcomingDateKeys\.map\(\(dateKey, index\) => \([\s\S]*openReschedule\(manageDetailTarget,\s*dateKey\)/);
+  assert.match(app, /planned-\$\{dateKey\}-\$\{index\}/);
 });

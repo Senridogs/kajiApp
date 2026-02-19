@@ -12,6 +12,7 @@ import {
   User,
 } from "lucide-react";
 
+import { ActionButton } from "@/components/kaji/action-button";
 import { BottomSheet } from "@/components/kaji/bottom-sheet";
 import {
   ChoreEditor,
@@ -19,7 +20,15 @@ import {
   type ChoreForm,
   type CustomIconOption,
 } from "@/components/kaji/chore-editor";
+import { ConfirmDialog } from "@/components/kaji/confirm-dialog";
 import { PRIMARY_COLOR, QUICK_ICON_PRESETS, USER_COLOR_PALETTE } from "@/components/kaji/constants";
+import {
+  deleteChoreDialogCopy,
+  infoDialogCopy,
+  mergeDuplicateDialogCopy,
+  rescheduleConfirmDialogCopy,
+  undoRecordDialogCopy,
+} from "@/components/kaji/dialog-copy";
 import {
   apiFetch,
   darkenColor,
@@ -129,6 +138,7 @@ type PendingRescheduleConfirm = {
   sourceDateKey: string;
   targetDateKey: string;
   mergeIfDuplicate: boolean;
+  sourceRecordId?: string;
   homeDropInsert?: HomeDropInsert;
 };
 type PendingMergeDuplicateConfirm = {
@@ -137,6 +147,7 @@ type PendingMergeDuplicateConfirm = {
   choreTitle: string;
   sourceDateKey: string;
   targetDateKey: string;
+  sourceRecordId?: string;
   homeDropInsert?: HomeDropInsert;
 };
 type StandaloneScreenKey = "manage" | "my-report" | "my-records";
@@ -1000,17 +1011,19 @@ export function KajiApp() {
 
     const today = startOfJstDay(new Date());
     const todayKey = toJstDateKey(today);
-    const intervalDays = Math.max(1, manageDetailTarget.intervalDays);
-    const overrideDateKey = (scheduleOverridesByChore.get(manageDetailTarget.id) ?? [])
+    const overrideDateKeys = (scheduleOverridesByChore.get(manageDetailTarget.id) ?? [])
       .map((override) => override.date)
       .filter((dateKey) => dateKey >= todayKey)
-      .sort((a, b) => a.localeCompare(b))[0];
+      .sort((a, b) => a.localeCompare(b));
 
-    let cursor = overrideDateKey
-      ? startOfJstDay(new Date(`${overrideDateKey}T00:00:00+09:00`))
-      : manageDetailTarget.dueAt
-        ? startOfJstDay(new Date(manageDetailTarget.dueAt))
-        : null;
+    if (overrideDateKeys.length > 0) {
+      return overrideDateKeys.slice(0, 5);
+    }
+
+    const intervalDays = Math.max(1, manageDetailTarget.intervalDays);
+    let cursor = manageDetailTarget.dueAt
+      ? startOfJstDay(new Date(manageDetailTarget.dueAt))
+      : null;
 
     if (!cursor || Number.isNaN(cursor.getTime())) return [];
 
@@ -1926,6 +1939,17 @@ export function KajiApp() {
     return customDate;
   }, [shiftDateKey]);
 
+  const resolveSourceRecordIdForDate = useCallback(
+    (chore: ChoreWithComputed, sourceDateKey: string | null | undefined) => {
+      if (!sourceDateKey) return undefined;
+      if (!chore.lastRecordId || !chore.lastPerformedAt || chore.lastRecordSkipped) return undefined;
+      const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
+      if (performedDateKey !== sourceDateKey) return undefined;
+      return chore.lastRecordId;
+    },
+    [],
+  );
+
   const openRescheduleConfirmWithCollisionCheck = useCallback(
     (payload: Omit<PendingRescheduleConfirm, "mergeIfDuplicate">) => {
       if (hasDuplicateScheduleCollision(payload.choreId, payload.sourceDateKey, payload.targetDateKey)) {
@@ -1989,15 +2013,18 @@ export function KajiApp() {
       setError("日付を指定してください。");
       return;
     }
+    const sourceRecordId = resolveSourceRecordIdForDate(rescheduleTarget, rescheduleBaseDateKey);
     openRescheduleConfirmWithCollisionCheck({
       origin: "sheet",
       choreId: rescheduleTarget.id,
       choreTitle: rescheduleTarget.title,
       sourceDateKey: rescheduleBaseDateKey,
       targetDateKey: nextDate,
+      sourceRecordId,
     });
   }, [
     openRescheduleConfirmWithCollisionCheck,
+    resolveSourceRecordIdForDate,
     rescheduleBaseDateKey,
     rescheduleChoice,
     rescheduleCustomDate,
@@ -2168,45 +2195,18 @@ export function KajiApp() {
     }
     try {
       setError("");
-      // If the chore was completed on the source date, move the completion record
-      // rather than creating a schedule override (move, not copy).
-      const completedDateKey =
-        draggingChore.lastPerformedAt &&
-        !draggingChore.lastRecordSkipped &&
-        !draggingChore.lastRecordIsInitial
-          ? toJstDateKey(startOfJstDay(new Date(draggingChore.lastPerformedAt)))
-          : null;
-      const sourceRecordId =
-        completedDateKey === dragSourceDateKey && draggingChore.lastRecordId
-          ? draggingChore.lastRecordId
-          : undefined;
-      if (sourceRecordId) {
-        await rescheduleChoreToDate({
-          choreId: draggingChore.id,
-          targetDateKey,
-          sourceRecordId,
-        });
-        if (dragSourceDateKey) {
-          applyHomeOrderAfterCrossDateMove({
-            sourceDateKey: dragSourceDateKey,
-            targetDateKey,
-            choreId: draggingChore.id,
-            homeDropInsert: options?.homeDropInsert,
-          });
-        }
-        focusCalendarDate(targetDateKey);
-        return;
-      }
       if (!dragSourceDateKey) {
         setError("移動元の日付が取得できません。");
         return;
       }
+      const sourceRecordId = resolveSourceRecordIdForDate(draggingChore, dragSourceDateKey);
       openRescheduleConfirmWithCollisionCheck({
         origin: "drag",
         choreId: draggingChore.id,
         choreTitle: draggingChore.title,
         sourceDateKey: dragSourceDateKey,
         targetDateKey,
+        sourceRecordId,
         homeDropInsert: options?.homeDropInsert,
       });
     } catch (err: unknown) {
@@ -2215,13 +2215,11 @@ export function KajiApp() {
       clearDragState();
     }
   }, [
-    applyHomeOrderAfterCrossDateMove,
     clearDragState,
     dragSourceDateKey,
     draggingChore,
-    focusCalendarDate,
     openRescheduleConfirmWithCollisionCheck,
-    rescheduleChoreToDate,
+    resolveSourceRecordIdForDate,
   ]);
 
   const handleHomeDrop = useCallback((drop: HomeDropInsert) => {
@@ -2593,6 +2591,7 @@ export function KajiApp() {
         sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
         recalculateFuture,
         mergeIfDuplicate: pendingRescheduleConfirm.mergeIfDuplicate,
+        sourceRecordId: pendingRescheduleConfirm.sourceRecordId,
       });
       if (pendingRescheduleConfirm.origin === "drag") {
         applyHomeOrderAfterCrossDateMove({
@@ -4786,10 +4785,15 @@ export function KajiApp() {
               ) : (
                 <div className="space-y-2">
                   {manageUpcomingDateKeys.map((dateKey, index) => (
-                    <div key={`${manageDetailTarget.id}-planned-${dateKey}`} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                    <button
+                      key={`${manageDetailTarget.id}-planned-${dateKey}-${index}`}
+                      type="button"
+                      onClick={() => openReschedule(manageDetailTarget, dateKey)}
+                      className="flex w-full items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2 text-left"
+                    >
                       <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-[#5F6368]">{index + 1}</span>
                       <p className="text-[14px] font-semibold text-[#202124]">{formatDateKeyMonthDayWeekday(dateKey)}</p>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -5343,32 +5347,27 @@ export function KajiApp() {
       ))}
 
       {infoMessage ? (
-        <div
-          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/35 px-6 backdrop-blur-[1px]"
-          style={{
+        <ConfirmDialog
+          open={Boolean(infoMessage)}
+          onConfirm={() => setInfoMessage("")}
+          title={infoDialogCopy(infoMessage).title}
+          description={infoDialogCopy(infoMessage).description}
+          confirmLabel={infoDialogCopy(infoMessage).confirmLabel}
+          confirmVariant="primary"
+          closeOnBackdrop={false}
+          zIndexClassName="z-[10000]"
+          overlayClassName="bg-black/35 backdrop-blur-[1px]"
+          overlayStyle={{
             paddingTop: "max(env(safe-area-inset-top), 16px)",
             paddingBottom: "max(env(safe-area-inset-bottom), 16px)",
           }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="更新完了"
-            className="w-full max-w-[288px] rounded-[18px] border border-[#DADCE0] bg-white px-4 py-4 shadow-[0_18px_44px_rgba(0,0,0,0.26)]"
-          >
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F3FD]">
+          panelClassName="max-w-[288px] rounded-[18px] border border-[#DADCE0] px-4 py-4 shadow-[0_18px_44px_rgba(0,0,0,0.26)]"
+          icon={(
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F3FD]">
               <span className="material-symbols-rounded text-[22px] text-[#1A9BE8]">check_circle</span>
             </div>
-            <p className="mt-2.5 text-center text-[15px] font-bold text-[#202124]">{infoMessage}</p>
-            <button
-              type="button"
-              onClick={() => setInfoMessage("")}
-              className="mt-3.5 w-full rounded-xl border border-[#1A9BE8] bg-[#1A9BE8] px-3 py-2 text-[14px] font-bold text-white shadow-[0_4px_12px_rgba(26,155,232,0.35)]"
-            >
-              OK
-            </button>
-          </div>
-        </div>
+          )}
+        />
       ) : null}
 
       <div
@@ -5452,20 +5451,25 @@ export function KajiApp() {
             placeholder="排水口もきれいにしたよ、など"
             className="h-[80px] w-full resize-none rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15.6px] font-medium text-[#202124] outline-none"
           />
-          <button
+          <ActionButton
             type="button"
             onClick={submitRecord}
-            className="w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[15.6px] font-bold text-white"
+            variant="primary"
+            size="lg"
+            fullWidth
           >
             やったよ！
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             type="button"
             onClick={submitSkip}
-            className="mt-3 w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15.6px] font-bold text-[#5F6368]"
+            variant="secondary"
+            size="lg"
+            fullWidth
+            className="mt-3"
           >
             スキップ
-          </button>
+          </ActionButton>
         </div>
       </BottomSheet>
 
@@ -5551,187 +5555,118 @@ export function KajiApp() {
               />
             </div>
           </div>
-          <button
+          <ActionButton
             type="button"
             onClick={() => {
               void applyReschedule();
             }}
-            className="w-full rounded-[12px] bg-[#4CAF50] px-4 py-3 text-[15px] font-bold text-white"
+            variant="success"
+            size="lg"
+            fullWidth
           >
             この日に変更
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             type="button"
             onClick={() => {
               if (!rescheduleTarget) return;
               setRescheduleOpen(false);
               openMemo(rescheduleTarget, rescheduleBaseDateKey);
             }}
-            className="w-full rounded-[12px] border border-[#4CAF50] bg-white px-4 py-3 text-[15px] font-bold text-[#3EA84A]"
+            variant="secondary"
+            size="lg"
+            fullWidth
+            className="border-[#4CAF50] text-[#3EA84A]"
           >
             完了にする
-          </button>
+          </ActionButton>
         </div>
       </BottomSheet>
 
-      {pendingMergeDuplicateConfirm ? (
-        <div
-          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={closePendingMergeDuplicateConfirm}
-        >
-          <div
-            className="mx-6 w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <p className="text-center text-[17px] font-bold text-[#202124]">
-              同じ日に同じタスクが存在します。統合しますか
-            </p>
-            <p className="mt-2 text-center text-[13px] font-medium text-[#5F6368]">
-              「{pendingMergeDuplicateConfirm.choreTitle}」
-            </p>
-            <p className="mt-1 text-center text-[12.5px] font-medium text-[#5F6368]">
-              {pendingMergeDuplicateConfirm.sourceDateKey} → {pendingMergeDuplicateConfirm.targetDateKey}
-            </p>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={rescheduleConfirmLoading}
-                onClick={() => {
-                  resolvePendingMergeDuplicateConfirm(false);
-                }}
-                className="rounded-[14px] border border-[#DADCE0] bg-white px-3 py-[11px] text-[14px] font-bold text-[#5F6368] disabled:opacity-60"
-              >
-                NO
-              </button>
-              <button
-                type="button"
-                disabled={rescheduleConfirmLoading}
-                onClick={() => {
-                  resolvePendingMergeDuplicateConfirm(true);
-                }}
-                className="rounded-[14px] bg-[#4CAF50] px-3 py-[11px] text-[14px] font-bold text-white disabled:opacity-60"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {pendingMergeDuplicateConfirm ? (() => {
+        const copy = mergeDuplicateDialogCopy({
+          choreTitle: pendingMergeDuplicateConfirm.choreTitle,
+          sourceDateKey: pendingMergeDuplicateConfirm.sourceDateKey,
+          targetDateKey: pendingMergeDuplicateConfirm.targetDateKey,
+        });
+        return (
+          <ConfirmDialog
+            open={Boolean(pendingMergeDuplicateConfirm)}
+            onClose={closePendingMergeDuplicateConfirm}
+            onCancel={() => resolvePendingMergeDuplicateConfirm(false)}
+            onConfirm={() => resolvePendingMergeDuplicateConfirm(true)}
+            title={copy.title}
+            description={copy.description}
+            detail={copy.detail}
+            cancelLabel={copy.cancelLabel}
+            confirmLabel={copy.confirmLabel}
+            confirmVariant="success"
+            loading={rescheduleConfirmLoading}
+          />
+        );
+      })() : null}
 
-      {pendingRescheduleConfirm ? (
-        <div
-          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={closePendingRescheduleConfirm}
-        >
-          <div
-            className="mx-6 w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <p className="text-center text-[17px] font-bold text-[#202124]">
-              後続の予定を再計算しますか？
-            </p>
-            <p className="mt-2 text-center text-[13px] font-medium text-[#5F6368]">
-              「{pendingRescheduleConfirm.choreTitle}」
-            </p>
-            <p className="mt-1 text-center text-[12.5px] font-medium text-[#5F6368]">
-              {pendingRescheduleConfirm.sourceDateKey} → {pendingRescheduleConfirm.targetDateKey}
-            </p>
-            <p className="mt-3 text-center text-[12px] font-medium text-[#5F6368]">
-              OK: 以降の予定をすべてずらす / いいえ: この日程だけ移動
-            </p>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={rescheduleConfirmLoading}
-                onClick={() => {
-                  void confirmPendingReschedule(false);
-                }}
-                className="rounded-[14px] border border-[#DADCE0] bg-white px-3 py-[11px] text-[14px] font-bold text-[#5F6368] disabled:opacity-60"
-              >
-                いいえ
-              </button>
-              <button
-                type="button"
-                disabled={rescheduleConfirmLoading}
-                onClick={() => {
-                  void confirmPendingReschedule(true);
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-[14px] bg-[#4CAF50] px-3 py-[11px] text-[14px] font-bold text-white disabled:opacity-60"
-              >
-                {rescheduleConfirmLoading ? <Loader2 size={15} className="animate-spin" /> : null}
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {pendingRescheduleConfirm ? (() => {
+        const copy = rescheduleConfirmDialogCopy({
+          choreTitle: pendingRescheduleConfirm.choreTitle,
+          sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
+          targetDateKey: pendingRescheduleConfirm.targetDateKey,
+        });
+        return (
+          <ConfirmDialog
+            open={Boolean(pendingRescheduleConfirm)}
+            onClose={closePendingRescheduleConfirm}
+            onCancel={() => {
+              void confirmPendingReschedule(false);
+            }}
+            onConfirm={() => {
+              void confirmPendingReschedule(true);
+            }}
+            title={copy.title}
+            description={copy.description}
+            detail={copy.detail}
+            cancelLabel={copy.cancelLabel}
+            confirmLabel={copy.confirmLabel}
+            confirmVariant="success"
+            loading={rescheduleConfirmLoading}
+          />
+        );
+      })() : null}
 
-      {undoConfirmTarget ? (
-        <div
-          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => setUndoConfirmTarget(null)}
-        >
-          <div
-            className="mx-6 w-full max-w-[320px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <p className="text-center text-[17px] font-bold text-[#202124]">
-              「{undoConfirmTarget.title}」の完了を
-              <br />
-              取り消しますか？
-            </p>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setUndoConfirmTarget(null)}
-                className="rounded-[14px] border border-[#DADCE0] bg-white px-4 py-[11px] text-[15px] font-bold text-[#5F6368]"
-              >
-                やめる
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void confirmUndoRecord();
-                }}
-                className="rounded-[14px] bg-[#D45858] px-4 py-[11px] text-[15px] font-bold text-white"
-              >
-                取り消す
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {undoConfirmTarget ? (() => {
+        const copy = undoRecordDialogCopy(undoConfirmTarget.title);
+        return (
+          <ConfirmDialog
+            open={Boolean(undoConfirmTarget)}
+            onClose={() => setUndoConfirmTarget(null)}
+            onCancel={() => setUndoConfirmTarget(null)}
+            onConfirm={() => {
+              void confirmUndoRecord();
+            }}
+            title={copy.title}
+            description={copy.description}
+            cancelLabel={copy.cancelLabel}
+            confirmLabel={copy.confirmLabel}
+            confirmVariant="destructive"
+          />
+        );
+      })() : null}
 
       {deleteConfirmOpen ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="mx-6 w-full max-w-[320px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl">
-            <p className="text-center text-[17px] font-bold text-[#202124]">
-              この家事を削除しますか？
-            </p>
-            <p className="mt-2 text-center text-[13px] font-medium text-[#5F6368]">
-              削除すると元に戻せません。
-            </p>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmOpen(false)}
-                disabled={deleteChoreLoading}
-                className="rounded-[14px] border border-[#DADCE0] bg-white px-4 py-[11px] text-[15px] font-bold text-[#5F6368] disabled:opacity-60"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                onClick={confirmDeleteChore}
-                disabled={deleteChoreLoading}
-                className="inline-flex items-center justify-center gap-2 rounded-[14px] bg-[#D45858] px-4 py-[11px] text-[15px] font-bold text-white disabled:opacity-60"
-              >
-                {deleteChoreLoading ? <Loader2 size={16} className="animate-spin" /> : null}
-                {deleteChoreLoading ? "削除中..." : "削除する"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          onClose={() => setDeleteConfirmOpen(false)}
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={confirmDeleteChore}
+          title={deleteChoreDialogCopy.title}
+          description={deleteChoreDialogCopy.description}
+          cancelLabel={deleteChoreDialogCopy.cancelLabel}
+          confirmLabel={deleteChoreDialogCopy.confirmLabel}
+          confirmLoadingLabel={deleteChoreDialogCopy.confirmLoadingLabel}
+          confirmVariant="destructive"
+          loading={deleteChoreLoading}
+          zIndexClassName="z-[9999]"
+        />
       ) : null}
     </main >
   );

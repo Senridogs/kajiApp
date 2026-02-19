@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Loader2, Minus, Plus, Trash2 } from "lucide-react";
+import { Minus, Plus, Trash2 } from "lucide-react";
 
+import { ActionButton } from "@/components/kaji/action-button";
 import {
   BG_COLOR_PALETTE,
   ICON_COLOR_PALETTE,
@@ -451,33 +452,31 @@ export function ChoreEditor({
       ) : null}
 
       <div className={mode === "edit" ? "grid grid-cols-2 gap-2" : ""}>
-        <button
+        <ActionButton
           type="button"
           onClick={onSave}
           disabled={!canSave}
-          className={`w-full rounded-[14px] px-[14px] py-[12px] text-[15.6px] font-bold text-white ${canSave ? "bg-[#1A9BE8]" : "cursor-not-allowed bg-[#B6C8D6]"
-            }`}
+          variant="primary"
+          size="lg"
+          fullWidth
+          loading={isSaving}
+          loadingLabel="\u4FDD\u5B58\u4E2D..."
+          className={!canSave ? "border-[#B6C8D6] bg-[#B6C8D6] shadow-none" : undefined}
         >
-          {isSaving ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 size={16} className="animate-spin" />
-              保存中...
-            </span>
-          ) : mode === "create" ? (
-            "家事を追加"
-          ) : (
-            "変更を保存"
-          )}
-        </button>
+          {mode === "create" ? "\u5BB6\u4E8B\u3092\u8FFD\u52A0" : "\u5909\u66F4\u3092\u4FDD\u5B58"}
+        </ActionButton>
         {mode === "edit" ? (
-          <button
+          <ActionButton
             type="button"
             onClick={onDelete}
             disabled={isSaving || isDeleting}
-            className="w-full rounded-[14px] border border-[#F2C9C9] bg-white px-[14px] py-[12px] text-[15.6px] font-bold text-[#D45858] disabled:opacity-60"
+            variant="secondary"
+            size="lg"
+            fullWidth
+            className="border-[#F2C9C9] text-[#D45858]"
           >
-            家事を削除
-          </button>
+            {"\u5BB6\u4E8B\u3092\u524A\u9664"}
+          </ActionButton>
         ) : null}
       </div>
     </div>
