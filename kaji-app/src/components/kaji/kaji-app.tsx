@@ -635,6 +635,7 @@ export function KajiApp() {
   const [statsHeaderHeight, setStatsHeaderHeight] = useState(0);
   const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(0);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
+  const sectionTouchStartRef = useRef<{ x: number; y: number } | null>(null);
   const pullStartYRef = useRef(0);
   const pullStartXRef = useRef(0);
   const pullStartScrollTopRef = useRef(0);
@@ -4163,10 +4164,21 @@ export function KajiApp() {
       <section
         className="relative flex-1 overflow-hidden overscroll-y-none"
         onTouchStart={(e) => {
+          const t = e.touches[0];
+          sectionTouchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
           swipe.onTouchStart(e);
           assignmentEdgeSwipe.onTouchStart(e);
         }}
         onTouchMove={(e) => {
+          const start = sectionTouchStartRef.current;
+          const t = e.touches[0];
+          if (start && t) {
+            const dx = Math.abs(t.clientX - start.x);
+            const dy = Math.abs(t.clientY - start.y);
+            // Skip swipe handlers for clearly vertical gestures so they do not
+            // interfere with the pull-to-refresh native touchmove listener.
+            if (dy > dx * 1.5) return;
+          }
           swipe.onTouchMove(e);
           assignmentEdgeSwipe.onTouchMove(e);
         }}
