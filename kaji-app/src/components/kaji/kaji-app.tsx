@@ -2493,6 +2493,11 @@ export function KajiApp() {
     setCalendarExpanded(true);
   }, [calendarMonthCursor, focusCalendarDate]);
 
+  const shiftCalendarWeek = useCallback((direction: -1 | 1) => {
+    focusCalendarDate(toJstDateKey(addDays(calendarWeekStart, direction * CALENDAR_WEEK_DAYS)));
+    setCalendarExpanded(false);
+  }, [calendarWeekStart, focusCalendarDate]);
+
   const handleCalendarTouchStart = useCallback((e: React.TouchEvent) => {
     const touch = e.touches[0];
     if (!touch) return;
@@ -2514,9 +2519,9 @@ export function KajiApp() {
     if (calendarExpanded) {
       shiftCalendarMonth(direction);
     } else {
-      focusCalendarDate(toJstDateKey(addDays(calendarWeekStart, direction * 7)));
+      shiftCalendarWeek(direction);
     }
-  }, [calendarExpanded, shiftCalendarMonth, focusCalendarDate, calendarWeekStart]);
+  }, [calendarExpanded, shiftCalendarMonth, shiftCalendarWeek]);
 
   const shiftTargetDateByWeek = useCallback((direction: -1 | 1) => {
     const source = dragSourceDateKey ?? toJstDateKey(startOfJstDay(new Date()));
@@ -4127,9 +4132,15 @@ export function KajiApp() {
               </div>
               <button
                 type="button"
-                onClick={() => shiftCalendarMonth(-1)}
+                onClick={() => {
+                  if (calendarExpanded) {
+                    shiftCalendarMonth(-1);
+                    return;
+                  }
+                  shiftCalendarWeek(-1);
+                }}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#5F6368]"
-                aria-label="前月へ"
+                aria-label={calendarExpanded ? "前月へ" : "前週へ"}
               >
                 <ChevronLeft size={16} />
               </button>
@@ -4143,9 +4154,15 @@ export function KajiApp() {
               </button>
               <button
                 type="button"
-                onClick={() => shiftCalendarMonth(1)}
+                onClick={() => {
+                  if (calendarExpanded) {
+                    shiftCalendarMonth(1);
+                    return;
+                  }
+                  shiftCalendarWeek(1);
+                }}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#5F6368]"
-                aria-label="次月へ"
+                aria-label={calendarExpanded ? "次月へ" : "次週へ"}
               >
                 <ChevronRight size={16} />
               </button>
@@ -4582,11 +4599,15 @@ export function KajiApp() {
       };
 
       return (
-        <div className="space-y-4" style={{ paddingTop: listHeaderHeight }} onTouchStart={handleCalendarTouchStart} onTouchEnd={handleCalendarTouchEnd}>
+        <div className="space-y-4" style={{ paddingTop: listHeaderHeight }}>
           <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             {calendarExpanded ? (
-              <div className="space-y-1 rounded-[16px] border border-[#E5EAF0] bg-white px-2 py-3">
+              <div
+                className="space-y-1 rounded-[16px] border border-[#E5EAF0] bg-white px-2 py-3"
+                onTouchStart={handleCalendarTouchStart}
+                onTouchEnd={handleCalendarTouchEnd}
+              >
                 <div className="flex items-center justify-between px-1 pb-1">
                   <button
                     type="button"
@@ -4660,7 +4681,11 @@ export function KajiApp() {
             ) : null}
 
             {!calendarExpanded ? (
-              <div className="rounded-[14px] border border-[#E5EAF0] bg-white px-2 py-2">
+              <div
+                className="rounded-[14px] border border-[#E5EAF0] bg-white px-2 py-2"
+                onTouchStart={handleCalendarTouchStart}
+                onTouchEnd={handleCalendarTouchEnd}
+              >
                 <div className="flex items-center justify-around">
                   {calendarSelectedWeekEntries.map((entry) => {
                     const entryDateJst = new Date(entry.date.getTime() + 9 * 60 * 60 * 1000);

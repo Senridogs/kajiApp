@@ -56,6 +56,19 @@ test("Home order retention and calendar order wiring remain in place", () => {
   assert.match(app, /calendarSelectedWeekEntries[\s\S]*applyHomeStoredOrder/);
 });
 
+test("Calendar week navigation and swipe scope are wired to calendar mode", () => {
+  const app = read("src/components/kaji/kaji-app.tsx");
+  assert.match(app, /const shiftCalendarWeek = useCallback/);
+  assert.match(app, /focusCalendarDate\(toJstDateKey\(addDays\(calendarWeekStart,\s*direction \* CALENDAR_WEEK_DAYS\)\)\)/);
+  assert.match(app, /if \(calendarExpanded\) \{[\s\S]*shiftCalendarMonth\(-1\);[\s\S]*shiftCalendarWeek\(-1\);/);
+  assert.match(app, /if \(calendarExpanded\) \{[\s\S]*shiftCalendarMonth\(1\);[\s\S]*shiftCalendarWeek\(1\);/);
+  assert.match(app, /aria-label=\{calendarExpanded \? "前月へ" : "前週へ"\}/);
+  assert.match(app, /aria-label=\{calendarExpanded \? "次月へ" : "次週へ"\}/);
+  assert.match(app, /className="space-y-1 rounded-\[16px\][\s\S]*onTouchStart=\{handleCalendarTouchStart\}[\s\S]*onTouchEnd=\{handleCalendarTouchEnd\}/);
+  assert.match(app, /className="rounded-\[14px\][\s\S]*onTouchStart=\{handleCalendarTouchStart\}[\s\S]*onTouchEnd=\{handleCalendarTouchEnd\}/);
+  assert.doesNotMatch(app, /style=\{\{ paddingTop: listHeaderHeight \}\} onTouchStart=\{handleCalendarTouchStart\}/);
+});
+
 test("Optimistic completion marks initial flag false to avoid temporary disappearance", () => {
   const app = read("src/components/kaji/kaji-app.tsx");
   assert.match(app, /submitMemoAction[\s\S]*lastRecordIsInitial:\s*false/);
@@ -109,7 +122,9 @@ test("Reschedule confirmation is centralized for drag and sheet flows", () => {
   assert.match(app, /const resolveSourceRecordIdForDate = useCallback/);
   assert.match(app, /applyReschedule[\s\S]*sourceRecordId[\s\S]*openRescheduleConfirmWithCollisionCheck/);
   assert.match(app, /dropDraggedChoreToDate[\s\S]*sourceRecordId[\s\S]*openRescheduleConfirmWithCollisionCheck/);
-  assert.doesNotMatch(app, /dropDraggedChoreToDate[\s\S]*await rescheduleChoreToDate\([\s\S]*sourceRecordId/);
+  const dropDraggedChoreToDateBlock = app.match(/const dropDraggedChoreToDate = useCallback[\s\S]*?\n  \}, \[/)?.[0] ?? "";
+  assert.match(dropDraggedChoreToDateBlock, /openRescheduleConfirmWithCollisionCheck/);
+  assert.doesNotMatch(dropDraggedChoreToDateBlock, /await rescheduleChoreToDate\(/);
 });
 
 test("Reschedule sheet header exposes chore edit action", () => {
