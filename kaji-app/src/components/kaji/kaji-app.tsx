@@ -3798,7 +3798,7 @@ export function KajiApp() {
             </button>
             <p className="text-[22px] font-bold text-[#202124]">プッシュ通知設定</p>
           </div>
-          <SettingToggleRow title="プッシュ通知" subtitle="すべての通知をまとめてON/OFF" checked={pushEnabled} onChange={(next) => { void handleTogglePush(next); }} />
+          <SettingToggleRow title="プッシュ通知" subtitle="すべての通知をまとめてON/OFF" checked={pushEnabled} disabled={pushLoading} onChange={(next) => { void handleTogglePush(next); }} />
           {pushEnabled && notificationSettings ? (
             <div className="space-y-3 rounded-[14px] bg-white p-3">
               <div className="space-y-2 rounded-[12px] border border-[#DADCE0] bg-[#F8F9FA] p-3">

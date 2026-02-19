@@ -258,17 +258,20 @@ export function SettingToggleRow({
   subtitle,
   checked,
   onChange,
+  disabled,
 }: {
   title: string;
   subtitle?: string;
   checked: boolean;
   onChange: (next: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between gap-3 rounded-[14px] bg-white p-3 text-left"
+      disabled={disabled}
+      className="flex w-full items-center justify-between gap-3 rounded-[14px] bg-white p-3 text-left disabled:opacity-50"
     >
       <div>
         <p className="text-[17px] font-bold text-[#202124]">{title}</p>
