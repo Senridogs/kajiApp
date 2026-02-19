@@ -622,7 +622,7 @@ export function KajiApp() {
   const calendarSwipeStartYRef = useRef<number | null>(null);
   const dropDraggedChoreToDateRef = useRef<
     (targetDateKey: string, options?: { homeDropInsert?: HomeDropInsert }) => Promise<void>
-  >(async () => {});
+  >(async () => { });
   const handleHomeDropRef = useRef<(drop: HomeDropInsert) => void>(() => { });
   const homeSectionChoreIdsRef = useRef<Record<string, string[]>>({});
   const [homeOrderByDate, setHomeOrderByDate] = useState<HomeOrderByDate>({});
@@ -906,6 +906,33 @@ export function KajiApp() {
       // ignore storage errors (private mode / quota)
     }
   }, [homeOrderByDate, homeOrderSanitizeOptions, homeOrderStorageKey]);
+
+  useEffect(() => {
+    const targetDateKeys = [homeDateKeys.yesterday, homeDateKeys.today, homeDateKeys.tomorrow];
+    const sectionIdsByDate = homeSectionChoreIdsRef.current;
+    setHomeOrderByDate((previous) => {
+      const next: HomeOrderByDate = { ...previous };
+
+      targetDateKeys.forEach((dateKey) => {
+        const baseIds = sectionIdsByDate[dateKey] ?? [];
+        if (baseIds.length === 0) {
+          delete next[dateKey];
+          return;
+        }
+
+        const storedIds = previous[dateKey] ?? [];
+        const orderedIds = applyHomeStoredOrder(baseIds, storedIds);
+        if (orderedIds.length === 0) {
+          delete next[dateKey];
+        } else {
+          next[dateKey] = orderedIds;
+        }
+      });
+
+      const sanitized = sanitizeHomeOrderByDate(next, homeOrderSanitizeOptions);
+      return sameHomeOrderByDate(previous, sanitized) ? previous : sanitized;
+    });
+  }, [homeOrderSanitizeOptions, boot, homeDateKeys.yesterday, homeDateKeys.today, homeDateKeys.tomorrow]);
 
   useEffect(() => {
     if (!manageDetailChoreId) return;
@@ -3630,165 +3657,165 @@ export function KajiApp() {
 
     return (
       <>
-      <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-y-auto overscroll-y-contain bg-[#F8F9FA] px-5 py-8">
-        <div className="mt-8 space-y-5">
-          <div className="text-center">
-            <span className="material-symbols-rounded text-[42px] text-[#1A9BE8]">home</span>
-            <p className="mt-1.5 text-[42px] font-bold leading-none text-[#202124]">いえたすくへようこそ！</p>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-[16px] font-bold text-[#202124]">まずはパートナーを招待</p>
-            <p className="text-[13px] font-medium text-[#5F6368]">一緒に使う家族やパートナーにこのリンクを送ってね！</p>
-            <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-3">
-              <p className="truncate rounded-[10px] bg-[#F1F3F4] px-3 py-2 text-[12px] font-medium text-[#5F6368]">{inviteLink}</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(inviteLink);
-                      setInfoMessage("招待リンクをコピーしました。");
-                    } catch {
-                      setError("リンクのコピーに失敗しました。");
-                    }
-                  }}
-                  className="inline-flex items-center justify-center gap-1 rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#1A73E8]"
-                >
-                  <Copy size={14} />
-                  コピー
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (navigator.share) {
-                      try {
-                        await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink });
-                        return;
-                      } catch {
-                        return;
-                      }
-                    }
-                    try {
-                      await navigator.clipboard.writeText(inviteLink);
-                      setInfoMessage("招待リンクをコピーしました。");
-                    } catch {
-                      setError("リンクの共有に失敗しました。");
-                    }
-                  }}
-                  className="inline-flex items-center justify-center gap-1 rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white"
-                >
-                  <Share2 size={14} />
-                  送る
-                </button>
-              </div>
+        <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-y-auto overscroll-y-contain bg-[#F8F9FA] px-5 py-8">
+          <div className="mt-8 space-y-5">
+            <div className="text-center">
+              <span className="material-symbols-rounded text-[42px] text-[#1A9BE8]">home</span>
+              <p className="mt-1.5 text-[42px] font-bold leading-none text-[#202124]">いえたすくへようこそ！</p>
             </div>
-            <p className="text-[12px] font-medium text-[#9AA0A6]">LINEやメッセージに貼り付けするだけで参加できるよ！</p>
-          </div>
 
-          <div className="space-y-2">
-            <p className="text-[16px] font-bold text-[#202124]">家事を登録しよう</p>
-            <button
-              type="button"
-              onClick={() => {
-                openAddChore();
-              }}
-              className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-bold text-[#1A9BE8]"
-            >
-              ＋ タスクを追加
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOnboardingBulkSelectOpen(true);
-              }}
-              disabled={onboardingSubmitting || onboardingBulkSelectOpen}
-              className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-semibold text-[#202124] disabled:opacity-60"
-            >
-              🏠 よくある家事をまとめて追加
-            </button>
-            {onboardingBulkSelectOpen ? (
+            <div className="space-y-2">
+              <p className="text-[16px] font-bold text-[#202124]">まずはパートナーを招待</p>
+              <p className="text-[13px] font-medium text-[#5F6368]">一緒に使う家族やパートナーにこのリンクを送ってね！</p>
               <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-3">
-                <p className="text-[14px] font-bold text-[#202124]">家事まとめて追加</p>
-                <div className="space-y-1.5">
-                  {ONBOARDING_PRESET_CHORES.map((preset) => {
-                    const checked = onboardingPresetSelections.includes(preset.title);
-                    return (
-                      <button
-                        key={`onboarding-preset-${preset.title}`}
-                        type="button"
-                        onClick={() => {
-                          setOnboardingPresetSelections((prev) =>
-                            prev.includes(preset.title)
-                              ? prev.filter((title) => title !== preset.title)
-                              : [...prev, preset.title],
-                          );
-                        }}
-                        className={`flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left ${checked ? "bg-[#E8F2FF]" : "bg-[#F8F9FA]"}`}
-                      >
-                        <span className="text-[13px] font-semibold text-[#202124]">{preset.title}</span>
-                        <span className="material-symbols-rounded text-[18px] text-[#1A9BE8]">
-                          {checked ? "check_circle" : "radio_button_unchecked"}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                <p className="truncate rounded-[10px] bg-[#F1F3F4] px-3 py-2 text-[12px] font-medium text-[#5F6368]">{inviteLink}</p>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setOnboardingBulkSelectOpen(false)}
-                    disabled={onboardingSubmitting}
-                    className="rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#5F6368] disabled:opacity-60"
-                  >
-                    戻る
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleOnboardingAddPreset();
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(inviteLink);
+                        setInfoMessage("招待リンクをコピーしました。");
+                      } catch {
+                        setError("リンクのコピーに失敗しました。");
+                      }
                     }}
-                    disabled={onboardingSubmitting}
-                    className="rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                    className="inline-flex items-center justify-center gap-1 rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#1A73E8]"
                   >
-                    {onboardingSubmitting ? "追加中..." : "追加する"}
+                    <Copy size={14} />
+                    コピー
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (navigator.share) {
+                        try {
+                          await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink });
+                          return;
+                        } catch {
+                          return;
+                        }
+                      }
+                      try {
+                        await navigator.clipboard.writeText(inviteLink);
+                        setInfoMessage("招待リンクをコピーしました。");
+                      } catch {
+                        setError("リンクの共有に失敗しました。");
+                      }
+                    }}
+                    className="inline-flex items-center justify-center gap-1 rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white"
+                  >
+                    <Share2 size={14} />
+                    送る
                   </button>
                 </div>
               </div>
-            ) : null}
-            {hasChores ? (
-              <div className="rounded-[14px] border border-[#DADCE0] bg-white p-3">
-                <p className="text-[13px] font-bold text-[#5F6368]">追加したタスク（{boot.chores.length}件）</p>
-                <div className="mt-2 space-y-1">
-                  {boot.chores.map((chore) => {
-                    const ChoreIcon = iconByName(chore.icon || "sparkles");
-                    return (
-                      <div key={`onboarding-chore-${chore.id}`} className="flex items-center gap-2 rounded-[8px] bg-[#F8F9FA] px-3 py-1.5">
-                        <ChoreIcon size={16} style={{ color: chore.iconColor || "#5F6368" }} />
-                        <span className="text-[13px] font-medium text-[#202124]">{chore.title}</span>
-                      </div>
-                    );
-                  })}
+              <p className="text-[12px] font-medium text-[#9AA0A6]">LINEやメッセージに貼り付けするだけで参加できるよ！</p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[16px] font-bold text-[#202124]">家事を登録しよう</p>
+              <button
+                type="button"
+                onClick={() => {
+                  openAddChore();
+                }}
+                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-bold text-[#1A9BE8]"
+              >
+                ＋ タスクを追加
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOnboardingBulkSelectOpen(true);
+                }}
+                disabled={onboardingSubmitting || onboardingBulkSelectOpen}
+                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-semibold text-[#202124] disabled:opacity-60"
+              >
+                🏠 よくある家事をまとめて追加
+              </button>
+              {onboardingBulkSelectOpen ? (
+                <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-3">
+                  <p className="text-[14px] font-bold text-[#202124]">家事まとめて追加</p>
+                  <div className="space-y-1.5">
+                    {ONBOARDING_PRESET_CHORES.map((preset) => {
+                      const checked = onboardingPresetSelections.includes(preset.title);
+                      return (
+                        <button
+                          key={`onboarding-preset-${preset.title}`}
+                          type="button"
+                          onClick={() => {
+                            setOnboardingPresetSelections((prev) =>
+                              prev.includes(preset.title)
+                                ? prev.filter((title) => title !== preset.title)
+                                : [...prev, preset.title],
+                            );
+                          }}
+                          className={`flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left ${checked ? "bg-[#E8F2FF]" : "bg-[#F8F9FA]"}`}
+                        >
+                          <span className="text-[13px] font-semibold text-[#202124]">{preset.title}</span>
+                          <span className="material-symbols-rounded text-[18px] text-[#1A9BE8]">
+                            {checked ? "check_circle" : "radio_button_unchecked"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingBulkSelectOpen(false)}
+                      disabled={onboardingSubmitting}
+                      className="rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#5F6368] disabled:opacity-60"
+                    >
+                      戻る
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleOnboardingAddPreset();
+                      }}
+                      disabled={onboardingSubmitting}
+                      className="rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                    >
+                      {onboardingSubmitting ? "追加中..." : "追加する"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              ) : null}
+              {hasChores ? (
+                <div className="rounded-[14px] border border-[#DADCE0] bg-white p-3">
+                  <p className="text-[13px] font-bold text-[#5F6368]">追加したタスク（{boot.chores.length}件）</p>
+                  <div className="mt-2 space-y-1">
+                    {boot.chores.map((chore) => {
+                      const ChoreIcon = iconByName(chore.icon || "sparkles");
+                      return (
+                        <div key={`onboarding-chore-${chore.id}`} className="flex items-center gap-2 rounded-[8px] bg-[#F8F9FA] px-3 py-1.5">
+                          <ChoreIcon size={16} style={{ color: chore.iconColor || "#5F6368" }} />
+                          <span className="text-[13px] font-medium text-[#202124]">{chore.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={finishOnboarding}
+              disabled={onboardingSubmitting}
+              className={
+                hasChores
+                  ? "w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[16px] font-bold text-white disabled:opacity-60"
+                  : "w-full rounded-[14px] bg-[#F1F3F4] px-4 py-3 text-[14px] font-semibold text-[#5F6368] disabled:opacity-60"
+              }
+            >
+              {hasChores ? "完了してホームへ" : "あとで設定する"}
+            </button>
+            {error ? <p className="text-center text-sm text-[#C5221F]">{error}</p> : null}
           </div>
-          <button
-            type="button"
-            onClick={finishOnboarding}
-            disabled={onboardingSubmitting}
-            className={
-              hasChores
-                ? "w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[16px] font-bold text-white disabled:opacity-60"
-                : "w-full rounded-[14px] bg-[#F1F3F4] px-4 py-3 text-[14px] font-semibold text-[#5F6368] disabled:opacity-60"
-            }
-          >
-            {hasChores ? "完了してホームへ" : "あとで設定する"}
-          </button>
-          {error ? <p className="text-center text-sm text-[#C5221F]">{error}</p> : null}
-        </div>
-      </main>
-      {renderChoreEditorSheets()}
+        </main>
+        {renderChoreEditorSheets()}
       </>
     );
   }
@@ -3928,39 +3955,6 @@ export function KajiApp() {
       section.chores.map((chore) => chore.id),
     ]),
   );
-  const homeSectionOrderSignature = homeSections
-    .map((section) => {
-      const dateKey = getHomeSectionDateKey(section.key);
-      const ids = section.chores.map((chore) => chore.id).join(",");
-      return `${dateKey}:${ids}`;
-    })
-    .join("|");
-  useEffect(() => {
-    const targetDateKeys = [yesterdayKey, todayKey, tomorrowKey];
-    const sectionIdsByDate = homeSectionChoreIdsRef.current;
-    setHomeOrderByDate((previous) => {
-      const next: HomeOrderByDate = { ...previous };
-
-      targetDateKeys.forEach((dateKey) => {
-        const baseIds = sectionIdsByDate[dateKey] ?? [];
-        if (baseIds.length === 0) {
-          delete next[dateKey];
-          return;
-        }
-
-        const storedIds = previous[dateKey] ?? [];
-        const orderedIds = applyHomeStoredOrder(baseIds, storedIds);
-        if (orderedIds.length === 0) {
-          delete next[dateKey];
-        } else {
-          next[dateKey] = orderedIds;
-        }
-      });
-
-      const sanitized = sanitizeHomeOrderByDate(next, homeOrderSanitizeOptions);
-      return sameHomeOrderByDate(previous, sanitized) ? previous : sanitized;
-    });
-  }, [homeOrderSanitizeOptions, homeSectionOrderSignature, todayKey, tomorrowKey, yesterdayKey]);
   const hasAnyUpcomingChores = homeSections.some((section) => section.chores.length > 0);
   const swipeProgress = swipe.visual.progress;
   const swipeFromTabIndex = Math.max(0, TAB_ORDER.indexOf(swipe.visual.fromTab));
@@ -4404,141 +4398,141 @@ export function KajiApp() {
                 {homeSections.map((section) => {
                   const sectionDateKey = getHomeSectionDateKey(section.key);
                   return (
-                  <div
-                    key={section.key}
-                    data-drop-date={sectionDateKey}
-                    className={`space-y-[6px] rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[#EEF4FE] px-1 py-1" : ""}`}
-                    onDragOver={(event) => {
-                      if (!draggingChore) return;
-                      event.preventDefault();
-                      setDragTargetDateKey(sectionDateKey);
-                      setHomeDropTarget(null);
-                    }}
-                    onDragLeave={() => {
-                      setDragTargetDateKey((prev) => (prev === sectionDateKey ? null : prev));
-                      setHomeDropTarget(null);
-                    }}
-                    onDrop={(event) => {
-                      if (!draggingChore) return;
-                      event.preventDefault();
-                      setHomeDropTarget(null);
-                      if (dragSourceDateKey === sectionDateKey) {
-                        clearDragState();
-                        return;
-                      }
-                      void dropDraggedChoreToDate(sectionDateKey);
-                    }}
-                  >
                     <div
-                      className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
-                      style={{ top: 0 }}
+                      key={section.key}
+                      data-drop-date={sectionDateKey}
+                      className={`space-y-[6px] rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[#EEF4FE] px-1 py-1" : ""}`}
+                      onDragOver={(event) => {
+                        if (!draggingChore) return;
+                        event.preventDefault();
+                        setDragTargetDateKey(sectionDateKey);
+                        setHomeDropTarget(null);
+                      }}
+                      onDragLeave={() => {
+                        setDragTargetDateKey((prev) => (prev === sectionDateKey ? null : prev));
+                        setHomeDropTarget(null);
+                      }}
+                      onDrop={(event) => {
+                        if (!draggingChore) return;
+                        event.preventDefault();
+                        setHomeDropTarget(null);
+                        if (dragSourceDateKey === sectionDateKey) {
+                          clearDragState();
+                          return;
+                        }
+                        void dropDraggedChoreToDate(sectionDateKey);
+                      }}
                     >
-                      <HomeSectionTitle title={`${section.title}（${section.chores.length}）`} />
-                      {section.key === "tomorrow" ? (
-                        <p className="mt-0.5 text-[12px] font-medium text-[#5F6368]">今日やっちゃってもOK！</p>
-                      ) : null}
+                      <div
+                        className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
+                        style={{ top: 0 }}
+                      >
+                        <HomeSectionTitle title={`${section.title}（${section.chores.length}）`} />
+                        {section.key === "tomorrow" ? (
+                          <p className="mt-0.5 text-[12px] font-medium text-[#5F6368]">今日やっちゃってもOK！</p>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-col items-stretch gap-2">
+                        {section.chores.length === 0 ? (
+                          <p className="py-2 text-center text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
+                        ) : section.chores.map((chore, choreIndex) => {
+                          const assignedEntry = assignments.find(
+                            (x) => x.choreId === chore.id && x.date === sectionDateKey,
+                          );
+                          const isDefaultCleared = clearedDefaults.has(`${chore.id}:${sectionDateKey}`);
+                          const effectiveAssigneeId = assignedEntry?.userId ?? (isDefaultCleared ? null : chore.defaultAssigneeId) ?? null;
+                          const assigneeName = assignedEntry?.userName ?? (isDefaultCleared ? null : chore.defaultAssigneeName) ?? null;
+                          const assigneeUser = effectiveAssigneeId ? boot.users.find((u) => u.id === effectiveAssigneeId) : null;
+                          const assigneeColor = assigneeUser?.color ?? null;
+                          const disableTomorrowDailyCheck = false;
+                          const performerUser = chore.lastPerformerId ? boot.users.find((u) => u.id === chore.lastPerformerId) : null;
+                          const performerColor = performerUser?.color ?? null;
+                          const doneYesterday =
+                            !chore.doneToday &&
+                            !!chore.lastPerformedAt &&
+                            !!chore.lastRecordId &&
+                            !chore.lastRecordIsInitial &&
+                            !chore.lastRecordSkipped &&
+                            toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt))) === yesterdayKey;
+                          const displayChore =
+                            section.key === "yesterday" && doneYesterday
+                              ? { ...chore, doneToday: true }
+                              : section.key === "tomorrow" && chore.doneToday
+                                ? { ...chore, doneToday: false }
+                                : chore;
+                          const isHomeDropTarget =
+                            homeDropTarget?.targetDateKey === sectionDateKey &&
+                            homeDropTarget.targetChoreId === chore.id;
+                          const showDropBefore = isHomeDropTarget && homeDropTarget.position === "before";
+                          const showDropAfter = isHomeDropTarget && homeDropTarget.position === "after";
+                          const homeRowKey = `${sectionDateKey}-${chore.id}-${choreIndex}`;
+                          return (
+                            <div
+                              key={homeRowKey}
+                              draggable
+                              data-home-drop-date={sectionDateKey}
+                              data-home-drop-chore-id={chore.id}
+                              className={`${showDropBefore ? "border-t-2 border-[#1A73E8] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[#1A73E8] pb-1" : ""}`}
+                              onDragStart={(event) => {
+                                beginChoreDrag(displayChore, sectionDateKey);
+                                event.dataTransfer.effectAllowed = "move";
+                                event.dataTransfer.setData("text/plain", chore.id);
+                              }}
+                              onDragOver={(event) => {
+                                if (!draggingChore) return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                const position = resolveDropPosition(event.clientY, event.currentTarget);
+                                setDragTargetDateKey(sectionDateKey);
+                                setHomeDropTarget({
+                                  targetDateKey: sectionDateKey,
+                                  targetChoreId: chore.id,
+                                  position,
+                                });
+                              }}
+                              onDragLeave={(event) => {
+                                event.stopPropagation();
+                                setHomeDropTarget((previous) => {
+                                  if (
+                                    previous &&
+                                    previous.targetDateKey === sectionDateKey &&
+                                    previous.targetChoreId === chore.id
+                                  ) {
+                                    return null;
+                                  }
+                                  return previous;
+                                });
+                              }}
+                              onDrop={(event) => {
+                                if (!draggingChore) return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                const position = resolveDropPosition(event.clientY, event.currentTarget);
+                                handleHomeDrop({
+                                  targetDateKey: sectionDateKey,
+                                  targetChoreId: chore.id,
+                                  position,
+                                });
+                              }}
+                              onDragEnd={clearDragState}
+                              onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
+                              style={{ touchAction: "none" }}
+                            >
+                              <HomeTaskRow
+                                chore={displayChore}
+                                onRecord={(target) => openMemo(target, sectionDateKey)}
+                                onUndo={requestUndoRecord}
+                                isUpdating={recordUpdatingIds.includes(chore.id)}
+                                recordDisabled={disableTomorrowDailyCheck}
+                                assigneeName={assigneeName}
+                                assigneeColor={assigneeColor}
+                                performerColor={performerColor}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="flex flex-col items-stretch gap-2">
-                      {section.chores.length === 0 ? (
-                        <p className="py-2 text-center text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
-                      ) : section.chores.map((chore, choreIndex) => {
-                        const assignedEntry = assignments.find(
-                          (x) => x.choreId === chore.id && x.date === sectionDateKey,
-                        );
-                        const isDefaultCleared = clearedDefaults.has(`${chore.id}:${sectionDateKey}`);
-                        const effectiveAssigneeId = assignedEntry?.userId ?? (isDefaultCleared ? null : chore.defaultAssigneeId) ?? null;
-                        const assigneeName = assignedEntry?.userName ?? (isDefaultCleared ? null : chore.defaultAssigneeName) ?? null;
-                        const assigneeUser = effectiveAssigneeId ? boot.users.find((u) => u.id === effectiveAssigneeId) : null;
-                        const assigneeColor = assigneeUser?.color ?? null;
-                        const disableTomorrowDailyCheck = false;
-                        const performerUser = chore.lastPerformerId ? boot.users.find((u) => u.id === chore.lastPerformerId) : null;
-                        const performerColor = performerUser?.color ?? null;
-                        const doneYesterday =
-                          !chore.doneToday &&
-                          !!chore.lastPerformedAt &&
-                          !!chore.lastRecordId &&
-                          !chore.lastRecordIsInitial &&
-                          !chore.lastRecordSkipped &&
-                          toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt))) === yesterdayKey;
-                        const displayChore =
-                          section.key === "yesterday" && doneYesterday
-                            ? { ...chore, doneToday: true }
-                            : section.key === "tomorrow" && chore.doneToday
-                              ? { ...chore, doneToday: false }
-                              : chore;
-                        const isHomeDropTarget =
-                          homeDropTarget?.targetDateKey === sectionDateKey &&
-                          homeDropTarget.targetChoreId === chore.id;
-                        const showDropBefore = isHomeDropTarget && homeDropTarget.position === "before";
-                        const showDropAfter = isHomeDropTarget && homeDropTarget.position === "after";
-                        const homeRowKey = `${sectionDateKey}-${chore.id}-${choreIndex}`;
-                        return (
-                          <div
-                            key={homeRowKey}
-                            draggable
-                            data-home-drop-date={sectionDateKey}
-                            data-home-drop-chore-id={chore.id}
-                            className={`${showDropBefore ? "border-t-2 border-[#1A73E8] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[#1A73E8] pb-1" : ""}`}
-                            onDragStart={(event) => {
-                              beginChoreDrag(displayChore, sectionDateKey);
-                              event.dataTransfer.effectAllowed = "move";
-                              event.dataTransfer.setData("text/plain", chore.id);
-                            }}
-                            onDragOver={(event) => {
-                              if (!draggingChore) return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                              const position = resolveDropPosition(event.clientY, event.currentTarget);
-                              setDragTargetDateKey(sectionDateKey);
-                              setHomeDropTarget({
-                                targetDateKey: sectionDateKey,
-                                targetChoreId: chore.id,
-                                position,
-                              });
-                            }}
-                            onDragLeave={(event) => {
-                              event.stopPropagation();
-                              setHomeDropTarget((previous) => {
-                                if (
-                                  previous &&
-                                  previous.targetDateKey === sectionDateKey &&
-                                  previous.targetChoreId === chore.id
-                                ) {
-                                  return null;
-                                }
-                                return previous;
-                              });
-                            }}
-                            onDrop={(event) => {
-                              if (!draggingChore) return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                              const position = resolveDropPosition(event.clientY, event.currentTarget);
-                              handleHomeDrop({
-                                targetDateKey: sectionDateKey,
-                                targetChoreId: chore.id,
-                                position,
-                              });
-                            }}
-                            onDragEnd={clearDragState}
-                            onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
-                            style={{ touchAction: "none" }}
-                          >
-                            <HomeTaskRow
-                              chore={displayChore}
-                              onRecord={(target) => openMemo(target, sectionDateKey)}
-                              onUndo={requestUndoRecord}
-                              isUpdating={recordUpdatingIds.includes(chore.id)}
-                              recordDisabled={disableTomorrowDailyCheck}
-                              assigneeName={assigneeName}
-                              assigneeColor={assigneeColor}
-                              performerColor={performerColor}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
                   );
                 })}
               </>
@@ -4793,44 +4787,44 @@ export function KajiApp() {
               {calendarSelectedWeekEntries.map((entry) => {
                 const entryJst = new Date(entry.date.getTime() + 9 * 60 * 60 * 1000);
                 return (
-                <div
-                  key={`week-group-${entry.dateKey}`}
-                  data-drop-date={entry.dateKey}
-                  className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[#EEF4FE]" : entry.dateKey === calendarSelectedDateKey ? "bg-[#F5F9FF]" : ""}`}
-                  onClick={(event) => {
-                    handleCalendarSurfaceTap(event, entry.dateKey);
-                  }}
-                  onDragOver={(event) => {
-                    if (!draggingChore) return;
-                    event.preventDefault();
-                    setDragTargetDateKey(entry.dateKey);
-                  }}
-                  onDragLeave={() => {
-                    setDragTargetDateKey((prev) => (prev === entry.dateKey ? null : prev));
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    void dropDraggedChoreToDate(entry.dateKey);
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <p className="text-[14px] font-bold text-[#202124]">
-                      {WEEKDAY_SHORT[entryJst.getUTCDay()]} {entryJst.getUTCDate()}
-                      {entry.dateKey === todayKey ? " 今日" : ""}
-                    </p>
-                    <div className="h-px flex-1 bg-[#E5EAF0]" />
-                    <p className="text-[12px] font-medium text-[#9AA0A6]">{entry.items.length}件</p>
+                  <div
+                    key={`week-group-${entry.dateKey}`}
+                    data-drop-date={entry.dateKey}
+                    className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[#EEF4FE]" : entry.dateKey === calendarSelectedDateKey ? "bg-[#F5F9FF]" : ""}`}
+                    onClick={(event) => {
+                      handleCalendarSurfaceTap(event, entry.dateKey);
+                    }}
+                    onDragOver={(event) => {
+                      if (!draggingChore) return;
+                      event.preventDefault();
+                      setDragTargetDateKey(entry.dateKey);
+                    }}
+                    onDragLeave={() => {
+                      setDragTargetDateKey((prev) => (prev === entry.dateKey ? null : prev));
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      void dropDraggedChoreToDate(entry.dateKey);
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="text-[14px] font-bold text-[#202124]">
+                        {WEEKDAY_SHORT[entryJst.getUTCDay()]} {entryJst.getUTCDate()}
+                        {entry.dateKey === todayKey ? " 今日" : ""}
+                      </p>
+                      <div className="h-px flex-1 bg-[#E5EAF0]" />
+                      <p className="text-[12px] font-medium text-[#9AA0A6]">{entry.items.length}件</p>
+                    </div>
+                    <div className="flex flex-wrap gap-[6px]">
+                      {entry.items.length === 0 ? (
+                        <p className="text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
+                      ) : (
+                        entry.items.map((chore, chipIndex) =>
+                          renderCalendarChip(chore, entry.dateKey, chipIndex),
+                        )
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-[6px]">
-                    {entry.items.length === 0 ? (
-                      <p className="text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
-                    ) : (
-                      entry.items.map((chore, chipIndex) =>
-                        renderCalendarChip(chore, entry.dateKey, chipIndex),
-                      )
-                    )}
-                  </div>
-                </div>
                 );
               })}
             </div>
@@ -5096,7 +5090,7 @@ export function KajiApp() {
           <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-5">
             <p className="text-[14px] font-bold text-[#5F6368]">招待リンク</p>
             <p className="truncate rounded-[10px] bg-[#F1F3F4] px-3 py-2 text-[13px] font-medium text-[#5F6368]">{inviteLink}</p>
-            <button type="button" onClick={async () => { if (navigator.share) { try { await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink }); return; } catch {} } try { await navigator.clipboard.writeText(inviteLink); setInfoMessage("招待リンクをコピーしました。"); } catch { setError("招待リンクの共有に失敗しました。"); } }} className="rounded-[12px] border-2 border-[#1A9BE8] bg-white px-3 py-2 text-[14px] font-bold text-[#1A9BE8]">リンクを共有</button>
+            <button type="button" onClick={async () => { if (navigator.share) { try { await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink }); return; } catch { } } try { await navigator.clipboard.writeText(inviteLink); setInfoMessage("招待リンクをコピーしました。"); } catch { setError("招待リンクの共有に失敗しました。"); } }} className="rounded-[12px] border-2 border-[#1A9BE8] bg-white px-3 py-2 text-[14px] font-bold text-[#1A9BE8]">リンクを共有</button>
           </div>
           <div className="space-y-2">
             <p className="text-[22px] font-bold text-[#202124]">家族メンバー</p>
@@ -5732,11 +5726,10 @@ export function KajiApp() {
       {taskBanner ? (
         <div className="pointer-events-none fixed left-0 right-0 top-3 z-[90] mx-auto max-w-[430px] px-4">
           <div
-            className={`rounded-[12px] border px-4 py-2.5 text-center text-[14px] font-bold shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
-              taskBanner.tone === "green"
-                ? "border-[#CDE7D3] bg-[#E8F5E9] text-[#1E6A3A]"
-                : "border-[#CFE0FF] bg-[#E8F2FF] text-[#1A5AD8]"
-            }`}
+            className={`rounded-[12px] border px-4 py-2.5 text-center text-[14px] font-bold shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${taskBanner.tone === "green"
+              ? "border-[#CDE7D3] bg-[#E8F5E9] text-[#1E6A3A]"
+              : "border-[#CFE0FF] bg-[#E8F2FF] text-[#1A5AD8]"
+              }`}
           >
             {taskBanner.message}
           </div>
@@ -6023,11 +6016,10 @@ export function KajiApp() {
                 onClick={openRescheduleEditChore}
                 disabled={!rescheduleTarget}
                 aria-label="家事を編集"
-                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-bold ${
-                  rescheduleTarget
-                    ? "border-[#E5EAF0] bg-white text-[#1A9BE8]"
-                    : "cursor-not-allowed border-[#E5EAF0] bg-[#F1F3F4] text-[#9AA0A6]"
-                }`}
+                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-bold ${rescheduleTarget
+                  ? "border-[#E5EAF0] bg-white text-[#1A9BE8]"
+                  : "cursor-not-allowed border-[#E5EAF0] bg-[#F1F3F4] text-[#9AA0A6]"
+                  }`}
               >
                 <span className="material-symbols-rounded text-[16px]">edit</span>
                 家事を編集
