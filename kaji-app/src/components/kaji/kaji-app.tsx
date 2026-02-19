@@ -46,6 +46,7 @@ import {
 import { AnimatedList } from "@/components/ui/animated-list";
 import {
   BootstrapResponse,
+  CalendarMonthSummaryResponse,
   ChoreRecordItem,
   ChoreAssignmentEntry,
   ChoreScheduleOverride,
@@ -94,6 +95,8 @@ const REPORT_MONTH_LABELS: Record<(typeof REPORT_MONTH_OFFSETS)[number], string>
   2: "2ヶ月前",
 };
 const CALENDAR_WEEK_DAYS = 7;
+const MAX_DAY_DOT_SLOTS = 6;
+const DAY_DOT_VISIBLE_WHEN_OVERFLOW = 5;
 
 type TabKey = "home" | "list" | "records" | "stats" | "settings";
 const TAB_ORDER: readonly TabKey[] = ["home", "records", "list", "stats"] as const;
@@ -110,6 +113,14 @@ type PushGuideContent = {
   troubleSteps: string[];
 };
 type RescheduleChoice = "tomorrow" | "next_same_weekday" | "custom";
+type RescheduleConfirmOrigin = "sheet" | "drag";
+type PendingRescheduleConfirm = {
+  origin: RescheduleConfirmOrigin;
+  choreId: string;
+  choreTitle: string;
+  sourceDateKey: string;
+  targetDateKey: string;
+};
 type StandaloneScreenKey = "manage" | "my-report";
 type StandaloneOriginKey = "settings" | "list" | "stats";
 const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
@@ -194,6 +205,12 @@ function defaultLastPerformedAt(now = new Date()) {
   return previousDay.toISOString();
 }
 
+function onboardingPresetLastPerformedAt(intervalDays: number, now = new Date()) {
+  const todayStart = startOfJstDay(now);
+  const normalizedInterval = Math.max(1, Math.trunc(intervalDays));
+  return addDays(todayStart, -normalizedInterval).toISOString();
+}
+
 function applyPullResistance(distance: number) {
   return Math.min(PULL_REFRESH_MAX_PX, Math.max(0, distance) * 0.5);
 }
@@ -226,6 +243,16 @@ function topDateWithWeekday(now = new Date()) {
     weekday: "long",
   }).format(now);
   return `${weekday} ${formatTopDate(now)}`;
+}
+
+function formatDateKeyMonthDayWeekday(dateKey: string) {
+  const date = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
+  if (Number.isNaN(date.getTime())) return dateKey;
+  const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const month = jstDate.getUTCMonth() + 1;
+  const day = jstDate.getUTCDate();
+  const weekday = WEEKDAY_SHORT[jstDate.getUTCDay()];
+  return `${month}/${day}(${weekday})`;
 }
 
 function scheduledDayOffset(
@@ -426,6 +453,7 @@ export function KajiApp() {
   const [calendarMonthCursor, setCalendarMonthCursor] = useState<Date>(() =>
     startOfJstDay(new Date()),
   );
+  const [calendarMonthSummary, setCalendarMonthSummary] = useState<CalendarMonthSummaryResponse | null>(null);
   const [calendarSelectedDateKey, setCalendarSelectedDateKey] = useState<string>(() =>
     toJstDateKey(startOfJstDay(new Date())),
   );
@@ -438,6 +466,8 @@ export function KajiApp() {
     toJstDateKey(addDays(startOfJstDay(new Date()), 1)),
   );
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [pendingRescheduleConfirm, setPendingRescheduleConfirm] = useState<PendingRescheduleConfirm | null>(null);
+  const [rescheduleConfirmLoading, setRescheduleConfirmLoading] = useState(false);
   const [draggingChore, setDraggingChore] = useState<ChoreWithComputed | null>(null);
   const [dragSourceDateKey, setDragSourceDateKey] = useState<string | null>(null);
   const [dragTargetDateKey, setDragTargetDateKey] = useState<string | null>(null);
@@ -457,6 +487,8 @@ export function KajiApp() {
   const dragScrollRafRef = useRef<number | null>(null);
   const dragScrollSpeedRef = useRef<number>(0);
   const calendarWeekStartRef = useRef<Date>(new Date());
+  const calendarMonthKeyRef = useRef<string>(toMonthKey(startOfJstDay(new Date())));
+  const calendarSummaryEnabledRef = useRef(false);
   const calendarSwipeStartXRef = useRef<number | null>(null);
   const calendarSwipeStartYRef = useRef<number | null>(null);
   const dropDraggedChoreToDateRef = useRef<(targetDateKey: string) => Promise<void>>(async () => {});
@@ -489,8 +521,7 @@ export function KajiApp() {
   const [undoConfirmTarget, setUndoConfirmTarget] = useState<ChoreWithComputed | null>(null);
   const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
   const [reactionUpdatingId, setReactionUpdatingId] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyTarget, setHistoryTarget] = useState<ChoreWithComputed | null>(null);
+  const [manageDetailChoreId, setManageDetailChoreId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState("all");
   const [pendingSwipeDeletes, setPendingSwipeDeletes] = useState<PendingSwipeDelete[]>([]);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -543,6 +574,9 @@ export function KajiApp() {
     setSettingsOpen(true);
   }, []);
   const openSettingsView = useCallback((view: SettingsViewKey) => {
+    if (view !== "manage") {
+      setManageDetailChoreId(null);
+    }
     setSettingsView(view);
     setSettingsOpen(true);
   }, []);
@@ -552,6 +586,9 @@ export function KajiApp() {
   }, []);
   const openStandaloneScreen = useCallback(
     (screen: StandaloneScreenKey, origin: StandaloneOriginKey = "settings") => {
+      if (screen === "manage") {
+        setManageDetailChoreId(null);
+      }
       setStandaloneOrigin(origin);
       setSettingsOpen(false);
       setSettingsView(screen);
@@ -647,6 +684,11 @@ export function KajiApp() {
 
   const sessionUser = boot?.sessionUser ?? null;
   const chores = boot?.chores ?? [];
+  useEffect(() => {
+    if (!manageDetailChoreId) return;
+    if (chores.some((chore) => chore.id === manageDetailChoreId)) return;
+    setManageDetailChoreId(null);
+  }, [chores, manageDetailChoreId]);
   const todayMissionCompletedForBanner = useMemo(() => {
     if (!boot || boot.needsRegistration) return false;
     if (!boot.todayChores || boot.todayChores.length === 0) return false;
@@ -780,6 +822,44 @@ export function KajiApp() {
     return map;
   }, [scheduleOverrides]);
 
+  const manageDetailTarget = useMemo(() => {
+    if (!manageDetailChoreId) return null;
+    return chores.find((chore) => chore.id === manageDetailChoreId) ?? null;
+  }, [chores, manageDetailChoreId]);
+
+  const manageUpcomingDateKeys = useMemo(() => {
+    if (!manageDetailTarget) return [];
+
+    const today = startOfJstDay(new Date());
+    const todayKey = toJstDateKey(today);
+    const intervalDays = Math.max(1, manageDetailTarget.intervalDays);
+    const overrideDateKey = (scheduleOverridesByChore.get(manageDetailTarget.id) ?? [])
+      .map((override) => override.date)
+      .filter((dateKey) => dateKey >= todayKey)
+      .sort((a, b) => a.localeCompare(b))[0];
+
+    let cursor = overrideDateKey
+      ? startOfJstDay(new Date(`${overrideDateKey}T00:00:00+09:00`))
+      : manageDetailTarget.dueAt
+        ? startOfJstDay(new Date(manageDetailTarget.dueAt))
+        : null;
+
+    if (!cursor || Number.isNaN(cursor.getTime())) return [];
+
+    while (cursor.getTime() < today.getTime()) {
+      cursor = addDays(cursor, intervalDays);
+    }
+
+    const items: string[] = [];
+    let guard = 0;
+    while (items.length < 5 && guard < 400) {
+      items.push(toJstDateKey(cursor));
+      cursor = addDays(cursor, intervalDays);
+      guard += 1;
+    }
+    return items;
+  }, [manageDetailTarget, scheduleOverridesByChore]);
+
   const calendarWindowStart = useMemo(
     () => startOfJstWeekMonday(addDays(calendarMonthCursor, -31)),
     [calendarMonthCursor],
@@ -787,6 +867,10 @@ export function KajiApp() {
   const calendarWindowEnd = useMemo(
     () => addDays(calendarWindowStart, 130),
     [calendarWindowStart],
+  );
+  const calendarMonthKey = useMemo(
+    () => toMonthKey(calendarMonthCursor),
+    [calendarMonthCursor],
   );
   const calendarScheduleMap = useMemo(() => {
     const map = new Map<string, ChoreWithComputed[]>();
@@ -799,8 +883,8 @@ export function KajiApp() {
     };
 
     chores.forEach((chore) => {
-      // Show the latest completed day (including initial record) on calendar as completed.
-      if (chore.lastPerformedAt && !chore.lastRecordSkipped) {
+      // Show the latest completed day on calendar as completed (initial seed records are excluded).
+      if (chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial) {
         const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
         if (
           performedDateKey >= toJstDateKey(calendarWindowStart) &&
@@ -833,14 +917,6 @@ export function KajiApp() {
     return map;
   }, [calendarWindowEnd, calendarWindowStart, chores, scheduleOverridesByChore]);
 
-  const calendarTaskCountByDate = useMemo(() => {
-    const counts = new Map<string, number>();
-    calendarScheduleMap.forEach((items, dateKey) => {
-      counts.set(dateKey, items.length);
-    });
-    return counts;
-  }, [calendarScheduleMap]);
-
   const calendarMonthGridDates = useMemo(() => {
     const monthStart = startOfJstDay(new Date(calendarMonthCursor));
     const firstOfMonth = startOfJstDay(new Date(
@@ -861,6 +937,15 @@ export function KajiApp() {
     setAssignments(data.assignments ?? []);
     setNotificationSettings(data.notificationSettings);
     setCustomIcons(data.customIcons ?? []);
+    return data;
+  }, []);
+
+  const loadCalendarMonthSummary = useCallback(async (month: string) => {
+    const data = await apiFetch<CalendarMonthSummaryResponse>(
+      `/api/calendar-month-summary?month=${encodeURIComponent(month)}`,
+      { cache: "no-store" },
+    );
+    setCalendarMonthSummary(data);
     return data;
   }, []);
 
@@ -927,12 +1012,17 @@ export function KajiApp() {
         setStats(null);
         setStatsLoading(false);
         setRecords([]);
+        setCalendarMonthSummary(null);
         return data;
       }
-      await Promise.all([loadStats(period), loadHistory()]);
+      await Promise.all([
+        loadStats(period),
+        loadHistory(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
       return data;
     },
-    [loadBootstrap, loadHistory, loadStats],
+    [loadBootstrap, loadCalendarMonthSummary, loadHistory, loadStats],
   );
 
   // ── Real-time sync polling ──────────────────────────────────
@@ -979,7 +1069,10 @@ export function KajiApp() {
       syncRefreshingRef.current = true;
 
       // Fire bootstrap (critical) plus stats/history (secondary) in parallel
-      const refreshPromises: Promise<unknown>[] = [loadBootstrap()];
+      const refreshPromises: Promise<unknown>[] = [
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current).catch(() => { }),
+      ];
       // Only refresh stats/history when user is on those tabs
       const tab = activeTabRef.current;
       if (tab === "stats") {
@@ -997,7 +1090,7 @@ export function KajiApp() {
     } finally {
       syncPollingRef.current = false;
     }
-  }, [boot, loadBootstrap, loadHistory, loadStats, sessionUser]);
+  }, [boot, loadBootstrap, loadCalendarMonthSummary, loadHistory, loadStats, sessionUser]);
 
   useEffect(() => {
     if (!boot || boot.needsRegistration || !sessionUser) return;
@@ -1134,6 +1227,21 @@ export function KajiApp() {
   }, [boot, loadHouseholdReport, loadMyReport, reportMonthOffset, sessionUser]);
 
   useEffect(() => {
+    const enabled = !!boot && !boot.needsRegistration && !!sessionUser;
+    calendarSummaryEnabledRef.current = enabled;
+    if (!enabled) {
+      setCalendarMonthSummary(null);
+    }
+  }, [boot?.needsRegistration, sessionUser?.id]);
+
+  useEffect(() => {
+    if (!calendarSummaryEnabledRef.current) return;
+    void loadCalendarMonthSummary(calendarMonthKey).catch((err: unknown) => {
+      setError((err as Error).message ?? "カレンダー情報の取得に失敗しました。");
+    });
+  }, [calendarMonthKey, loadCalendarMonthSummary]);
+
+  useEffect(() => {
     const selected = startOfJstDay(new Date(`${calendarSelectedDateKey}T00:00:00+09:00`));
     if (Number.isNaN(selected.getTime())) return;
     setCalendarWeekStart(startOfJstWeekMonday(selected));
@@ -1142,6 +1250,10 @@ export function KajiApp() {
   useEffect(() => {
     calendarWeekStartRef.current = calendarWeekStart;
   }, [calendarWeekStart]);
+
+  useEffect(() => {
+    calendarMonthKeyRef.current = calendarMonthKey;
+  }, [calendarMonthKey]);
 
   useEffect(() => {
     if (activeTab !== "home" && activeTab !== "list") {
@@ -1414,8 +1526,8 @@ export function KajiApp() {
     try {
       setOnboardingSubmitting(true);
       setError("");
-      const lastPerformedAt = defaultLastPerformedAt();
       for (const preset of selectedPresets) {
+        const lastPerformedAt = onboardingPresetLastPerformedAt(preset.intervalDays);
         await apiFetch("/api/chores", {
           method: "POST",
           body: JSON.stringify({
@@ -1494,6 +1606,7 @@ export function KajiApp() {
 
   const saveChore = async () => {
     if (!editingChore || saveChoreLoading || deleteChoreLoading) return;
+    const editingChoreId = editingChore.id ?? null;
     setError("");
     if (!editingChore.lastPerformedAt) {
       setError("開始日は必須です。");
@@ -1522,6 +1635,9 @@ export function KajiApp() {
         await apiFetch("/api/chores", { method: "POST", body: JSON.stringify(payload) });
       }
       await refreshAll(statsPeriod);
+      if (editingChoreId && manageDetailChoreId === editingChoreId) {
+        setManageDetailChoreId(editingChoreId);
+      }
       setDeleteConfirmOpen(false);
       setChoreEditorOpen(false);
     } catch (err: unknown) {
@@ -1538,10 +1654,14 @@ export function KajiApp() {
 
   const confirmDeleteChore = async () => {
     if (!editingChore?.id || deleteChoreLoading || saveChoreLoading) return;
+    const deletingChoreId = editingChore.id;
     try {
       setDeleteChoreLoading(true);
-      await apiFetch(`/api/chores/${editingChore.id}`, { method: "DELETE" });
+      await apiFetch(`/api/chores/${deletingChoreId}`, { method: "DELETE" });
       await refreshAll(statsPeriod);
+      if (manageDetailChoreId === deletingChoreId) {
+        setManageDetailChoreId(null);
+      }
       setDeleteConfirmOpen(false);
       setChoreEditorOpen(false);
     } catch (err: unknown) {
@@ -1619,6 +1739,7 @@ export function KajiApp() {
     setRescheduleBaseDateKey(baseKey);
     setRescheduleChoice("tomorrow");
     setRescheduleCustomDate(shiftDateKey(baseKey, 1));
+    setPendingRescheduleConfirm(null);
     setRescheduleOpen(true);
   };
 
@@ -1632,16 +1753,37 @@ export function KajiApp() {
     return customDate;
   }, [shiftDateKey]);
 
-  const rescheduleChoreToDate = useCallback(async (choreId: string, date: string) => {
-    await apiFetch("/api/schedule-override", {
-      method: "POST",
-      body: JSON.stringify({
-        choreId,
-        date,
-      }),
-    });
-    await loadBootstrap();
-  }, [loadBootstrap]);
+  const rescheduleChoreToDate = useCallback(
+    async ({
+      choreId,
+      targetDateKey,
+      sourceDateKey,
+      recalculateFuture,
+      sourceRecordId,
+    }: {
+      choreId: string;
+      targetDateKey: string;
+      sourceDateKey?: string;
+      recalculateFuture?: boolean;
+      sourceRecordId?: string;
+    }) => {
+      await apiFetch("/api/schedule-override", {
+        method: "POST",
+        body: JSON.stringify({
+          choreId,
+          date: targetDateKey,
+          ...(sourceDateKey ? { sourceDate: sourceDateKey } : {}),
+          ...(typeof recalculateFuture === "boolean" ? { recalculateFuture } : {}),
+          ...(sourceRecordId ? { sourceRecordId } : {}),
+        }),
+      });
+      await Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
+    },
+    [loadBootstrap, loadCalendarMonthSummary],
+  );
 
   const focusCalendarDate = useCallback((dateKey: string) => {
     const nextDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
@@ -1653,19 +1795,50 @@ export function KajiApp() {
     setCalendarMonthCursor(nextDate);
   }, []);
 
-  const applyReschedule = useCallback(async () => {
+  const applyReschedule = useCallback(() => {
     if (!rescheduleTarget) return;
     const nextDate = resolveRescheduleDateKey(rescheduleChoice, rescheduleCustomDate, rescheduleBaseDateKey);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) {
+      setError("日付を指定してください。");
+      return;
+    }
+    setPendingRescheduleConfirm({
+      origin: "sheet",
+      choreId: rescheduleTarget.id,
+      choreTitle: rescheduleTarget.title,
+      sourceDateKey: rescheduleBaseDateKey,
+      targetDateKey: nextDate,
+    });
+  }, [rescheduleBaseDateKey, rescheduleChoice, rescheduleCustomDate, rescheduleTarget, resolveRescheduleDateKey]);
+
+  const closePendingRescheduleConfirm = useCallback(() => {
+    if (rescheduleConfirmLoading) return;
+    setPendingRescheduleConfirm(null);
+  }, [rescheduleConfirmLoading]);
+
+  const confirmPendingReschedule = useCallback(async (recalculateFuture: boolean) => {
+    if (!pendingRescheduleConfirm || rescheduleConfirmLoading) return;
     try {
       setError("");
-      await rescheduleChoreToDate(rescheduleTarget.id, nextDate);
-      focusCalendarDate(nextDate);
-      setRescheduleOpen(false);
-      setRescheduleTarget(null);
+      setRescheduleConfirmLoading(true);
+      await rescheduleChoreToDate({
+        choreId: pendingRescheduleConfirm.choreId,
+        targetDateKey: pendingRescheduleConfirm.targetDateKey,
+        sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
+        recalculateFuture,
+      });
+      focusCalendarDate(pendingRescheduleConfirm.targetDateKey);
+      if (pendingRescheduleConfirm.origin === "sheet") {
+        setRescheduleOpen(false);
+        setRescheduleTarget(null);
+      }
+      setPendingRescheduleConfirm(null);
     } catch (err: unknown) {
       setError((err as Error).message ?? "日にち変更に失敗しました。");
+    } finally {
+      setRescheduleConfirmLoading(false);
     }
-  }, [focusCalendarDate, rescheduleBaseDateKey, rescheduleChoice, rescheduleCustomDate, rescheduleTarget, resolveRescheduleDateKey, rescheduleChoreToDate]);
+  }, [focusCalendarDate, pendingRescheduleConfirm, rescheduleChoreToDate, rescheduleConfirmLoading]);
 
   const clearDragState = useCallback(() => {
     setDraggingChore(null);
@@ -1714,29 +1887,41 @@ export function KajiApp() {
       // If the chore was completed on the source date, move the completion record
       // rather than creating a schedule override (move, not copy).
       const completedDateKey =
-        draggingChore.lastPerformedAt && !draggingChore.lastRecordSkipped
+        draggingChore.lastPerformedAt &&
+        !draggingChore.lastRecordSkipped &&
+        !draggingChore.lastRecordIsInitial
           ? toJstDateKey(startOfJstDay(new Date(draggingChore.lastPerformedAt)))
           : null;
       const sourceRecordId =
         completedDateKey === dragSourceDateKey && draggingChore.lastRecordId
           ? draggingChore.lastRecordId
           : undefined;
-      await apiFetch("/api/schedule-override", {
-        method: "POST",
-        body: JSON.stringify({
+      if (sourceRecordId) {
+        await rescheduleChoreToDate({
           choreId: draggingChore.id,
-          date: targetDateKey,
-          ...(sourceRecordId ? { sourceRecordId } : {}),
-        }),
+          targetDateKey,
+          sourceRecordId,
+        });
+        focusCalendarDate(targetDateKey);
+        return;
+      }
+      if (!dragSourceDateKey) {
+        setError("移動元の日付が取得できません。");
+        return;
+      }
+      setPendingRescheduleConfirm({
+        origin: "drag",
+        choreId: draggingChore.id,
+        choreTitle: draggingChore.title,
+        sourceDateKey: dragSourceDateKey,
+        targetDateKey,
       });
-      await loadBootstrap();
-      focusCalendarDate(targetDateKey);
     } catch (err: unknown) {
       setError((err as Error).message ?? "日にち変更に失敗しました。");
     } finally {
       clearDragState();
     }
-  }, [clearDragState, dragSourceDateKey, draggingChore, focusCalendarDate, loadBootstrap]);
+  }, [clearDragState, dragSourceDateKey, draggingChore, focusCalendarDate, rescheduleChoreToDate]);
 
   // ref を常に最新の関数に同期。useEffect 内のクロージャが古いスナップショットを
   // 参照しないよう、render 時点で更新しておく。
@@ -2079,7 +2264,10 @@ export function KajiApp() {
     try {
       await apiFetch(`/api/records/${chore.lastRecordId}`, { method: "DELETE", body: "{}" });
       // Refresh authoritative state from server to ensure dueAt, lastPerformedAt etc. are correct.
-      await loadBootstrap();
+      await Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
       if (previousBoot) {
@@ -2104,10 +2292,9 @@ export function KajiApp() {
     await undoRecord(target);
   };
 
-  const openHistory = (chore: ChoreWithComputed) => {
-    setHistoryTarget(chore);
+  const openManageDetail = (choreId: string) => {
+    setManageDetailChoreId(choreId);
     setHistoryFilter("all");
-    setHistoryOpen(true);
   };
 
   const toggleReaction = useCallback(
@@ -2424,21 +2611,21 @@ export function KajiApp() {
   }, [historyUsers]);
 
   const historyRecords = useMemo(() => {
-    if (!historyTarget) return [];
+    if (!manageDetailTarget) return [];
     return records.filter((record) => {
-      if (record.chore.id !== historyTarget.id) return false;
+      if (record.chore.id !== manageDetailTarget.id) return false;
       if (historyFilter === "all") return true;
       return record.user.id === historyFilter;
     });
-  }, [historyFilter, historyTarget, records]);
+  }, [historyFilter, manageDetailTarget, records]);
 
   const historyCountLast30 = useMemo(() => {
-    if (!historyTarget) return 0;
+    if (!manageDetailTarget) return 0;
     const cutoff = addDays(startOfJstDay(new Date()), -30);
     return records.filter(
-      (record) => record.chore.id === historyTarget.id && new Date(record.performedAt) >= cutoff,
+      (record) => record.chore.id === manageDetailTarget.id && new Date(record.performedAt) >= cutoff,
     ).length;
-  }, [historyTarget, records]);
+  }, [manageDetailTarget, records]);
   const latestRecordItem = useMemo(() => {
     return records
       .filter((record) => !record.isInitial && !record.isSkipped)
@@ -2504,20 +2691,50 @@ export function KajiApp() {
   }, [householdReport]);
 
   const renderDayDots = useCallback((dateKey: string) => {
-    const count = calendarTaskCountByDate.get(dateKey) ?? 0;
+    const count = calendarMonthSummary?.countsByDate[dateKey] ?? 0;
     if (count <= 0) return <span className="h-1 w-1 rounded-full bg-transparent" />;
-    const dots = Math.min(3, count);
+    if (count <= 3) {
+      return (
+        <span className="mt-0.5 inline-flex items-center gap-0.5">
+          {Array.from({ length: count }).map((_, index) => (
+            <span
+              key={`${dateKey}-dot-${index}`}
+              className="h-1 w-1 rounded-full bg-[#1A9BE8]"
+            />
+          ))}
+        </span>
+      );
+    }
+
+    const hasOverflow = count > DAY_DOT_VISIBLE_WHEN_OVERFLOW;
+    const dotCount = hasOverflow
+      ? DAY_DOT_VISIBLE_WHEN_OVERFLOW
+      : Math.min(MAX_DAY_DOT_SLOTS, count);
+    const tokens = [
+      ...Array.from({ length: dotCount }, (_, idx) => `dot-${idx}`),
+      ...(hasOverflow ? ["plus"] : []),
+    ];
+
     return (
-      <span className="mt-0.5 inline-flex items-center gap-0.5">
-        {Array.from({ length: dots }).map((_, index) => (
-          <span
-            key={`${dateKey}-dot-${index}`}
-            className="h-1 w-1 rounded-full bg-[#1A9BE8]"
-          />
+      <span className="mt-0.5 inline-grid grid-cols-3 place-items-center gap-0.5">
+        {tokens.map((token, index) => (
+          token === "plus" ? (
+            <span
+              key={`${dateKey}-dot-plus-${index}`}
+              className="inline-flex h-1 w-1 items-center justify-center text-[5px] font-bold leading-none text-[#1A9BE8]"
+            >
+              +
+            </span>
+          ) : (
+            <span
+              key={`${dateKey}-${token}`}
+              className="h-1 w-1 rounded-full bg-[#1A9BE8]"
+            />
+          )
         ))}
       </span>
     );
-  }, [calendarTaskCountByDate]);
+  }, [calendarMonthSummary]);
 
   const renderChoreEditorSheets = () => (
     <>
@@ -2901,7 +3118,7 @@ export function KajiApp() {
     };
 
     chores.forEach((chore) => {
-      if (chore.lastPerformedAt && !chore.lastRecordSkipped) {
+      if (chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial) {
         const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
         if (performedDateKey === dateKey) {
           pushUnique(chore);
@@ -3254,10 +3471,10 @@ export function KajiApp() {
               type="button"
               onClick={() => {
                 closeAssignment();
-                openStandaloneScreen("my-report", "stats");
+                openSettings();
               }}
               className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
-              aria-label="私のレポートを開く"
+              aria-label="設定を開く"
             >
               <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
                 account_circle
@@ -3342,6 +3559,7 @@ export function KajiApp() {
                           !chore.doneToday &&
                           !!chore.lastPerformedAt &&
                           !!chore.lastRecordId &&
+                          !chore.lastRecordIsInitial &&
                           !chore.lastRecordSkipped &&
                           toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt))) === yesterdayKey;
                         const displayChore =
@@ -3445,7 +3663,7 @@ export function KajiApp() {
           : null;
         const doneColor = performerUser?.color ?? "#33C28A";
         const performedDateKey =
-          chore.lastPerformedAt && !chore.lastRecordSkipped
+          chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial
             ? toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)))
             : null;
         const isDone = performedDateKey === dateKey && dateKey < todayKey;
@@ -4037,6 +4255,100 @@ export function KajiApp() {
     }
 
     if (settingsView === "manage") {
+      if (manageDetailTarget) {
+        const DetailIcon = iconByName(manageDetailTarget.icon);
+        return (
+          <div className="space-y-3 pb-4">
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setManageDetailChoreId(null)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]"
+                aria-label="家事一覧に戻る"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <p className="text-[22px] font-bold text-[#202124]">家事詳細</p>
+              <button
+                type="button"
+                onClick={() => openEditChore(manageDetailTarget)}
+                className="ml-auto inline-flex items-center gap-1 rounded-full border border-[#E5EAF0] bg-white px-3 py-1.5 text-[12px] font-bold text-[#1A9BE8]"
+              >
+                <span className="material-symbols-rounded text-[16px]">edit</span>
+                編集
+              </button>
+            </div>
+
+            <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: manageDetailTarget.bgColor }}>
+                  <DetailIcon size={18} color={manageDetailTarget.iconColor} />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-[16px] font-bold text-[#202124]">{manageDetailTarget.title}</p>
+                  <p className="text-[12px] font-medium text-[#5F6368]">
+                    {manageDetailTarget.intervalDays}日ごと・担当: {manageDetailTarget.defaultAssigneeName ?? "なし"}
+                  </p>
+                </div>
+              </div>
+              <p className="text-[12px] font-medium text-[#5F6368]">直近30日の実施回数: {historyCountLast30}回</p>
+            </div>
+
+            <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-4">
+              <div className="flex items-end justify-between gap-2">
+                <p className="text-[16px] font-bold text-[#202124]">実施予定</p>
+                <span className="text-[11px] font-medium text-[#9AA0A6]">次の5件</span>
+              </div>
+              {manageUpcomingDateKeys.length === 0 ? (
+                <p className="rounded-[10px] bg-[#F8F9FA] px-3 py-2 text-[13px] font-medium text-[#9AA0A6]">予定なし</p>
+              ) : (
+                <div className="space-y-2">
+                  {manageUpcomingDateKeys.map((dateKey, index) => (
+                    <div key={`${manageDetailTarget.id}-planned-${dateKey}`} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-[#5F6368]">{index + 1}</span>
+                      <p className="text-[14px] font-semibold text-[#202124]">{formatDateKeyMonthDayWeekday(dateKey)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-4">
+              <p className="text-[16px] font-bold text-[#202124]">実施履歴</p>
+              <SegmentedFilter items={historyFilters} activeKey={historyFilter} onChange={setHistoryFilter} />
+              {historyRecords.length === 0 ? (
+                <p className="rounded-[10px] bg-[#F8F9FA] px-3 py-4 text-center text-[13px] font-medium text-[#9AA0A6]">履歴がありません</p>
+              ) : (
+                <AnimatedList delay={70} className="items-stretch gap-2">
+                  {historyRecords.map((record, index) => (
+                    <div key={record.id} className="flex items-start gap-3 rounded-[12px] bg-[#F8F9FA] p-3">
+                      <span
+                        className="mt-1 h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: index % 2 === 0 ? "#33C28A" : "#4285F4" }}
+                      />
+                      <div className="space-y-1">
+                        <p className="text-[14px] font-bold text-[#202124]">
+                          {formatJpDate(record.performedAt)} {
+                            record.isSkipped
+                              ? "スキップ"
+                              : record.isInitial || record.user.name === "初期登録"
+                                ? "初回登録"
+                                : `${record.user.name}が実施`
+                          }
+                        </p>
+                        {record.memo ? (
+                          <p className="text-[12px] font-medium text-[#5F6368]">メモ: {record.memo}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </AnimatedList>
+              )}
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="space-y-3 pb-4">
           <div className="flex items-center gap-2 pt-1">
@@ -4049,7 +4361,7 @@ export function KajiApp() {
           {listChores.map((chore) => {
             const ChoreIcon = iconByName(chore.icon);
             return (
-              <button key={chore.id} type="button" onClick={() => openEditChore(chore)} className="flex w-full items-center justify-between rounded-[14px] border border-[#E5EAF0] bg-white px-4 py-3 text-left">
+              <button key={chore.id} type="button" onClick={() => openManageDetail(chore.id)} className="flex w-full items-center justify-between rounded-[14px] border border-[#E5EAF0] bg-white px-4 py-3 text-left">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: chore.bgColor }}>
                     <ChoreIcon size={15} color={chore.iconColor} />
@@ -4492,7 +4804,7 @@ export function KajiApp() {
 
       {standaloneScreen ? (
         <div className="fixed inset-0 z-[75] bg-[#F8F9FA]">
-          <div className="h-full overflow-y-auto px-5 pb-24 pt-5">
+          <div className="mx-auto h-full w-full max-w-[430px] overflow-y-auto px-5 pb-24 pt-5">
             {renderMainTabContent("settings")}
           </div>
         </div>
@@ -4676,47 +4988,6 @@ export function KajiApp() {
       </BottomSheet>
 
       <BottomSheet
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        title=""
-        maxHeightClassName="min-h-[62vh] max-h-[88vh]"
-      >
-        <div className="space-y-3 pb-2">
-          <div className="rounded-[14px] bg-white p-3">
-            <p className="text-[16.8px] font-bold text-[#202124]">{historyTarget?.title}</p>
-            <p className="text-[13.2px] font-medium text-[#5F6368]">
-              {historyTarget ? `${historyTarget.intervalDays}日ごと / 直近30日の実施回数: ${historyCountLast30}回` : ""}
-            </p>
-          </div>
-          <SegmentedFilter items={historyFilters} activeKey={historyFilter} onChange={setHistoryFilter} />
-          <AnimatedList delay={70} className="items-stretch gap-2">
-            {historyRecords.map((record, index) => (
-              <div key={record.id} className="flex items-start gap-3 rounded-[14px] bg-white p-3">
-                <span
-                  className="mt-1 h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: index % 2 === 0 ? "#33C28A" : "#4285F4" }}
-                />
-                <div className="space-y-1">
-                  <p className="text-[15.6px] font-bold text-[#202124]">
-                    {formatJpDate(record.performedAt)} {
-                      record.isSkipped
-                        ? "スキップ"
-                        : record.isInitial || record.user.name === "初期登録"
-                          ? "初回登録"
-                          : `${record.user.name}が実施`
-                    }
-                  </p>
-                  {record.memo ? (
-                    <p className="text-[13.2px] font-medium text-[#5F6368]">メモ: {record.memo}</p>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </AnimatedList>
-        </div>
-      </BottomSheet>
-
-      <BottomSheet
         open={rescheduleOpen}
         onClose={() => {
           setRescheduleOpen(false);
@@ -4820,6 +5091,54 @@ export function KajiApp() {
           </button>
         </div>
       </BottomSheet>
+
+      {pendingRescheduleConfirm ? (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={closePendingRescheduleConfirm}
+        >
+          <div
+            className="mx-6 w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-center text-[17px] font-bold text-[#202124]">
+              後続の予定を再計算しますか？
+            </p>
+            <p className="mt-2 text-center text-[13px] font-medium text-[#5F6368]">
+              「{pendingRescheduleConfirm.choreTitle}」
+            </p>
+            <p className="mt-1 text-center text-[12.5px] font-medium text-[#5F6368]">
+              {pendingRescheduleConfirm.sourceDateKey} → {pendingRescheduleConfirm.targetDateKey}
+            </p>
+            <p className="mt-3 text-center text-[12px] font-medium text-[#5F6368]">
+              OK: 以降の予定をすべてずらす / いいえ: この日程だけ移動
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={rescheduleConfirmLoading}
+                onClick={() => {
+                  void confirmPendingReschedule(false);
+                }}
+                className="rounded-[14px] border border-[#DADCE0] bg-white px-3 py-[11px] text-[14px] font-bold text-[#5F6368] disabled:opacity-60"
+              >
+                いいえ
+              </button>
+              <button
+                type="button"
+                disabled={rescheduleConfirmLoading}
+                onClick={() => {
+                  void confirmPendingReschedule(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-[14px] bg-[#4CAF50] px-3 py-[11px] text-[14px] font-bold text-white disabled:opacity-60"
+              >
+                {rescheduleConfirmLoading ? <Loader2 size={15} className="animate-spin" /> : null}
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {undoConfirmTarget ? (
         <div

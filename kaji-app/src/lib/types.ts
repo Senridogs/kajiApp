@@ -38,6 +38,7 @@ export type ChoreWithComputed = {
   lastPerformerName: string | null;
   lastPerformerId: string | null;
   lastRecordId: string | null;
+  lastRecordIsInitial: boolean;
   lastRecordSkipped: boolean;
   dueAt: string | null;
   isDueToday: boolean;
@@ -143,4 +144,10 @@ export type BootstrapResponse = {
   customIcons: Array<{ id: string; label: string; icon: string; iconColor: string; bgColor: string }>;
   scheduleOverrides: ChoreScheduleOverride[];
   needsRegistration: boolean;
+};
+
+export type CalendarMonthSummaryResponse = {
+  month: string;
+  countsByDate: Record<string, number>;
+  generatedAt: string;
 };

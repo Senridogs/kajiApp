@@ -113,7 +113,7 @@ export function BottomSheet({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/30"
+            className="fixed inset-0 z-[80] bg-black/30"
             aria-label="閉じる"
           />
           <motion.section
@@ -131,7 +131,7 @@ export function BottomSheet({
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            className={`fixed bottom-0 left-0 right-0 z-50 mx-auto w-full max-w-[430px] rounded-t-[22px] bg-[#F8F9FA] shadow-xl ${containerClassName} ${maxHeightClassName} ${scrollable ? "overflow-auto" : "overflow-hidden"}`}
+            className={`fixed bottom-0 left-0 right-0 z-[85] mx-auto w-full max-w-[430px] rounded-t-[22px] bg-[#F8F9FA] shadow-xl ${containerClassName} ${maxHeightClassName} ${scrollable ? "overflow-auto" : "overflow-hidden"}`}
             style={{ overscrollBehaviorY: "contain" }}
           >
             <button

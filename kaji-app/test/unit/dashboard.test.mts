@@ -28,6 +28,8 @@ test("computeChore marks due today and doneToday correctly", () => {
         choreId: "chore-1",
         userId: "u1",
         memo: null,
+        isInitial: false,
+        isSkipped: false,
         performedAt,
         createdAt: performedAt,
         user: { id: "u1", name: "A" },
@@ -41,6 +43,47 @@ test("computeChore marks due today and doneToday correctly", () => {
   assert.equal(computed.isDueTomorrow, true);
   assert.equal(computed.isOverdue, false);
   assert.equal(computed.overdueDays, 0);
+});
+
+test("computeChore keeps initial record as not-done and flags lastRecordIsInitial", () => {
+  const now = new Date("2026-02-15T03:00:00.000Z"); // JST: 12:00
+  const performedAt = new Date("2026-02-14T15:30:00.000Z"); // JST: 02/15 00:30
+
+  const chore = {
+    id: "chore-initial",
+    title: "initial",
+    icon: "sparkles",
+    iconColor: "#fff",
+    bgColor: "#000",
+    intervalDays: 1,
+    isBigTask: false,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
+    archived: false,
+    createdAt: new Date("2026-02-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+    householdId: "h1",
+    records: [
+      {
+        id: "r-initial",
+        householdId: "h1",
+        choreId: "chore-initial",
+        userId: "u1",
+        memo: null,
+        isInitial: true,
+        isSkipped: false,
+        performedAt,
+        createdAt: performedAt,
+        user: { id: "u1", name: "A" },
+      },
+    ],
+  };
+
+  const computed = computeChore(chore, now);
+  assert.equal(computed.lastRecordIsInitial, true);
+  assert.equal(computed.doneToday, false);
+  assert.equal(computed.isDueToday, false);
+  assert.equal(computed.isDueTomorrow, true);
 });
 
 test("computeChore marks overdue items", () => {
@@ -68,6 +111,8 @@ test("computeChore marks overdue items", () => {
         choreId: "chore-2",
         userId: "u1",
         memo: null,
+        isInitial: false,
+        isSkipped: false,
         performedAt,
         createdAt: performedAt,
         user: { id: "u1", name: "A" },
@@ -98,6 +143,7 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
       lastPerformerName: null,
       lastPerformerId: null,
       lastRecordId: null,
+      lastRecordIsInitial: false,
       lastRecordSkipped: false,
       dueAt: "2026-02-15T15:00:00.000Z",
       isDueToday: true,
@@ -122,6 +168,7 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
       lastPerformerName: null,
       lastPerformerId: null,
       lastRecordId: null,
+      lastRecordIsInitial: false,
       lastRecordSkipped: false,
       dueAt: "2026-02-16T15:00:00.000Z",
       isDueToday: false,
@@ -156,6 +203,7 @@ test("splitChoresForHome keeps doneToday daily chore in both today and tomorrow"
     lastPerformerName: "A",
     lastPerformerId: "u1",
     lastRecordId: "r",
+    lastRecordIsInitial: false,
     lastRecordSkipped: false,
     dueAt: "2026-02-15T15:30:00.000Z",
     isDueToday: false,
