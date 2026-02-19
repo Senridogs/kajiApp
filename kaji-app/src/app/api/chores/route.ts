@@ -44,23 +44,23 @@ export async function POST(request: Request) {
   if (!session) return response;
 
   const body = await readJsonBody<CreateChoreBody>(request);
-  if (!body) return badRequest("Invalid request body.");
+  if (!body) return badRequest("リクエスト形式が不正です。");
 
   const title = body.title?.trim();
   const intervalDays = Number(body.intervalDays ?? 0);
   const lastPerformedAt = body.lastPerformedAt;
 
-  if (!title) return badRequest("Please provide a chore title.");
+  if (!title) return badRequest("家事名を入力してください。");
   if (!Number.isInteger(intervalDays) || intervalDays <= 0 || intervalDays > 365) {
-    return badRequest("intervalDays must be an integer between 1 and 365.");
+    return badRequest("リマインド間隔は1〜365の整数で指定してください。");
   }
   if (!lastPerformedAt) {
-    return badRequest("lastPerformedAt is required.");
+    return badRequest("開始日を指定してください。");
   }
 
   const performedAt = new Date(lastPerformedAt);
   if (Number.isNaN(performedAt.getTime())) {
-    return badRequest("lastPerformedAt is invalid.");
+    return badRequest("開始日の形式が不正です。");
   }
 
   // If a future date is passed, treat it as "first scheduled date" (todo),
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     });
   });
 
-  if (!chore) return badRequest("Failed to create chore.", 500);
+  if (!chore) return badRequest("家事の作成に失敗しました。", 500);
 
   await touchHousehold(session.householdId);
 

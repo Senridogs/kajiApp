@@ -18,11 +18,11 @@ export async function PUT(request: Request, { params }: RouteParams) {
 
   const body = await readJsonBody<Body>(request);
   if (!body || typeof body.emoji !== "string") {
-    return badRequest("emoji が必要です。");
+    return badRequest("絵文字を指定してください。");
   }
   const emoji = body.emoji.trim();
   if (!ALLOWED_REACTIONS.has(emoji)) {
-    return badRequest("emoji は定義済みリアクションのみ指定できます。");
+    return badRequest("絵文字は定義済みリアクションのみ指定できます。");
   }
 
   const [record, reactor] = await Promise.all([

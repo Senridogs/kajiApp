@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const month = searchParams.get("month")?.trim() ?? "";
   if (!isValidMonthKey(month)) {
-    return badRequest("month は YYYY-MM 形式で指定してください。");
+    return badRequest("対象月は YYYY-MM 形式で指定してください。");
   }
 
   const chores = await prisma.chore.findMany({

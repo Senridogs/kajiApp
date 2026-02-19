@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const auth = body?.keys?.auth?.trim();
 
   if (!endpoint || !p256dh || !auth) {
-    return badRequest("Push購読情報が不足しています。");
+    return badRequest("プッシュ通知の購読情報が不足しています。");
   }
 
   await prisma.pushSubscription.upsert({
@@ -55,7 +55,7 @@ export async function DELETE(request: Request) {
   const body = await readJsonBody<{ endpoint?: string }>(request);
   if (!body) return badRequest("リクエスト形式が不正です。");
   const endpoint = body?.endpoint?.trim();
-  if (!endpoint) return badRequest("endpoint が必要です。");
+  if (!endpoint) return badRequest("エンドポイントが必要です。");
 
   await prisma.pushSubscription.updateMany({
     where: {

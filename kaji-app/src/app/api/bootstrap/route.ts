@@ -129,7 +129,7 @@ export async function GET() {
       return NextResponse.json(
         {
           ...emptyBootstrapPayload(),
-          error: "Database schema is missing. Run `npm run db:init:local`, then restart Next.js.",
+          error: "データベースのスキーマが不足しています。`npm run db:init:local` を実行してから Next.js を再起動してください。",
           code: "DB_SCHEMA_MISSING",
         },
         { status: 500 },
@@ -140,7 +140,7 @@ export async function GET() {
       return NextResponse.json(
         {
           ...emptyBootstrapPayload(),
-          error: "Database connection failed. Check DATABASE_URL.",
+          error: "データベース接続に失敗しました。DATABASE_URL を確認してください。",
           code: "DB_CONNECTION_FAILED",
         },
         { status: 500 },
@@ -151,7 +151,7 @@ export async function GET() {
     return NextResponse.json(
       {
         ...emptyBootstrapPayload(),
-        error: "Failed to load bootstrap data.",
+        error: "初期データの読み込みに失敗しました。",
       },
       { status: 500 },
     );

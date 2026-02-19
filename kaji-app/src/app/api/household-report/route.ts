@@ -35,7 +35,7 @@ export async function GET(request: Request) {
   const currentMonth = toMonthKey(new Date());
   const month = url.searchParams.get("month") ?? currentMonth;
   if (!isValidMonthKey(month)) {
-    return badRequest("month は YYYY-MM 形式で指定してください。");
+    return badRequest("対象月は YYYY-MM 形式で指定してください。");
   }
 
   const allowedMonths = [currentMonth, addMonths(currentMonth, -1), addMonths(currentMonth, -2)];
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   const targetRange = monthRange(month);
   const prevRange = monthRange(addMonths(month, -1));
   if (!targetRange || !prevRange) {
-    return badRequest("month の形式が不正です。");
+    return badRequest("対象月の形式が不正です。");
   }
 
   const tomorrowStart = addDays(startOfJstDay(new Date()), 1);

@@ -51,7 +51,7 @@ test("Records and settings include my-records standalone transitions", () => {
 
 test("Home order retention and calendar order wiring remain in place", () => {
   const app = read("src/components/kaji/kaji-app.tsx");
-  assert.match(app, /HOME_ORDER_RETENTION_DAYS = 120/);
+  assert.match(app, /HOME_ORDER_RETENTION_DAYS = 7/);
   assert.match(app, /rollingWindowDays:\s*HOME_ORDER_RETENTION_DAYS/);
   assert.match(app, /calendarSelectedWeekEntries[\s\S]*applyHomeStoredOrder/);
 });
@@ -69,6 +69,15 @@ test("Calendar week navigation and swipe scope are wired to calendar mode", () =
   assert.doesNotMatch(app, /style=\{\{ paddingTop: listHeaderHeight \}\} onTouchStart=\{handleCalendarTouchStart\}/);
 });
 
+test("Section-level swipe defers to calendar and pull-to-refresh gestures", () => {
+  const app = read("src/components/kaji/kaji-app.tsx");
+  assert.match(app, /const sectionSwipeSuppressedRef = useRef\(false\)/);
+  assert.match(app, /const isCalendarSurface =[\s\S]*closest\("\[data-calendar-swipe-surface='true'\]"\)/);
+  assert.match(app, /if \(sectionSwipeSuppressedRef\.current\) return;/);
+  assert.match(app, /if \(pullEligibleRef\.current && isDownwardPull\) \{[\s\S]*sectionSwipeSuppressedRef\.current = true;[\s\S]*swipe\.onTouchCancel\(\);/);
+  assert.match(app, /data-calendar-swipe-surface="true"/);
+});
+
 test("Optimistic completion marks initial flag false to avoid temporary disappearance", () => {
   const app = read("src/components/kaji/kaji-app.tsx");
   assert.match(app, /submitMemoAction[\s\S]*lastRecordIsInitial:\s*false/);
@@ -81,13 +90,14 @@ test("Calendar blank tap opens action sheet and quick record buttons", () => {
   assert.match(app, /完了にする/);
   assert.match(app, /予定を登録/);
   assert.match(app, /memoFlowMode === "calendar-quick"/);
+  assert.match(app, /submitCalendarQuickCompletion[\s\S]*sourceDate = dateKey/);
 });
 
 test("Editor interaction keeps interval controls", () => {
   const editor = read("src/components/kaji/chore-editor.tsx");
   assert.match(editor, /updateIntervalDays\(-7\)/);
   assert.match(editor, /updateIntervalDays\(7\)/);
-  assert.match(editor, /aria-label="interval-days"/);
+  assert.match(editor, /aria-label="(interval-days|リマインド間隔（日数）)"/);
   assert.match(editor, /disabled=\{mode === "edit"\}/);
 });
 
@@ -135,3 +145,5 @@ test("Reschedule sheet header exposes chore edit action", () => {
   assert.match(app, /aria-label="家事を編集"/);
   assert.match(app, /家事を編集/);
 });
+
+

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { buildCompletionPayload, canSendPush, sendWebPush } from "@/lib/notifications";
@@ -22,7 +23,7 @@ type Body = {
 };
 
 type RouteParams = { params: Promise<{ id: string }> };
-const SOURCE_DATE_NOT_SCHEDULED = "sourceDate is not currently scheduled.";
+const SOURCE_DATE_NOT_SCHEDULED = "元の日付は現在の予定に含まれていません。";
 
 function removeOneOccurrence(dateKeys: string[], targetDateKey: string) {
   const next = [...dateKeys];
@@ -31,6 +32,21 @@ function removeOneOccurrence(dateKeys: string[], targetDateKey: string) {
     next.splice(index, 1);
   }
   return next;
+}
+
+async function consumeOneOverrideOnDate(
+  tx: Prisma.TransactionClient,
+  choreId: string,
+  dateKey: string,
+) {
+  const target = await tx.choreScheduleOverride.findFirst({
+    where: { choreId, date: dateKey },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true },
+  });
+  if (!target) return false;
+  await tx.choreScheduleOverride.delete({ where: { id: target.id } });
+  return true;
 }
 
 export async function POST(request: Request, { params }: RouteParams) {
@@ -62,21 +78,21 @@ export async function POST(request: Request, { params }: RouteParams) {
     }),
     prisma.user.findUnique({ where: { id: session.userId } }),
   ]);
-  if (!chore) return badRequest("Target chore was not found.", 404);
-  if (!user) return badRequest("User was not found.", 404);
+  if (!chore) return badRequest("対象の家事が見つかりません。", 404);
+  if (!user) return badRequest("ユーザーが見つかりません。", 404);
 
   const requestedPerformedAt = body?.performedAt ? new Date(body.performedAt) : now;
   if (Number.isNaN(requestedPerformedAt.getTime())) {
-    return badRequest("performedAt is invalid.");
+    return badRequest("実施日の形式が不正です。");
   }
   const sourceDate = body?.sourceDate?.trim();
   if (sourceDate && !isDateKey(sourceDate)) {
-    return badRequest("sourceDate must be YYYY-MM-DD format.");
+    return badRequest("元の日付は YYYY-MM-DD 形式で指定してください。");
   }
 
   const memo = body?.memo?.trim() || null;
   if (memo && memo.length > 500) {
-    return badRequest("memo must be 500 characters or less.");
+    return badRequest("メモは500文字以内で入力してください。");
   }
 
   const skipped = body.skipped ?? false;
@@ -106,11 +122,18 @@ export async function POST(request: Request, { params }: RouteParams) {
           orderBy: [{ date: "asc" }, { createdAt: "asc" }],
           select: { date: true },
         });
-        const shouldApplySchedulePolicy = isFuturePerformedAt || currentOverrides.length > 0;
-        if (!shouldApplySchedulePolicy) {
-          await tx.choreScheduleOverride.deleteMany({ where: { choreId: chore.id } });
+
+        if (!recalculateFuture && sourceDate === targetDateKey) {
+          await consumeOneOverrideOnDate(tx, chore.id, targetDateKey);
           return created;
         }
+
+        const shouldApplySchedulePolicy = isFuturePerformedAt || currentOverrides.length > 0;
+        if (!shouldApplySchedulePolicy) {
+          await consumeOneOverrideOnDate(tx, chore.id, targetDateKey);
+          return created;
+        }
+
         const dueBase = chore.records[0]?.performedAt ?? chore.createdAt;
         const dueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
         const window = resolveScheduleWindow(sourceDate, targetDateKey);
@@ -123,6 +146,7 @@ export async function POST(request: Request, { params }: RouteParams) {
         if (!currentDateKeys.includes(sourceDate)) {
           throw new Error(SOURCE_DATE_NOT_SCHEDULED);
         }
+
         const nextDateKeys = rebuildScheduleDateKeys({
           currentDateKeys,
           sourceDateKey: sourceDate,
@@ -133,6 +157,7 @@ export async function POST(request: Request, { params }: RouteParams) {
           window,
         });
         const remainingDateKeys = removeOneOccurrence(nextDateKeys, targetDateKey);
+
         await tx.choreScheduleOverride.deleteMany({ where: { choreId: chore.id } });
         if (remainingDateKeys.length > 0) {
           await tx.choreScheduleOverride.createMany({
@@ -142,11 +167,8 @@ export async function POST(request: Request, { params }: RouteParams) {
         return created;
       }
 
-      // A completion/skipped record finalizes the current schedule.
-      // Any 1-shot date overrides can be discarded afterwards.
-      await tx.choreScheduleOverride.deleteMany({
-        where: { choreId: chore.id },
-      });
+      // Backward-compatible fallback: consume only one occurrence on the performed day.
+      await consumeOneOverrideOnDate(tx, chore.id, targetDateKey);
       return created;
     });
   } catch (error: unknown) {
@@ -156,10 +178,8 @@ export async function POST(request: Request, { params }: RouteParams) {
     throw error;
   }
 
-  // Notify other devices about the change
   await touchHousehold(session.householdId);
 
-  // Skip notification if skipped
   if (!skipped && canSendPush()) {
     const [household, subs] = await Promise.all([
       prisma.household.findUnique({

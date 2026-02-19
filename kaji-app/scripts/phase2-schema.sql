@@ -88,7 +88,9 @@ BEGIN
   END IF;
 END $$;
 
-CREATE UNIQUE INDEX IF NOT EXISTS "ChoreScheduleOverride_choreId_date_key"
+DROP INDEX IF EXISTS "ChoreScheduleOverride_choreId_date_key";
+
+CREATE INDEX IF NOT EXISTS "ChoreScheduleOverride_choreId_date_idx"
   ON "ChoreScheduleOverride" ("choreId", "date");
 
 CREATE INDEX IF NOT EXISTS "ChoreScheduleOverride_choreId_idx"

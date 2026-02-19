@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   const customFrom = searchParams.get("from") ?? undefined;
   const customTo = searchParams.get("to") ?? undefined;
   const range = getStatsRange(period, new Date(), customFrom, customTo);
-  if (!range) return badRequest("カスタム期間は from / to を YYYY-MM-DD 形式で指定してください。");
+  if (!range) return badRequest("カスタム期間は開始日と終了日を YYYY-MM-DD 形式で指定してください。");
 
   const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
   const where =

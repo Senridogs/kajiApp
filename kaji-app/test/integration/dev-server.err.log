@@ -12,3 +12,4 @@ Please make sure your database server is running at `localhost:5432`.
   errorCode: undefined,
   retryable: undefined
 }
+^C^C

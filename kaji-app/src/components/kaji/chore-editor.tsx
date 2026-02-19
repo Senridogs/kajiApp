@@ -223,7 +223,7 @@ export function ChoreEditor({
               inputMode="numeric"
               onChange={(e) => setIntervalDays(e.target.value)}
               className="w-[58px] rounded-lg border border-[#DADCE0] bg-white px-2 py-1.5 text-center text-[16.8px] font-bold text-[#202124] outline-none"
-              aria-label="interval-days"
+              aria-label="リマインド間隔（日数）"
             />
             <span className="text-[15px] font-bold text-[#202124]">日ごと</span>
           </div>
@@ -260,7 +260,7 @@ export function ChoreEditor({
           inputMode="none"
           disabled={mode === "edit"}
           required
-          aria-label="start-date"
+          aria-label="開始日"
           className={`w-full rounded-[14px] border border-[#DADCE0] py-3 pl-3 pr-3 text-[16.8px] font-semibold text-[#202124] outline-none ${mode === "edit" ? "bg-[#F1F3F4] text-[#5F6368]" : "bg-white"}`}
         />
         {mode === "create" && value.lastPerformedAt && new Date(value.lastPerformedAt) > new Date() ? (
@@ -338,7 +338,7 @@ export function ChoreEditor({
                           {showDeleteMark ? (
                             <button
                               type="button"
-                              aria-label="delete-custom-icon"
+                              aria-label="カスタムアイコンを削除"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 lastCustomIconTapRef.current = null;

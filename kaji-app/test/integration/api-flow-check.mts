@@ -320,6 +320,40 @@ async function main() {
   ).length;
   assert.equal(noMergeTargetCountAfterMove, 2);
 
+  const consumeNoSourceRes = await request(`/api/chores/${duplicateNoMergeChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      memo: "dup-consume-no-source",
+      performedAt: duplicateRecordPerformedAt,
+    }),
+  });
+  assert.equal(consumeNoSourceRes.status, 200);
+  const consumeNoSourceBody = await consumeNoSourceRes.json();
+  const consumeNoSourceRecordId: string = consumeNoSourceBody.record.id;
+
+  const noMergeAfterNoSourceConsumeRes = await request("/api/schedule-overrides");
+  assert.equal(noMergeAfterNoSourceConsumeRes.status, 200);
+  const noMergeAfterNoSourceConsumeBody = await noMergeAfterNoSourceConsumeRes.json();
+  const noMergeTargetCountAfterNoSourceConsume = noMergeAfterNoSourceConsumeBody.overrides.filter(
+    (item: { choreId: string; date: string }) =>
+      item.choreId === duplicateNoMergeChoreId && item.date === duplicateTargetDateKey,
+  ).length;
+  assert.equal(noMergeTargetCountAfterNoSourceConsume, 1);
+
+  const undoNoSourceConsumeRes = await request(`/api/records/${consumeNoSourceRecordId}`, {
+    method: "DELETE",
+  });
+  assert.equal(undoNoSourceConsumeRes.status, 200);
+
+  const noMergeAfterNoSourceUndoRes = await request("/api/schedule-overrides");
+  assert.equal(noMergeAfterNoSourceUndoRes.status, 200);
+  const noMergeAfterNoSourceUndoBody = await noMergeAfterNoSourceUndoRes.json();
+  const noMergeTargetCountAfterNoSourceUndo = noMergeAfterNoSourceUndoBody.overrides.filter(
+    (item: { choreId: string; date: string }) =>
+      item.choreId === duplicateNoMergeChoreId && item.date === duplicateTargetDateKey,
+  ).length;
+  assert.equal(noMergeTargetCountAfterNoSourceUndo, 2);
+
   const firstConsumeNoMergeRes = await request(`/api/chores/${duplicateNoMergeChoreId}/record`, {
     method: "POST",
     body: JSON.stringify({

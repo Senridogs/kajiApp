@@ -176,7 +176,7 @@ const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
 const APP_UPDATE_TARGET_TAB_STORAGE_KEY = "kaji_app_update_target_tab";
 const ONBOARDING_PENDING_STORAGE_KEY = "kaji_onboarding_pending";
 const HOME_ORDER_STORAGE_KEY_PREFIX = "kaji_home_order_v1";
-const HOME_ORDER_RETENTION_DAYS = 120;
+const HOME_ORDER_RETENTION_DAYS = 7;
 const ONBOARDING_PRESET_CHORES = [
   { title: "食器洗い", icon: "cooking-pot", iconColor: "#33C28A", bgColor: "#EAF7EF", intervalDays: 1, isBigTask: false },
   { title: "洗濯", icon: "shirt", iconColor: "#7A6FF0", bgColor: "#EFEAFE", intervalDays: 2, isBigTask: false },
@@ -827,6 +827,7 @@ export function KajiApp() {
   const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(TAB_HEADER_HEIGHT_FALLBACK);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
   const sectionTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const sectionSwipeSuppressedRef = useRef(false);
   const pullStartYRef = useRef(0);
   const pullStartXRef = useRef(0);
   const pullStartScrollTopRef = useRef(0);
@@ -2585,9 +2586,20 @@ export function KajiApp() {
     }
 
     try {
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, dateKey);
+      const body: Record<string, unknown> = {
+        memo: memoText,
+        skipped: false,
+        performedAt: performedAtIso,
+      };
+      if (scheduledCount > 0) {
+        body.sourceDate = dateKey;
+        body.recalculateFuture = false;
+        body.mergeIfDuplicate = false;
+      }
       const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
         method: "POST",
-        body: JSON.stringify({ memo: memoText, skipped: false, performedAt: performedAtIso }),
+        body: JSON.stringify(body),
       });
       if (result?.record?.id) {
         updateBootChoreOptimistically(targetId, (current) => ({
@@ -2625,6 +2637,7 @@ export function KajiApp() {
     loadCalendarMonthSummary,
     loadHistory,
     loadStats,
+    countScheduledOccurrencesOnDate,
     sessionUser,
     setRecordUpdating,
     showTaskBanner,
@@ -2664,7 +2677,10 @@ export function KajiApp() {
       closeCalendarBlankActionSheet();
     } catch (err: unknown) {
       const message = (err as Error).message ?? "予定登録に失敗しました。";
-      if (!allowDuplicate && message.includes("A matching chore already exists on that date")) {
+      if (
+        !allowDuplicate &&
+        message.includes("その日には同じ家事がすでに登録されています。")
+      ) {
         setPendingCalendarPlanDuplicateConfirm({
           choreId: chore.id,
           choreTitle: chore.title,
@@ -3912,6 +3928,39 @@ export function KajiApp() {
       section.chores.map((chore) => chore.id),
     ]),
   );
+  const homeSectionOrderSignature = homeSections
+    .map((section) => {
+      const dateKey = getHomeSectionDateKey(section.key);
+      const ids = section.chores.map((chore) => chore.id).join(",");
+      return `${dateKey}:${ids}`;
+    })
+    .join("|");
+  useEffect(() => {
+    const targetDateKeys = [yesterdayKey, todayKey, tomorrowKey];
+    const sectionIdsByDate = homeSectionChoreIdsRef.current;
+    setHomeOrderByDate((previous) => {
+      const next: HomeOrderByDate = { ...previous };
+
+      targetDateKeys.forEach((dateKey) => {
+        const baseIds = sectionIdsByDate[dateKey] ?? [];
+        if (baseIds.length === 0) {
+          delete next[dateKey];
+          return;
+        }
+
+        const storedIds = previous[dateKey] ?? [];
+        const orderedIds = applyHomeStoredOrder(baseIds, storedIds);
+        if (orderedIds.length === 0) {
+          delete next[dateKey];
+        } else {
+          next[dateKey] = orderedIds;
+        }
+      });
+
+      const sanitized = sanitizeHomeOrderByDate(next, homeOrderSanitizeOptions);
+      return sameHomeOrderByDate(previous, sanitized) ? previous : sanitized;
+    });
+  }, [homeOrderSanitizeOptions, homeSectionOrderSignature, todayKey, tomorrowKey, yesterdayKey]);
   const hasAnyUpcomingChores = homeSections.some((section) => section.chores.length > 0);
   const swipeProgress = swipe.visual.progress;
   const swipeFromTabIndex = Math.max(0, TAB_ORDER.indexOf(swipe.visual.fromTab));
@@ -4604,6 +4653,7 @@ export function KajiApp() {
             {renderInlinePullRefreshHint(tab)}
             {calendarExpanded ? (
               <div
+                data-calendar-swipe-surface="true"
                 className="space-y-1 rounded-[16px] border border-[#E5EAF0] bg-white px-2 py-3"
                 onTouchStart={handleCalendarTouchStart}
                 onTouchEnd={handleCalendarTouchEnd}
@@ -4682,6 +4732,7 @@ export function KajiApp() {
 
             {!calendarExpanded ? (
               <div
+                data-calendar-swipe-surface="true"
                 className="rounded-[14px] border border-[#E5EAF0] bg-white px-2 py-2"
                 onTouchStart={handleCalendarTouchStart}
                 onTouchEnd={handleCalendarTouchEnd}
@@ -4862,7 +4913,7 @@ export function KajiApp() {
               </div>
 
               <div className="rounded-[16px] bg-white px-5 py-5">
-                <p className="text-[18px] font-bold text-[#202124]">よく回った家事 TOP3</p>
+                <p className="text-[18px] font-bold text-[#202124]">よく回った家事 トップ3</p>
                 <div className="mt-3 space-y-2">
                   {topChores.length === 0 ? (
                     <p className="text-[13px] font-medium text-[#9AA0A6]">まだ記録がありません。</p>
@@ -4923,7 +4974,7 @@ export function KajiApp() {
             </button>
             <p className="text-[22px] font-bold text-[#202124]">プッシュ通知設定</p>
           </div>
-          <SettingToggleRow title="プッシュ通知" subtitle="すべての通知をまとめてON/OFF" checked={pushEnabled} disabled={pushLoading} onChange={(next) => { void handleTogglePush(next); }} />
+          <SettingToggleRow title="プッシュ通知" subtitle="すべての通知をまとめてオン/オフ" checked={pushEnabled} disabled={pushLoading} onChange={(next) => { void handleTogglePush(next); }} />
           {pushEnabled && notificationSettings ? (
             <div className="space-y-3 rounded-[14px] bg-white p-3">
               <div className="space-y-2 rounded-[12px] border border-[#DADCE0] bg-[#F8F9FA] p-3">
@@ -4960,7 +5011,7 @@ export function KajiApp() {
           >
             <div>
               <p className="text-[14px] font-bold text-[#202124]">スマホ通知の設定方法</p>
-              <p className="text-[12px] font-medium text-[#5F6368]">Android / iPhone 向けに手順を案内</p>
+              <p className="text-[12px] font-medium text-[#5F6368]">Android・iPhone向けの手順を案内</p>
             </div>
             <ChevronRight size={16} color="#9AA0A6" />
           </button>
@@ -5227,7 +5278,7 @@ export function KajiApp() {
             )}
           </div>
           <div className="rounded-[16px] bg-white px-5 py-5">
-            <p className="text-[18px] font-bold text-[#202124]">よく回った家事 TOP3</p>
+            <p className="text-[18px] font-bold text-[#202124]">よく回った家事 トップ3</p>
             <div className="mt-3 space-y-2">
               {myTopChores.length === 0 ? (
                 <p className="text-[13px] font-medium text-[#9AA0A6]">まだ記録がありません。</p>
@@ -5416,15 +5467,32 @@ export function KajiApp() {
         onTouchStart={(e) => {
           const t = e.touches[0];
           sectionTouchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+          const target = e.target as HTMLElement | null;
+          const isCalendarSurface =
+            activeTabRef.current === "list" &&
+            Boolean(target?.closest("[data-calendar-swipe-surface='true']"));
+          sectionSwipeSuppressedRef.current = isCalendarSurface;
+          if (isCalendarSurface) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchStart(e);
+            return;
+          }
           swipe.onTouchStart(e);
           assignmentEdgeSwipe.onTouchStart(e);
         }}
         onTouchMove={(e) => {
+          if (sectionSwipeSuppressedRef.current) return;
           const start = sectionTouchStartRef.current;
           const t = e.touches[0];
           if (start && t) {
             const dx = Math.abs(t.clientX - start.x);
             const dy = Math.abs(t.clientY - start.y);
+            const isDownwardPull = t.clientY > start.y && dy > dx * 1.05;
+            if (pullEligibleRef.current && isDownwardPull) {
+              sectionSwipeSuppressedRef.current = true;
+              swipe.onTouchCancel();
+              return;
+            }
             // Skip swipe handlers for clearly vertical gestures so they do not
             // interfere with the pull-to-refresh native touchmove listener.
             if (dy > dx * 1.5) return;
@@ -5433,11 +5501,21 @@ export function KajiApp() {
           assignmentEdgeSwipe.onTouchMove(e);
         }}
         onTouchEnd={(e) => {
+          sectionTouchStartRef.current = null;
+          if (sectionSwipeSuppressedRef.current) {
+            sectionSwipeSuppressedRef.current = false;
+            assignmentEdgeSwipe.onTouchEnd(e);
+            return;
+          }
           swipe.onTouchEnd(e);
           assignmentEdgeSwipe.onTouchEnd(e);
         }}
         onTouchCancel={() => {
-          swipe.onTouchCancel();
+          sectionTouchStartRef.current = null;
+          if (!sectionSwipeSuppressedRef.current) {
+            swipe.onTouchCancel();
+          }
+          sectionSwipeSuppressedRef.current = false;
           assignmentEdgeSwipe.onTouchCancel();
         }}
       >
@@ -5665,10 +5743,12 @@ export function KajiApp() {
         </div>
       ) : null}
 
-      <div
-        aria-hidden
-        className="pointer-events-none fixed bottom-0 left-0 right-0 z-[74] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
-      />
+      {!settingsOpen ? (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed bottom-0 left-0 right-0 z-[74] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
+        />
+      ) : null}
 
       {pendingSwipeDeletes.map((pending, index) => (
         <UndoToast

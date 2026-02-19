@@ -1,13 +1,13 @@
 
 > kaji-app@0.1.0 start
-> next start --hostname 127.0.0.1 --port 4622
+> next start --hostname 127.0.0.1 --port 4667
 
 ▲ Next.js 16.1.6
-- Local:         http://127.0.0.1:4622
-- Network:       http://127.0.0.1:4622
+- Local:         http://127.0.0.1:4667
+- Network:       http://127.0.0.1:4667
 
 ✓ Starting...
-✓ Ready in 481ms
+✓ Ready in 504ms
 prisma:error 
 Invalid `prisma.user.findUnique()` invocation:
 

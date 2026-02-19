@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 
     const body = await readJsonBody<AssignmentBody>(request);
     if (!body) return badRequest("リクエスト形式が不正です。");
-    if (!body.choreId || !body.date) return badRequest("choreId and date are required.");
+    if (!body.choreId || !body.date) return badRequest("家事IDと日付は必須です。");
 
     const [chore, user] = await Promise.all([
         prisma.chore.findFirst({

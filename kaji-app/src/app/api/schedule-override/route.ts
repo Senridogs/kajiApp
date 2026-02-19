@@ -1,4 +1,5 @@
-import { badRequest, readJsonBody, requireSession } from "@/lib/api";
+﻿import { badRequest, readJsonBody, requireSession } from "@/lib/api";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   isDateKey,
@@ -45,6 +46,20 @@ function mapOverridesForResponse(
   }));
 }
 
+function isDuplicateScheduleOverrideError(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code !== "P2002") return false;
+
+  const target = error.meta?.target;
+  if (Array.isArray(target)) {
+    return target.includes("choreId") && target.includes("date");
+  }
+  if (typeof target === "string") {
+    return target.includes("choreId") && target.includes("date");
+  }
+  return false;
+}
+
 function moveDateKeepingTimeOfDay(
   originalPerformedAt: Date,
   targetDateKey: string,
@@ -75,10 +90,10 @@ export async function POST(request: Request) {
   const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
   const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
 
-  if (!choreId || !date) return badRequest("choreId and date are required.");
-  if (!isDateKey(date)) return badRequest("date must be YYYY-MM-DD format.");
+  if (!choreId || !date) return badRequest("家事IDと日付は必須です。");
+  if (!isDateKey(date)) return badRequest("日付は YYYY-MM-DD 形式で指定してください。");
   if (sourceDate && !isDateKey(sourceDate)) {
-    return badRequest("sourceDate must be YYYY-MM-DD format.");
+    return badRequest("元の日付は YYYY-MM-DD 形式で指定してください。");
   }
 
   const chore = await prisma.chore.findFirst({
@@ -95,11 +110,12 @@ export async function POST(request: Request) {
       },
     },
   });
-  if (!chore) return badRequest("Target chore was not found.", 404);
+  if (!chore) return badRequest("対象の家事が見つかりません。", 404);
 
-  if (mode === "add") {
+  try {
+    if (mode === "add") {
     if (date < todayDateKey) {
-      return badRequest("Cannot add planned occurrence to a past date.");
+      return badRequest("過去の日付には予定を追加できません。");
     }
 
     const currentOverrides = await prisma.choreScheduleOverride.findMany({
@@ -118,7 +134,7 @@ export async function POST(request: Request) {
     });
     const scheduledCount = currentDateKeys.filter((dateKey) => dateKey === date).length;
     if (scheduledCount > 0 && !allowDuplicate) {
-      return badRequest("A matching chore already exists on that date.", 409);
+      return badRequest("その日には同じ家事がすでに登録されています。", 409);
     }
 
     const override = await prisma.choreScheduleOverride.create({
@@ -146,7 +162,7 @@ export async function POST(request: Request) {
       where: { id: sourceRecordId, householdId: session.householdId, choreId },
       select: { id: true, performedAt: true },
     });
-    if (!record) return badRequest("Target record was not found.", 404);
+    if (!record) return badRequest("対象の記録が見つかりません。", 404);
     const sourceRecordDateKey = toJstDateKey(startOfJstDay(new Date(record.performedAt)));
 
     const currentOverrides = await prisma.choreScheduleOverride.findMany({
@@ -245,7 +261,7 @@ export async function POST(request: Request) {
   });
 
   if (!currentDateKeys.includes(sourceDate)) {
-    return badRequest("sourceDate is not currently scheduled.", 409);
+    return badRequest("元の日付は現在の予定に含まれていません。", 409);
   }
 
   const nextDateKeys = rebuildScheduleDateKeys({
@@ -280,4 +296,11 @@ export async function POST(request: Request) {
     mergeIfDuplicate,
     overrides: mapOverridesForResponse(savedOverrides),
   });
+  } catch (error) {
+    if (isDuplicateScheduleOverrideError(error)) {
+      return badRequest("その日には同じ家事がすでに登録されています。", 409);
+    }
+    throw error;
+  }
 }
+

@@ -16,12 +16,12 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     where: { id, householdId: session.householdId },
     select: { id: true, choreId: true, userId: true, performedAt: true },
   });
-  if (!record) return badRequest("Record was not found.", 404);
+  if (!record) return badRequest("対象の記録が見つかりません。", 404);
 
   const todayStart = startOfJstDay(new Date());
   const twoDaysAgo = addDays(todayStart, -1);
   if (record.performedAt < twoDaysAgo) {
-    return badRequest("Only today's or yesterday's records can be undone.");
+    return badRequest("取り消せるのは今日または昨日の記録のみです。");
   }
 
   const tomorrowStart = addDays(todayStart, 1);

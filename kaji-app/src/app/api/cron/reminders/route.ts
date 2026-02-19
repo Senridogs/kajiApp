@@ -36,7 +36,7 @@ function isAuthorized(request: Request) {
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "認証エラーです。" }, { status: 401 });
   }
   if (!canSendPush()) {
     return NextResponse.json({ ok: true, skipped: "push-not-configured" });
