@@ -2,6 +2,28 @@ import assert from "node:assert/strict";
 
 const baseUrl = process.env.TEST_BASE_URL ?? "http://127.0.0.1:4310";
 const cookieJar = new Map<string, string>();
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * DAY_IN_MS);
+}
+
+function startOfJstDay(date: Date) {
+  const jstOffsetMs = 9 * 60 * 60 * 1000;
+  const jst = new Date(date.getTime() + jstOffsetMs);
+  return new Date(
+    Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate()) - jstOffsetMs,
+  );
+}
+
+function toJstDateKey(date: Date) {
+  const jstOffsetMs = 9 * 60 * 60 * 1000;
+  const jst = new Date(date.getTime() + jstOffsetMs);
+  const y = jst.getUTCFullYear();
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jst.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 function updateCookieJar(response: Response) {
   const headers = (
@@ -165,6 +187,96 @@ async function main() {
   const settingsBody = await settingsRes.json();
   assert.deepEqual(settingsBody.reminderTimes, ["06:00", "20:00"]);
   assert.equal(settingsBody.notifyReminder, true);
+
+  const todayStart = startOfJstDay(new Date());
+  const todayDateKey = toJstDateKey(todayStart);
+  const sourceDateKey = toJstDateKey(addDays(todayStart, 1));
+  const nextIfNoRecalc = toJstDateKey(addDays(todayStart, 3));
+  const nextIfRecalc = toJstDateKey(addDays(todayStart, 2));
+  const lastPerformedForSource = addDays(todayStart, -1).toISOString();
+  const futurePerformedAt = new Date(`${sourceDateKey}T09:00:00+09:00`).toISOString();
+
+  const createFutureNoRecalcChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "future-no-recalc",
+      intervalDays: 2,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: lastPerformedForSource,
+    }),
+  });
+  assert.equal(createFutureNoRecalcChoreRes.status, 200);
+  const createFutureNoRecalcChoreBody = await createFutureNoRecalcChoreRes.json();
+  const futureNoRecalcChoreId: string = createFutureNoRecalcChoreBody.chore.id;
+
+  const futureNoRecalcRecordRes = await request(`/api/chores/${futureNoRecalcChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      memo: "future-no-recalc",
+      performedAt: futurePerformedAt,
+      sourceDate: sourceDateKey,
+      recalculateFuture: false,
+    }),
+  });
+  assert.equal(futureNoRecalcRecordRes.status, 200);
+  const futureNoRecalcRecordBody = await futureNoRecalcRecordRes.json();
+  assert.equal(
+    toJstDateKey(new Date(futureNoRecalcRecordBody.record.performedAt)),
+    todayDateKey,
+  );
+
+  const noRecalcOverridesRes = await request("/api/schedule-overrides");
+  assert.equal(noRecalcOverridesRes.status, 200);
+  const noRecalcOverridesBody = await noRecalcOverridesRes.json();
+  const noRecalcDates: string[] = noRecalcOverridesBody.overrides
+    .filter((item: { choreId: string }) => item.choreId === futureNoRecalcChoreId)
+    .map((item: { date: string }) => item.date);
+  assert.equal(noRecalcDates.includes(nextIfNoRecalc), true);
+  assert.equal(noRecalcDates.includes(nextIfRecalc), false);
+
+  const createFutureRecalcChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "future-recalc",
+      intervalDays: 2,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: lastPerformedForSource,
+    }),
+  });
+  assert.equal(createFutureRecalcChoreRes.status, 200);
+  const createFutureRecalcChoreBody = await createFutureRecalcChoreRes.json();
+  const futureRecalcChoreId: string = createFutureRecalcChoreBody.chore.id;
+
+  const futureRecalcRecordRes = await request(`/api/chores/${futureRecalcChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      memo: "future-recalc",
+      performedAt: futurePerformedAt,
+      sourceDate: sourceDateKey,
+      recalculateFuture: true,
+    }),
+  });
+  assert.equal(futureRecalcRecordRes.status, 200);
+  const futureRecalcRecordBody = await futureRecalcRecordRes.json();
+  assert.equal(
+    toJstDateKey(new Date(futureRecalcRecordBody.record.performedAt)),
+    todayDateKey,
+  );
+
+  const recalcOverridesRes = await request("/api/schedule-overrides");
+  assert.equal(recalcOverridesRes.status, 200);
+  const recalcOverridesBody = await recalcOverridesRes.json();
+  const recalcDates: string[] = recalcOverridesBody.overrides
+    .filter((item: { choreId: string }) => item.choreId === futureRecalcChoreId)
+    .map((item: { date: string }) => item.date);
+  assert.equal(recalcDates.includes(nextIfRecalc), true);
+  assert.equal(recalcDates.includes(nextIfNoRecalc), false);
 }
 
 await main();

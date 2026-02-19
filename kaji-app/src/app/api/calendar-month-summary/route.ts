@@ -4,10 +4,12 @@ import {
   isValidMonthKey,
 } from "@/lib/calendar-month-summary";
 import { prisma } from "@/lib/prisma";
+import { addDays, startOfJstDay } from "@/lib/time";
 
 export async function GET(request: Request) {
   const { session, response } = await requireSession();
   if (!session) return response;
+  const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
 
   const { searchParams } = new URL(request.url);
   const month = searchParams.get("month")?.trim() ?? "";
@@ -25,6 +27,7 @@ export async function GET(request: Request) {
       intervalDays: true,
       createdAt: true,
       records: {
+        where: { performedAt: { lt: tomorrowStart } },
         take: 1,
         orderBy: { performedAt: "desc" },
         select: {

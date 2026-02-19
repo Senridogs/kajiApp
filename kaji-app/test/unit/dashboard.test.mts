@@ -125,6 +125,48 @@ test("computeChore marks overdue items", () => {
   assert.ok(computed.overdueDays > 0);
 });
 
+test("computeChore ignores future completion records and treats them as pending", () => {
+  const now = new Date("2026-02-15T03:00:00.000Z"); // JST: 12:00
+  const futurePerformedAt = new Date("2026-02-16T01:00:00.000Z"); // JST: 02/16 10:00
+
+  const chore = {
+    id: "chore-future",
+    title: "future",
+    icon: "sparkles",
+    iconColor: "#fff",
+    bgColor: "#000",
+    intervalDays: 1,
+    isBigTask: false,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
+    archived: false,
+    createdAt: new Date("2026-02-14T00:00:00.000Z"),
+    updatedAt: new Date("2026-02-14T00:00:00.000Z"),
+    householdId: "h1",
+    records: [
+      {
+        id: "r-future",
+        householdId: "h1",
+        choreId: "chore-future",
+        userId: "u1",
+        memo: null,
+        isInitial: false,
+        isSkipped: false,
+        performedAt: futurePerformedAt,
+        createdAt: futurePerformedAt,
+        user: { id: "u1", name: "A" },
+      },
+    ],
+  };
+
+  const computed = computeChore(chore, now);
+  assert.equal(computed.doneToday, false);
+  assert.equal(computed.lastPerformedAt, null);
+  assert.equal(computed.lastRecordId, null);
+  assert.equal(computed.isDueToday, true);
+  assert.equal(computed.isOverdue, false);
+});
+
 test("splitChoresForHome returns today/tomorrow and drops big section grouping", () => {
   const now = new Date("2026-02-15T03:00:00.000Z");
   const chores = [

@@ -13,13 +13,18 @@ type ChoreRecordWithOptionalSkip = ChoreRecord & {
 };
 
 export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWithComputed {
-  const latest = chore.records[0];
-  const lastPerformedAt = latest?.performedAt ?? null;
-  const dueBase = lastPerformedAt ?? chore.createdAt;
-  const dueAt = addDays(dueBase, chore.intervalDays);
   const todayStart = startOfJstDay(now);
   const tomorrowStart = addDays(todayStart, 1);
   const dayAfterTomorrow = addDays(todayStart, 2);
+  const latestRecord = chore.records[0];
+  // Future completion records are treated as pending to keep metrics/schedule consistent.
+  const latest =
+    latestRecord && latestRecord.performedAt < tomorrowStart
+      ? latestRecord
+      : undefined;
+  const lastPerformedAt = latest?.performedAt ?? null;
+  const dueBase = lastPerformedAt ?? chore.createdAt;
+  const dueAt = addDays(dueBase, chore.intervalDays);
 
   const isDueToday = !!dueAt && dueAt >= todayStart && dueAt < tomorrowStart;
   const isDueTomorrow = !!dueAt && dueAt >= tomorrowStart && dueAt < dayAfterTomorrow;

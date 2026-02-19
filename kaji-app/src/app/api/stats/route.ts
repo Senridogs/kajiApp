@@ -4,6 +4,7 @@ import { badRequest, requireSession } from "@/lib/api";
 import { getStatsRange } from "@/lib/dashboard";
 import { prisma } from "@/lib/prisma";
 import { StatsPeriodKey } from "@/lib/types";
+import { addDays, startOfJstDay } from "@/lib/time";
 
 const VALID_PERIODS: StatsPeriodKey[] = ["week", "month", "half", "year", "all", "custom"];
 
@@ -20,9 +21,15 @@ export async function GET(request: Request) {
   const range = getStatsRange(period, new Date(), customFrom, customTo);
   if (!range) return badRequest("カスタム期間は from / to を YYYY-MM-DD 形式で指定してください。");
 
+  const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
   const where =
     range.start === undefined
-      ? { householdId: session.householdId, isInitial: false, isSkipped: false }
+      ? {
+        householdId: session.householdId,
+        isInitial: false,
+        isSkipped: false,
+        performedAt: { lt: tomorrowStart },
+      }
       : {
         householdId: session.householdId,
         isInitial: false,
@@ -30,6 +37,7 @@ export async function GET(request: Request) {
         performedAt: {
           gte: range.start,
           lte: range.end,
+          lt: tomorrowStart,
         },
       };
 

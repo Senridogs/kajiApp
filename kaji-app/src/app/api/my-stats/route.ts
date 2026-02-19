@@ -1,5 +1,6 @@
 import { badRequest, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { addDays, startOfJstDay } from "@/lib/time";
 
 function toMonthKey(date: Date) {
   const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -45,12 +46,13 @@ export async function GET(request: Request) {
   const targetRange = monthRange(month);
   if (!targetRange) return badRequest("month の形式が不正です。");
 
+  const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
   const where = {
     householdId: session.householdId,
     userId: session.userId,
     isInitial: false,
     isSkipped: false,
-    performedAt: { gte: targetRange.start, lte: targetRange.end },
+    performedAt: { gte: targetRange.start, lte: targetRange.end, lt: tomorrowStart },
   };
 
   const [currentMonthTotal, countsByChore, chores] = await Promise.all([

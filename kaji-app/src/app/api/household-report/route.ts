@@ -1,5 +1,5 @@
 import { badRequest, requireSession } from "@/lib/api";
-import { diffDaysFloor, startOfJstDay } from "@/lib/time";
+import { addDays, diffDaysFloor, startOfJstDay } from "@/lib/time";
 import { prisma } from "@/lib/prisma";
 
 function toMonthKey(date: Date) {
@@ -49,26 +49,32 @@ export async function GET(request: Request) {
     return badRequest("month の形式が不正です。");
   }
 
-  const whereBase = { householdId: session.householdId, isInitial: false, isSkipped: false };
+  const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
+  const whereBase = {
+    householdId: session.householdId,
+    isInitial: false,
+    isSkipped: false,
+    performedAt: { lt: tomorrowStart },
+  };
 
   const [currentTotal, previousTotal, countsByChore, chores, staleCandidates] = await Promise.all([
     prisma.choreRecord.count({
       where: {
         ...whereBase,
-        performedAt: { gte: targetRange.start, lte: targetRange.end },
+        performedAt: { gte: targetRange.start, lte: targetRange.end, lt: tomorrowStart },
       },
     }),
     prisma.choreRecord.count({
       where: {
         ...whereBase,
-        performedAt: { gte: prevRange.start, lte: prevRange.end },
+        performedAt: { gte: prevRange.start, lte: prevRange.end, lt: tomorrowStart },
       },
     }),
     prisma.choreRecord.groupBy({
       by: ["choreId"],
       where: {
         ...whereBase,
-        performedAt: { gte: targetRange.start, lte: targetRange.end },
+        performedAt: { gte: targetRange.start, lte: targetRange.end, lt: tomorrowStart },
       },
       _count: { _all: true },
     }),
@@ -93,7 +99,7 @@ export async function GET(request: Request) {
         bgColor: true,
         intervalDays: true,
         records: {
-          where: { isInitial: false, isSkipped: false },
+          where: { isInitial: false, isSkipped: false, performedAt: { lt: tomorrowStart } },
           orderBy: { performedAt: "desc" },
           take: 1,
           select: { performedAt: true },

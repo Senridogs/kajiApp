@@ -1,11 +1,13 @@
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import {
+  isDateKey,
+  rebuildScheduleDateKeys,
+  resolveCurrentScheduleDateKeys,
+  resolveScheduleWindow,
+} from "@/lib/schedule-policy";
 import { touchHousehold } from "@/lib/sync";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
-
-const FUTURE_WINDOW_DAYS = 730;
-const PAST_WINDOW_DAYS = 45;
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 type Body = {
   choreId?: string;
@@ -14,119 +16,6 @@ type Body = {
   recalculateFuture?: boolean;
   sourceRecordId?: string;
 };
-
-type WindowRange = {
-  fromDateKey: string;
-  toDateKey: string;
-};
-
-function isDateKey(value: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
-function dateKeyToJstDate(dateKey: string) {
-  return new Date(`${dateKey}T00:00:00+09:00`);
-}
-
-function uniqueSortedDateKeys(dateKeys: string[]) {
-  return [...new Set(dateKeys)].sort((a, b) => a.localeCompare(b));
-}
-
-function resolveScheduleWindow(sourceDateKey: string, targetDateKey: string): WindowRange {
-  const nowStart = startOfJstDay(new Date());
-  const fallbackFrom = toJstDateKey(addDays(nowStart, -PAST_WINDOW_DAYS));
-  const fromDateKey = sourceDateKey < fallbackFrom ? sourceDateKey : fallbackFrom;
-  const maxDateKey = sourceDateKey > targetDateKey ? sourceDateKey : targetDateKey;
-  const toDateKey = toJstDateKey(addDays(dateKeyToJstDate(maxDateKey), FUTURE_WINDOW_DAYS));
-  return { fromDateKey, toDateKey };
-}
-
-function buildRecurrenceDateKeys(params: {
-  dueDateKey: string;
-  intervalDays: number;
-  fromDateKey: string;
-  toDateKey: string;
-}) {
-  const { dueDateKey, intervalDays, fromDateKey, toDateKey } = params;
-  const dueDate = dateKeyToJstDate(dueDateKey);
-  const fromDate = dateKeyToJstDate(fromDateKey);
-  const toDate = dateKeyToJstDate(toDateKey);
-  if (
-    Number.isNaN(dueDate.getTime()) ||
-    Number.isNaN(fromDate.getTime()) ||
-    Number.isNaN(toDate.getTime())
-  ) {
-    return [];
-  }
-  if (intervalDays <= 0) return [];
-
-  let cursor = dueDate;
-  if (cursor.getTime() < fromDate.getTime()) {
-    const diffDays = Math.floor((fromDate.getTime() - cursor.getTime()) / DAY_IN_MS);
-    const jumpCount = Math.floor(diffDays / intervalDays);
-    cursor = addDays(cursor, jumpCount * intervalDays);
-    while (cursor.getTime() < fromDate.getTime()) {
-      cursor = addDays(cursor, intervalDays);
-    }
-  }
-
-  const results: string[] = [];
-  while (cursor.getTime() <= toDate.getTime()) {
-    results.push(toJstDateKey(cursor));
-    cursor = addDays(cursor, intervalDays);
-  }
-  return results;
-}
-
-function resolveCurrentScheduleDateKeys(params: {
-  overrideDateKeys: string[];
-  dueDateKey: string;
-  intervalDays: number;
-  window: WindowRange;
-}) {
-  const { overrideDateKeys, dueDateKey, intervalDays, window } = params;
-  if (overrideDateKeys.length > 0) {
-    return uniqueSortedDateKeys(
-      overrideDateKeys.filter(
-        (dateKey) => dateKey >= window.fromDateKey && dateKey <= window.toDateKey,
-      ),
-    );
-  }
-  return buildRecurrenceDateKeys({
-    dueDateKey,
-    intervalDays,
-    fromDateKey: window.fromDateKey,
-    toDateKey: window.toDateKey,
-  });
-}
-
-function rebuildScheduleDateKeys(params: {
-  currentDateKeys: string[];
-  sourceDateKey: string;
-  targetDateKey: string;
-  recalculateFuture: boolean;
-  intervalDays: number;
-  window: WindowRange;
-}) {
-  const { currentDateKeys, sourceDateKey, targetDateKey, recalculateFuture, intervalDays, window } = params;
-  if (!recalculateFuture) {
-    const moved = currentDateKeys.filter((dateKey) => dateKey !== sourceDateKey);
-    moved.push(targetDateKey);
-    return uniqueSortedDateKeys(moved);
-  }
-
-  const keepBefore = currentDateKeys.filter((dateKey) => dateKey < sourceDateKey);
-  const toDate = dateKeyToJstDate(window.toDateKey);
-  const futureDates: string[] = [];
-  let cursor = dateKeyToJstDate(targetDateKey);
-  if (!Number.isNaN(cursor.getTime()) && intervalDays > 0) {
-    while (cursor.getTime() <= toDate.getTime()) {
-      futureDates.push(toJstDateKey(cursor));
-      cursor = addDays(cursor, intervalDays);
-    }
-  }
-  return uniqueSortedDateKeys([...keepBefore, ...futureDates]);
-}
 
 export async function POST(request: Request) {
   const { session, response } = await requireSession();
@@ -138,6 +27,7 @@ export async function POST(request: Request) {
   const sourceDate = body?.sourceDate?.trim();
   const sourceRecordId = body?.sourceRecordId?.trim();
   const recalculateFuture = body?.recalculateFuture === true;
+  const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
 
   if (!choreId || !date) return badRequest("choreId and date are required.");
   if (!isDateKey(date)) return badRequest("date must be YYYY-MM-DD format.");
@@ -152,6 +42,7 @@ export async function POST(request: Request) {
       intervalDays: true,
       createdAt: true,
       records: {
+        where: { performedAt: { lt: tomorrowStart } },
         take: 1,
         orderBy: { performedAt: "desc" },
         select: { performedAt: true },

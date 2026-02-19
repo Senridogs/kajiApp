@@ -113,7 +113,7 @@ type PushGuideContent = {
   troubleSteps: string[];
 };
 type RescheduleChoice = "tomorrow" | "next_same_weekday" | "custom";
-type RescheduleConfirmOrigin = "sheet" | "drag";
+type RescheduleConfirmOrigin = "sheet" | "drag" | "future-record" | "future-skip";
 type PendingRescheduleConfirm = {
   origin: RescheduleConfirmOrigin;
   choreId: string;
@@ -499,6 +499,7 @@ export function KajiApp() {
   const [registerInviteCode, setRegisterInviteCode] = useState("");
   const [registerColor, setRegisterColor] = useState(USER_COLOR_PALETTE[0]);
   const [registerLoading, setRegisterLoading] = useState(false);
+  const [postRegisterRoutingPending, setPostRegisterRoutingPending] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.sessionStorage.getItem(ONBOARDING_PENDING_STORAGE_KEY) === "1";
@@ -1487,19 +1488,21 @@ export function KajiApp() {
           window.sessionStorage.removeItem(ONBOARDING_PENDING_STORAGE_KEY);
         }
       }
-      await refreshAll("week");
+      setPostRegisterRoutingPending(true);
       setOnboardingOpen(shouldStartOnboarding);
       if (shouldStartOnboarding) {
         setOnboardingBulkSelectOpen(false);
         setOnboardingPresetSelections(ONBOARDING_PRESET_CHORES.map((preset) => preset.title));
-      }
-      if (!shouldStartOnboarding) {
+      } else {
+        setOnboardingOpen(false);
         setActiveTab("home");
         setRefreshAnimationSeed((prev) => prev + 1);
       }
+      await refreshAll("week");
     } catch (err: unknown) {
       setError((err as Error).message ?? "登録に失敗しました。");
     } finally {
+      setPostRegisterRoutingPending(false);
       setRegisterLoading(false);
     }
   };
@@ -1816,30 +1819,6 @@ export function KajiApp() {
     setPendingRescheduleConfirm(null);
   }, [rescheduleConfirmLoading]);
 
-  const confirmPendingReschedule = useCallback(async (recalculateFuture: boolean) => {
-    if (!pendingRescheduleConfirm || rescheduleConfirmLoading) return;
-    try {
-      setError("");
-      setRescheduleConfirmLoading(true);
-      await rescheduleChoreToDate({
-        choreId: pendingRescheduleConfirm.choreId,
-        targetDateKey: pendingRescheduleConfirm.targetDateKey,
-        sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
-        recalculateFuture,
-      });
-      focusCalendarDate(pendingRescheduleConfirm.targetDateKey);
-      if (pendingRescheduleConfirm.origin === "sheet") {
-        setRescheduleOpen(false);
-        setRescheduleTarget(null);
-      }
-      setPendingRescheduleConfirm(null);
-    } catch (err: unknown) {
-      setError((err as Error).message ?? "日にち変更に失敗しました。");
-    } finally {
-      setRescheduleConfirmLoading(false);
-    }
-  }, [focusCalendarDate, pendingRescheduleConfirm, rescheduleChoreToDate, rescheduleConfirmLoading]);
-
   const clearDragState = useCallback(() => {
     setDraggingChore(null);
     setDragSourceDateKey(null);
@@ -2085,27 +2064,46 @@ export function KajiApp() {
   }, [dragSourceDateKey]);
 
   const resolveMemoPerformedAt = useCallback((now: Date) => {
-    const todayStart = startOfJstDay(now);
-    if (memoBaseDateKey && performedDayOffset === 0) {
-      const baseDate = startOfJstDay(new Date(`${memoBaseDateKey}T00:00:00+09:00`));
-      if (!Number.isNaN(baseDate.getTime()) && baseDate.getTime() > todayStart.getTime()) {
-        return baseDate;
-      }
-    }
     return addDays(now, -performedDayOffset);
-  }, [memoBaseDateKey, performedDayOffset]);
+  }, [performedDayOffset]);
 
-  const submitRecord = async () => {
+  const submitMemoAction = useCallback(async ({
+    skipped,
+    recalculateFuture,
+    bypassFutureConfirm = false,
+  }: {
+    skipped: boolean;
+    recalculateFuture?: boolean;
+    bypassFutureConfirm?: boolean;
+  }) => {
     if (!memoTarget) return;
     const targetId = memoTarget.id;
-    const completedTomorrowTask = memoTarget.isDueTomorrow && performedDayOffset === 0;
     const previousBoot = boot;
     const now = new Date();
-    const performedAt = resolveMemoPerformedAt(now);
-    const performedAtIso = performedAt.toISOString();
     const todayStart = startOfJstDay(now);
     const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrow = addDays(todayStart, 2);
+    const sourceDateKey = memoBaseDateKey ?? undefined;
+    let hasFutureMemoBase = false;
+    if (sourceDateKey && performedDayOffset === 0) {
+      const baseDate = startOfJstDay(new Date(`${sourceDateKey}T00:00:00+09:00`));
+      hasFutureMemoBase =
+        !Number.isNaN(baseDate.getTime()) && baseDate.getTime() > todayStart.getTime();
+    }
+    if (hasFutureMemoBase && !bypassFutureConfirm && sourceDateKey) {
+      setPendingRescheduleConfirm({
+        origin: skipped ? "future-skip" : "future-record",
+        choreId: memoTarget.id,
+        choreTitle: memoTarget.title,
+        sourceDateKey,
+        targetDateKey: toJstDateKey(todayStart),
+      });
+      return;
+    }
+
+    const performedAt = resolveMemoPerformedAt(now);
+    const performedAtIso = performedAt.toISOString();
+    const completedTomorrowTask = memoTarget.isDueTomorrow && performedDayOffset === 0;
 
     setMemoOpen(false);
     setRecordUpdating(targetId, true);
@@ -2118,10 +2116,12 @@ export function KajiApp() {
           ...chore,
           doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
           lastPerformedAt: performedAtIso,
-          lastPerformerName: sessionUser.name,
+          lastPerformerName: skipped ? "スキップ" : sessionUser.name,
           lastPerformerId: sessionUser.id,
-          lastRecordSkipped: false,
-          lastRecordId: chore.lastRecordId ?? `optimistic-${now.getTime()}`,
+          lastRecordSkipped: skipped,
+          lastRecordId: skipped
+            ? chore.lastRecordId ?? `optimistic-skip-${now.getTime()}`
+            : chore.lastRecordId ?? `optimistic-${now.getTime()}`,
           dueAt: nextDueAt.toISOString(),
           isDueToday: nextDueAt >= todayStart && nextDueAt < tomorrowStart,
           isDueTomorrow: nextDueAt >= tomorrowStart && nextDueAt < dayAfterTomorrow,
@@ -2136,18 +2136,28 @@ export function KajiApp() {
     }
 
     try {
+      const body: Record<string, unknown> = { memo, skipped, performedAt: performedAtIso };
+      if (hasFutureMemoBase && sourceDateKey) {
+        body.sourceDate = sourceDateKey;
+        body.recalculateFuture = recalculateFuture === true;
+      }
       const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
         method: "POST",
-        body: JSON.stringify({ memo, performedAt: performedAtIso }),
+        body: JSON.stringify(body),
       });
-      // Replace the optimistic lastRecordId with the real one from the server
       if (result?.record?.id) {
         updateBootChoreOptimistically(targetId, (chore) => ({
           ...chore,
           lastRecordId: result.record.id,
         }));
       }
-      if (completedTomorrowTask) {
+      if (hasFutureMemoBase && sourceDateKey) {
+        await Promise.all([
+          loadBootstrap(),
+          loadCalendarMonthSummary(calendarMonthKeyRef.current),
+        ]);
+      }
+      if (!skipped && completedTomorrowTask) {
         showTaskBanner("👏 明日のものをやってえらい！", "blue");
       }
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
@@ -2155,76 +2165,57 @@ export function KajiApp() {
       if (previousBoot) {
         setBoot(previousBoot);
       }
-      setError((err as Error).message ?? "記録に失敗しました。");
+      setError((err as Error).message ?? (skipped ? "スキップに失敗しました。" : "記録に失敗しました。"));
     } finally {
       setRecordUpdating(targetId, false);
       setMemoTarget(null);
       setMemoBaseDateKey(null);
     }
-  };
+  }, [boot, loadBootstrap, loadCalendarMonthSummary, loadHistory, loadStats, memo, memoBaseDateKey, memoTarget, performedDayOffset, resolveMemoPerformedAt, sessionUser, setRecordUpdating, showTaskBanner, statsPeriod, updateBootChoreOptimistically]);
 
-  const submitSkip = async () => {
-    if (!memoTarget) return;
-    const targetId = memoTarget.id;
-    const previousBoot = boot;
-    const now = new Date();
-    const performedAt = resolveMemoPerformedAt(now);
-    const performedAtIso = performedAt.toISOString();
-    const todayStart = startOfJstDay(now);
-    const tomorrowStart = addDays(todayStart, 1);
-    const dayAfterTomorrow = addDays(todayStart, 2);
+  const submitRecord = useCallback(() => {
+    void submitMemoAction({ skipped: false });
+  }, [submitMemoAction]);
 
-    setMemoOpen(false);
-    setRecordUpdating(targetId, true);
+  const submitSkip = useCallback(() => {
+    void submitMemoAction({ skipped: true });
+  }, [submitMemoAction]);
 
-    if (sessionUser) {
-      updateBootChoreOptimistically(targetId, (chore) => {
-        const nextDueAt = addDays(performedAt, chore.intervalDays);
-        const nextDueAtTime = nextDueAt.getTime();
-        return {
-          ...chore,
-          doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
-          lastPerformedAt: performedAtIso,
-          lastPerformerName: "スキップ",
-          lastPerformerId: sessionUser.id,
-          lastRecordSkipped: true,
-          lastRecordId: chore.lastRecordId ?? `optimistic-skip-${now.getTime()}`,
-          dueAt: nextDueAt.toISOString(),
-          isDueToday: nextDueAt >= todayStart && nextDueAt < tomorrowStart,
-          isDueTomorrow: nextDueAt >= tomorrowStart && nextDueAt < dayAfterTomorrow,
-          isOverdue: nextDueAt < todayStart,
-          overdueDays:
-            nextDueAt < todayStart
-              ? Math.floor((todayStart.getTime() - nextDueAtTime) / (24 * 60 * 60 * 1000))
-              : 0,
-          daysSinceLast: 0,
-        };
-      });
-    }
-
+  const confirmPendingReschedule = useCallback(async (recalculateFuture: boolean) => {
+    if (!pendingRescheduleConfirm || rescheduleConfirmLoading) return;
     try {
-      const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
-        method: "POST",
-        body: JSON.stringify({ memo, skipped: true, performedAt: performedAtIso }),
+      setError("");
+      setRescheduleConfirmLoading(true);
+      if (
+        pendingRescheduleConfirm.origin === "future-record" ||
+        pendingRescheduleConfirm.origin === "future-skip"
+      ) {
+        await submitMemoAction({
+          skipped: pendingRescheduleConfirm.origin === "future-skip",
+          recalculateFuture,
+          bypassFutureConfirm: true,
+        });
+        setPendingRescheduleConfirm(null);
+        return;
+      }
+      await rescheduleChoreToDate({
+        choreId: pendingRescheduleConfirm.choreId,
+        targetDateKey: pendingRescheduleConfirm.targetDateKey,
+        sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
+        recalculateFuture,
       });
-      if (result?.record?.id) {
-        updateBootChoreOptimistically(targetId, (chore) => ({
-          ...chore,
-          lastRecordId: result.record.id,
-        }));
+      focusCalendarDate(pendingRescheduleConfirm.targetDateKey);
+      if (pendingRescheduleConfirm.origin === "sheet") {
+        setRescheduleOpen(false);
+        setRescheduleTarget(null);
       }
-      void Promise.all([loadStats(statsPeriod), loadHistory()]);
+      setPendingRescheduleConfirm(null);
     } catch (err: unknown) {
-      if (previousBoot) {
-        setBoot(previousBoot);
-      }
-      setError((err as Error).message ?? "スキップに失敗しました。");
+      setError((err as Error).message ?? "日にち変更に失敗しました。");
     } finally {
-      setRecordUpdating(targetId, false);
-      setMemoTarget(null);
-      setMemoBaseDateKey(null);
+      setRescheduleConfirmLoading(false);
     }
-  };
+  }, [focusCalendarDate, pendingRescheduleConfirm, rescheduleChoreToDate, rescheduleConfirmLoading, submitMemoAction]);
 
   const undoRecord = async (chore: ChoreWithComputed) => {
     if (!chore.lastRecordId) return;
@@ -2674,13 +2665,6 @@ export function KajiApp() {
   const calendarSelectedDayEntries = useMemo(() => {
     return calendarScheduleMap.get(calendarSelectedDateKey) ?? [];
   }, [calendarScheduleMap, calendarSelectedDateKey]);
-  const memoFutureBaseDateKey = useMemo(() => {
-    if (!memoOpen || !memoBaseDateKey) return null;
-    const baseDate = startOfJstDay(new Date(`${memoBaseDateKey}T00:00:00+09:00`));
-    if (Number.isNaN(baseDate.getTime())) return null;
-    const todayStart = startOfJstDay(new Date());
-    return baseDate.getTime() > todayStart.getTime() ? memoBaseDateKey : null;
-  }, [memoBaseDateKey, memoOpen]);
   const reportMonthKey = useMemo(
     () => monthKeyWithOffset(toMonthKey(new Date()), reportMonthOffset),
     [reportMonthOffset],
@@ -2806,7 +2790,7 @@ export function KajiApp() {
     );
   }
 
-  if (!boot || boot.needsRegistration || !sessionUser) {
+  if (postRegisterRoutingPending || !boot || boot.needsRegistration || !sessionUser) {
     return (
       <main className="min-h-screen overflow-y-auto bg-gradient-to-b from-[#F8F9FA] to-[#EEF3FD]">
         <form
@@ -4951,24 +4935,18 @@ export function KajiApp() {
           />
           <div className="space-y-2">
             <p className="text-[14.4px] font-bold text-[#5F6368]">いつやった？</p>
-            {memoFutureBaseDateKey ? (
-              <div className="rounded-[12px] border border-[#D2E3FC] bg-[#EEF4FE] px-3 py-2">
-                <p className="text-[13px] font-semibold text-[#1A5AD8]">{memoFutureBaseDateKey} を実施日として記録します</p>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                {PERFORMED_DAY_OPTIONS.map((option) => (
-                  <button
-                    key={option.label}
-                    type="button"
-                    onClick={() => setPerformedDayOffset(option.offset)}
-                    className={`rounded-[12px] px-3 py-2 text-[13px] font-bold ${performedDayOffset === option.offset ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex gap-2">
+              {PERFORMED_DAY_OPTIONS.map((option) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  onClick={() => setPerformedDayOffset(option.offset)}
+                  className={`rounded-[12px] px-3 py-2 text-[13px] font-bold ${performedDayOffset === option.offset ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
           <button
             type="button"

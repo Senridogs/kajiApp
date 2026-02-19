@@ -50,12 +50,16 @@ export async function GET(request: Request) {
   });
 
   const householdIds = households.map((h) => h.id);
+  const now = new Date();
+  const todayStart = startOfJstDay(now);
+  const tomorrowStart = addDays(todayStart, 1);
 
   const [allChores, allSubs] = await Promise.all([
     prisma.chore.findMany({
       where: { householdId: { in: householdIds }, archived: false },
       include: {
         records: {
+          where: { performedAt: { lt: tomorrowStart } },
           take: 1,
           orderBy: { performedAt: "desc" },
           select: { performedAt: true },
@@ -81,10 +85,6 @@ export async function GET(request: Request) {
     list.push(sub);
     subsByHousehold.set(sub.householdId, list);
   }
-
-  const now = new Date();
-  const todayStart = startOfJstDay(now);
-  const tomorrowStart = addDays(todayStart, 1);
 
   let sent = 0;
   for (const household of households) {
