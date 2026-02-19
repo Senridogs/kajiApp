@@ -90,7 +90,6 @@ export function ChoreEditor({
   onOpenCustomIcon: () => void;
 }) {
   const lastPerformedDate = toDateInputValueInJst(value.lastPerformedAt);
-  const maxDate = toDateInputValueInJst(new Date().toISOString());
   const isCustomIconSelected = customIcons.some(
     (custom) =>
       value.icon === custom.icon &&
@@ -258,12 +257,14 @@ export function ChoreEditor({
           onKeyDown={(e) => e.preventDefault()}
           onPaste={(e) => e.preventDefault()}
           inputMode="none"
-          max={maxDate}
           disabled={mode === "edit"}
           required
           aria-label="start-date"
           className={`w-full rounded-[14px] border border-[#DADCE0] py-3 pl-3 pr-3 text-[16.8px] font-semibold text-[#202124] outline-none ${mode === "edit" ? "bg-[#F1F3F4] text-[#5F6368]" : "bg-white"}`}
         />
+        {mode === "create" && value.lastPerformedAt && new Date(value.lastPerformedAt) > new Date() ? (
+          <p className="mt-1 text-[11px] font-medium text-[#1A9BE8]">未来日を選択中：その日が初回予定日として登録されます（未完了状態）</p>
+        ) : null}
       </div>
 
       <div>

@@ -457,6 +457,9 @@ export function KajiApp() {
   const dragScrollRafRef = useRef<number | null>(null);
   const dragScrollSpeedRef = useRef<number>(0);
   const calendarWeekStartRef = useRef<Date>(new Date());
+  const calendarSwipeStartXRef = useRef<number | null>(null);
+  const calendarSwipeStartYRef = useRef<number | null>(null);
+  const dropDraggedChoreToDateRef = useRef<(targetDateKey: string) => Promise<void>>(async () => {});
   const [reactionPickerRecordId, setReactionPickerRecordId] = useState<string | null>(null);
 
   const [registerName, setRegisterName] = useState("");
@@ -632,6 +635,7 @@ export function KajiApp() {
   const [statsHeaderHeight, setStatsHeaderHeight] = useState(0);
   const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(0);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
+  const sectionTouchStartRef = useRef<{ x: number; y: number } | null>(null);
   const pullStartYRef = useRef(0);
   const pullStartXRef = useRef(0);
   const pullStartScrollTopRef = useRef(0);
@@ -665,7 +669,7 @@ export function KajiApp() {
   }, [taskBanner]);
 
   useEffect(() => {
-    if (!boot || boot.needsRegistration || !sessionUser) {
+    if (!boot || boot.needsRegistration || !sessionUser || onboardingOpen) {
       missionBannerReadyRef.current = false;
       previousTodayMissionCompletedRef.current = false;
       return;
@@ -679,7 +683,7 @@ export function KajiApp() {
       showTaskBanner("🎉 きょうのにんむ ぜんぶおわり！おつかれさま！", "green");
     }
     previousTodayMissionCompletedRef.current = todayMissionCompletedForBanner;
-  }, [boot, sessionUser, showTaskBanner, todayMissionCompletedForBanner]);
+  }, [boot, onboardingOpen, sessionUser, showTaskBanner, todayMissionCompletedForBanner]);
 
   const listChores = useMemo(() => {
     const now = startOfJstDay(new Date());
@@ -940,6 +944,11 @@ export function KajiApp() {
   const activeTabRef = useRef(activeTab);
   useEffect(() => { statsPeriodRef.current = statsPeriod; }, [statsPeriod]);
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  useEffect(() => {
+    if (activeTab === "records" && sessionUser) {
+      void loadHistory();
+    }
+  }, [activeTab, sessionUser, loadHistory]);
 
   const syncCheck = useCallback(async () => {
     if (!boot || boot.needsRegistration || !sessionUser) return;
@@ -1433,8 +1442,6 @@ export function KajiApp() {
   }, [onboardingPresetSelections, onboardingSubmitting, refreshAll]);
 
   const openAddChore = () => {
-    closeSettings();
-    closeStandaloneScreen();
     setEditingChore({
       title: "",
       intervalDays: 7,
@@ -1738,6 +1745,10 @@ export function KajiApp() {
     }
   }, [clearDragState, dragSourceDateKey, draggingChore, focusCalendarDate, loadBootstrap]);
 
+  // ref を常に最新の関数に同期。useEffect 内のクロージャが古いスナップショットを
+  // 参照しないよう、render 時点で更新しておく。
+  dropDraggedChoreToDateRef.current = dropDraggedChoreToDate;
+
   // グローバルポインターイベント — タッチデバイスでのドラッグ&ドロップ対応
   // 週ナビゲーションホバー・自動スクロールも含む
   useEffect(() => {
@@ -1823,7 +1834,7 @@ export function KajiApp() {
       const els = document.elementsFromPoint(event.clientX, event.clientY);
       const dropEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dropDate) as HTMLElement | undefined;
       if (dropEl?.dataset.dropDate) {
-        void dropDraggedChoreToDate(dropEl.dataset.dropDate);
+        void dropDraggedChoreToDateRef.current(dropEl.dataset.dropDate);
       } else {
         clearDragState();
       }
@@ -1849,7 +1860,7 @@ export function KajiApp() {
       if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
       if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
     };
-  }, [clearDragState, dropDraggedChoreToDate, focusCalendarDate]);
+  }, [clearDragState, focusCalendarDate]);
 
   const shiftCalendarMonth = useCallback((direction: -1 | 1) => {
     const nextMonthKey = monthKeyWithOffset(toMonthKey(calendarMonthCursor), direction === 1 ? -1 : 1);
@@ -1857,6 +1868,31 @@ export function KajiApp() {
     focusCalendarDate(nextDateKey);
     setCalendarExpanded(true);
   }, [calendarMonthCursor, focusCalendarDate]);
+
+  const handleCalendarTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    calendarSwipeStartXRef.current = touch.clientX;
+    calendarSwipeStartYRef.current = touch.clientY;
+  }, []);
+
+  const handleCalendarTouchEnd = useCallback((e: React.TouchEvent) => {
+    const startX = calendarSwipeStartXRef.current;
+    const startY = calendarSwipeStartYRef.current;
+    calendarSwipeStartXRef.current = null;
+    calendarSwipeStartYRef.current = null;
+    const touch = e.changedTouches[0];
+    if (!touch || startX === null || startY === null) return;
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+    const direction = dx < 0 ? 1 : -1;  // left = next (1), right = prev (-1)
+    if (calendarExpanded) {
+      shiftCalendarMonth(direction);
+    } else {
+      focusCalendarDate(toJstDateKey(addDays(calendarWeekStart, direction * 7)));
+    }
+  }, [calendarExpanded, shiftCalendarMonth, focusCalendarDate, calendarWeekStart]);
 
   const shiftTargetDateByWeek = useCallback((direction: -1 | 1) => {
     const source = dragSourceDateKey ?? toJstDateKey(startOfJstDay(new Date()));
@@ -2019,9 +2055,9 @@ export function KajiApp() {
 
     // Recalculate due-date flags from the pre-check dueAt.
     // submitRecord shifted dueAt forward by intervalDays, so we reverse it.
-    const origDueAt = chore.lastPerformedAt
-      ? addDays(new Date(chore.lastPerformedAt), chore.intervalDays).toISOString()
-      : chore.dueAt;
+    const origDueAt = chore.dueAt
+      ? addDays(new Date(chore.dueAt), -chore.intervalDays).toISOString()
+      : null;
     const todayStart = startOfJstDay(new Date());
     const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrow = addDays(todayStart, 2);
@@ -3353,7 +3389,7 @@ export function KajiApp() {
       };
 
       return (
-        <div className="space-y-4" style={{ paddingTop: listHeaderHeight }}>
+        <div className="space-y-4" style={{ paddingTop: listHeaderHeight }} onTouchStart={handleCalendarTouchStart} onTouchEnd={handleCalendarTouchEnd}>
           <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             {calendarExpanded ? (
@@ -3553,7 +3589,7 @@ export function KajiApp() {
         <div className="space-y-4" style={{ paddingTop: recordsHeaderHeight }}>
           <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
-            {records.length === 0 ? (
+            {groupedTimelineRecords.length === 0 ? (
               <div className="rounded-[20px] border border-dashed border-[#DADCE0] bg-white px-5 py-10 text-center">
                 <p className="text-[16px] font-bold text-[#202124]">まだ きろく がありません</p>
                 <p className="mt-2 text-[13px] font-medium text-[#5F6368]">家事を完了するとここにタイムライン表示されます。</p>
@@ -3682,7 +3718,7 @@ export function KajiApp() {
             <div className="space-y-3">
               <div className="rounded-[16px] bg-white px-5 py-5">
                 <p className="text-[18px] font-bold text-[#202124]">今月のおうち 🏠</p>
-                {reportLoading ? (
+                {reportLoading && !householdReport ? (
                   <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F6368]">
                     <Loader2 size={14} className="animate-spin" />
                     読み込み中...
@@ -3763,7 +3799,7 @@ export function KajiApp() {
             </button>
             <p className="text-[22px] font-bold text-[#202124]">プッシュ通知設定</p>
           </div>
-          <SettingToggleRow title="プッシュ通知" subtitle="すべての通知をまとめてON/OFF" checked={pushEnabled} onChange={(next) => { void handleTogglePush(next); }} />
+          <SettingToggleRow title="プッシュ通知" subtitle="すべての通知をまとめてON/OFF" checked={pushEnabled} disabled={pushLoading} onChange={(next) => { void handleTogglePush(next); }} />
           {pushEnabled && notificationSettings ? (
             <div className="space-y-3 rounded-[14px] bg-white p-3">
               <div className="space-y-2 rounded-[12px] border border-[#DADCE0] bg-[#F8F9FA] p-3">
@@ -4128,10 +4164,21 @@ export function KajiApp() {
       <section
         className="relative flex-1 overflow-hidden overscroll-y-none"
         onTouchStart={(e) => {
+          const t = e.touches[0];
+          sectionTouchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
           swipe.onTouchStart(e);
           assignmentEdgeSwipe.onTouchStart(e);
         }}
         onTouchMove={(e) => {
+          const start = sectionTouchStartRef.current;
+          const t = e.touches[0];
+          if (start && t) {
+            const dx = Math.abs(t.clientX - start.x);
+            const dy = Math.abs(t.clientY - start.y);
+            // Skip swipe handlers for clearly vertical gestures so they do not
+            // interfere with the pull-to-refresh native touchmove listener.
+            if (dy > dx * 1.5) return;
+          }
           swipe.onTouchMove(e);
           assignmentEdgeSwipe.onTouchMove(e);
         }}
