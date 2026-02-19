@@ -476,7 +476,6 @@ export function KajiApp() {
   const [onboardingPresetSelections, setOnboardingPresetSelections] = useState<string[]>(
     ONBOARDING_PRESET_CHORES.map((preset) => preset.title),
   );
-  const [resumeOnboardingAfterCreate, setResumeOnboardingAfterCreate] = useState(false);
 
   const [choreEditorOpen, setChoreEditorOpen] = useState(false);
   const [customIconOpen, setCustomIconOpen] = useState(false);
@@ -1399,7 +1398,6 @@ export function KajiApp() {
     setOnboardingSubmitting(false);
     setOnboardingBulkSelectOpen(false);
     setOnboardingPresetSelections(ONBOARDING_PRESET_CHORES.map((preset) => preset.title));
-    setResumeOnboardingAfterCreate(false);
     setActiveTab("home");
     setRefreshAnimationSeed((prev) => prev + 1);
   }, [clearOnboardingPending]);
@@ -1496,7 +1494,6 @@ export function KajiApp() {
 
   const saveChore = async () => {
     if (!editingChore || saveChoreLoading || deleteChoreLoading) return;
-    const isCreatingChore = !editingChore.id;
     setError("");
     if (!editingChore.lastPerformedAt) {
       setError("開始日は必須です。");
@@ -1527,10 +1524,6 @@ export function KajiApp() {
       await refreshAll(statsPeriod);
       setDeleteConfirmOpen(false);
       setChoreEditorOpen(false);
-      if (isCreatingChore && resumeOnboardingAfterCreate) {
-        setOnboardingOpen(true);
-        setResumeOnboardingAfterCreate(false);
-      }
     } catch (err: unknown) {
       setError((err as Error).message ?? "家事の保存に失敗しました。");
     } finally {
@@ -2526,6 +2519,68 @@ export function KajiApp() {
     );
   }, [calendarTaskCountByDate]);
 
+  const renderChoreEditorSheets = () => (
+    <>
+      <BottomSheet
+        open={choreEditorOpen && !customIconOpen}
+        onClose={() => {
+          if (saveChoreLoading || deleteChoreLoading) return;
+          setChoreEditorOpen(false);
+        }}
+        title=""
+        maxHeightClassName="max-h-[92vh]"
+        containerClassName="px-0 pb-4 pt-[10px]"
+        scrollable={true}
+      >
+        <div className="space-y-[14px] px-5 pb-1">
+          <p className="text-center text-[24px] font-bold text-[#202124]">
+            {editingChore?.id ? "編集" : "登録"}
+          </p>
+          {editingChore ? (
+            <ChoreEditor
+              mode={editingChore.id ? "edit" : "create"}
+              value={editingChore}
+              customIcons={customIcons}
+              users={boot?.users ?? []}
+              isSaving={saveChoreLoading}
+              isDeleting={deleteChoreLoading}
+              onChange={setEditingChore}
+              onSave={saveChore}
+              onDelete={requestDeleteChore}
+              onDeleteCustomIcon={handleDeleteCustomIcon}
+              onOpenCustomIcon={() => setCustomIconOpen(true)}
+            />
+          ) : null}
+        </div>
+      </BottomSheet>
+
+      <BottomSheet open={customIconOpen} onClose={() => setCustomIconOpen(false)} title="" maxHeightClassName="max-h-[92vh]">
+        {editingChore ? (
+          <CustomIconPicker
+            value={editingChore}
+            onChange={setEditingChore}
+            onApply={async (iconData) => {
+              const saved = await handleAddCustomIcon(iconData);
+              if (saved) {
+                setEditingChore((prev) =>
+                  prev
+                    ? {
+                      ...prev,
+                      icon: saved.icon,
+                      iconColor: saved.iconColor,
+                      bgColor: saved.bgColor,
+                    }
+                    : prev,
+                );
+              }
+              setCustomIconOpen(false);
+            }}
+          />
+        ) : null}
+      </BottomSheet>
+    </>
+  );
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#F8F9FA]">
@@ -2640,7 +2695,8 @@ export function KajiApp() {
     const hasChores = boot.chores.length > 0;
 
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col overflow-y-auto bg-[#F8F9FA] px-5 py-8">
+      <>
+      <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-y-auto overscroll-y-contain bg-[#F8F9FA] px-5 py-8">
         <div className="mt-8 space-y-5">
           <div className="text-center">
             <span className="material-symbols-rounded text-[42px] text-[#1A9BE8]">home</span>
@@ -2701,8 +2757,6 @@ export function KajiApp() {
             <button
               type="button"
               onClick={() => {
-                setResumeOnboardingAfterCreate(true);
-                setOnboardingOpen(false);
                 openAddChore();
               }}
               className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-bold text-[#1A9BE8]"
@@ -2800,6 +2854,8 @@ export function KajiApp() {
           {error ? <p className="text-center text-sm text-[#C5221F]">{error}</p> : null}
         </div>
       </main>
+      {renderChoreEditorSheets()}
+      </>
     );
   }
 
@@ -2830,10 +2886,51 @@ export function KajiApp() {
     return null;
   };
 
-  const yesterdayBaseDate = startOfJstDay(addDays(new Date(), -1));
+  const resolveHomeChoresByDate = (dateKey: string) => {
+    const mapped = calendarScheduleMap.get(dateKey);
+    if (mapped) return mapped;
+
+    const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
+    if (Number.isNaN(targetDate.getTime())) return [];
+
+    const results: ChoreWithComputed[] = [];
+    const pushUnique = (chore: ChoreWithComputed) => {
+      if (!results.some((item) => item.id === chore.id)) {
+        results.push(chore);
+      }
+    };
+
+    chores.forEach((chore) => {
+      if (chore.lastPerformedAt && !chore.lastRecordSkipped) {
+        const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
+        if (performedDateKey === dateKey) {
+          pushUnique(chore);
+        }
+      }
+
+      const overrideList = scheduleOverridesByChore.get(chore.id) ?? [];
+      if (overrideList.length > 0) {
+        if (overrideList.some((override) => override.date === dateKey)) {
+          pushUnique(chore);
+        }
+        return;
+      }
+
+      if (isScheduledOnDate(chore, targetDate)) {
+        pushUnique(chore);
+      }
+    });
+
+    results.sort((a, b) => JA_COLLATOR.compare(a.title, b.title));
+    return results;
+  };
+
+  const yesterdayChoresForHome = resolveHomeChoresByDate(yesterdayKey);
+  const todayChoresForHome = resolveHomeChoresByDate(todayKey);
+  const tomorrowChoresForHome = resolveHomeChoresByDate(tomorrowKey);
   const yesterdayChores = sortHomeSectionChores(
     "yesterday",
-    calendarScheduleMap.get(yesterdayKey) ?? [],
+    yesterdayChoresForHome,
     sessionUser?.id ?? null,
     (choreId) => {
       const c = boot.chores.find((ch) => ch.id === choreId);
@@ -2851,16 +2948,16 @@ export function KajiApp() {
     {
       key: "today" as const,
       title: "きょうのにんむ",
-      chores: sortHomeSectionChores("today", boot.todayChores, sessionUser?.id ?? null, (choreId) => {
-        const c = boot.todayChores.find((ch) => ch.id === choreId);
+      chores: sortHomeSectionChores("today", todayChoresForHome, sessionUser?.id ?? null, (choreId) => {
+        const c = todayChoresForHome.find((ch) => ch.id === choreId);
         return resolveAssigneeForSort(choreId, "today", c);
       }, customIcons),
     },
     {
       key: "tomorrow" as const,
       title: "あしたのにんむ",
-      chores: sortHomeSectionChores("tomorrow", boot.tomorrowChores, sessionUser?.id ?? null, (choreId) => {
-        const c = boot.tomorrowChores.find((ch) => ch.id === choreId);
+      chores: sortHomeSectionChores("tomorrow", tomorrowChoresForHome, sessionUser?.id ?? null, (choreId) => {
+        const c = tomorrowChoresForHome.find((ch) => ch.id === choreId);
         return resolveAssigneeForSort(choreId, "tomorrow", c);
       }, customIcons),
     },
@@ -4522,67 +4619,7 @@ export function KajiApp() {
         </div>
       </nav>
 
-      <BottomSheet
-        open={choreEditorOpen && !customIconOpen}
-        onClose={() => {
-          if (saveChoreLoading || deleteChoreLoading) return;
-          setChoreEditorOpen(false);
-          if (resumeOnboardingAfterCreate) {
-            setOnboardingOpen(true);
-            setResumeOnboardingAfterCreate(false);
-          }
-        }}
-        title=""
-        maxHeightClassName="max-h-[92vh]"
-        containerClassName="px-0 pb-4 pt-[10px]"
-        scrollable={true}
-      >
-        <div className="space-y-[14px] px-5 pb-1">
-          <p className="text-center text-[24px] font-bold text-[#202124]">
-            {editingChore?.id ? "編集" : "登録"}
-          </p>
-          {editingChore ? (
-            <ChoreEditor
-              mode={editingChore.id ? "edit" : "create"}
-              value={editingChore}
-              customIcons={customIcons}
-              users={boot?.users ?? []}
-              isSaving={saveChoreLoading}
-              isDeleting={deleteChoreLoading}
-              onChange={setEditingChore}
-              onSave={saveChore}
-              onDelete={requestDeleteChore}
-              onDeleteCustomIcon={handleDeleteCustomIcon}
-              onOpenCustomIcon={() => setCustomIconOpen(true)}
-            />
-          ) : null}
-        </div>
-      </BottomSheet>
-
-      <BottomSheet open={customIconOpen} onClose={() => setCustomIconOpen(false)} title="" maxHeightClassName="max-h-[92vh]">
-        {editingChore ? (
-          <CustomIconPicker
-            value={editingChore}
-            onChange={setEditingChore}
-            onApply={async (iconData) => {
-              const saved = await handleAddCustomIcon(iconData);
-              if (saved) {
-                setEditingChore((prev) =>
-                  prev
-                    ? {
-                      ...prev,
-                      icon: saved.icon,
-                      iconColor: saved.iconColor,
-                      bgColor: saved.bgColor,
-                    }
-                    : prev,
-                );
-              }
-              setCustomIconOpen(false);
-            }}
-          />
-        ) : null}
-      </BottomSheet>
+      {renderChoreEditorSheets()}
       <BottomSheet
         open={memoOpen}
         onClose={() => {
