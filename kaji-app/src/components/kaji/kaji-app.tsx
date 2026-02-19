@@ -3388,7 +3388,7 @@ export function KajiApp() {
       };
 
       return (
-        <div className="space-y-4" style={{ paddingTop: listHeaderHeight }}>
+        <div className="space-y-4" style={{ paddingTop: listHeaderHeight }} onTouchStart={handleCalendarTouchStart} onTouchEnd={handleCalendarTouchEnd}>
           <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             {calendarExpanded ? (
