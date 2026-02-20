@@ -94,28 +94,38 @@ test("buildHomeRowsByDate prioritizes done when done/skip mixed and pending=0", 
   assert.equal(rows[0].chore.lastRecordSkipped, false);
 });
 
-test("fallback recurrence uses dailyTargetCount occurrences", () => {
-  const dateKey = "2026-02-20";
-  const chore = makeChore({
-    id: "c",
-    dueAt: "2026-02-20T00:00:00.000Z",
-    intervalDays: 2,
-    dailyTargetCount: 3,
-    doneToday: false,
-    lastPerformedAt: null,
-    lastRecordId: null,
-  });
+test("buildHomeRowsByDate keeps fallback behind feature flag", () => {
+  const original = process.env.NEXT_PUBLIC_ENABLE_HOME_PROGRESS_LAST_PERFORMED_FALLBACK;
+  process.env.NEXT_PUBLIC_ENABLE_HOME_PROGRESS_LAST_PERFORMED_FALLBACK = "true";
+  try {
+    const dateKey = "2026-02-20";
+    const chore = makeChore({
+      id: "c",
+      dueAt: "2026-02-20T00:00:00.000Z",
+      intervalDays: 2,
+      dailyTargetCount: 3,
+      doneToday: false,
+      lastPerformedAt: null,
+      lastRecordId: null,
+    });
 
-  const rows = buildHomeRowsByDate({
-    chores: [chore],
-    dateKey,
-    scheduleOverridesByChore: new Map(),
-  });
+    const rows = buildHomeRowsByDate({
+      chores: [chore],
+      dateKey,
+      scheduleOverridesByChore: new Map(),
+    });
 
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].state, "pending");
-  assert.equal(rows[0].total, 3);
-  assert.equal(rows[0].pending, 3);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].state, "pending");
+    assert.equal(rows[0].total, 3);
+    assert.equal(rows[0].pending, 3);
+  } finally {
+    if (original === undefined) {
+      delete process.env.NEXT_PUBLIC_ENABLE_HOME_PROGRESS_LAST_PERFORMED_FALLBACK;
+    } else {
+      process.env.NEXT_PUBLIC_ENABLE_HOME_PROGRESS_LAST_PERFORMED_FALLBACK = original;
+    }
+  }
 });
 
 test("buildHomeProgressByDate keeps total fixed when duplicate pending is consumed", () => {
@@ -244,3 +254,32 @@ test("buildHomeProgressByDate keeps denominator fixed for mixed done/skip", () =
   });
 });
 
+test("buildHomeProgressByDate does not mix same chore completion across dates", () => {
+  const yesterday = "2026-02-20";
+  const today = "2026-02-21";
+  const chore = makeChore({
+    id: "same",
+    dueAt: "2026-02-20T00:00:00.000Z",
+    intervalDays: 1,
+    dailyTargetCount: 1,
+  });
+
+  const progress = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [yesterday, today],
+    scheduleOverridesByChore: new Map(),
+    records: [
+      {
+        choreId: "same",
+        scheduledDate: yesterday,
+        performedAt: "2026-02-20T03:00:00.000Z",
+        isSkipped: false,
+      },
+    ],
+  });
+
+  assert.equal(progress[yesterday]?.same?.completed, 1);
+  assert.equal(progress[yesterday]?.same?.pending, 0);
+  assert.equal(progress[today]?.same?.completed, 0);
+  assert.equal(progress[today]?.same?.pending, 1);
+});
