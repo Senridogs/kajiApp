@@ -61,6 +61,7 @@ import {
   ChoreAssignmentEntry,
   ChoreScheduleOverride,
   ChoreWithComputed,
+  HomeProgressEntry,
   HouseholdReportResponse,
   MyStatsResponse,
   NotificationSettings,
@@ -78,7 +79,7 @@ import {
 import {
   buildHomeRowsByDate,
 } from "@/lib/home-occurrence";
-import { addDateKeyDays, addDays, compareDateKey, formatDateKey, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { addDateKeyDays, addDays, buildHomeDateKeys, compareDateKey, formatDateKey, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
 import { countScheduledOccurrencesOnDate as countScheduledOccurrencesOnDateByReadModel } from "@/lib/occurrence-read-model";
 
 const JA_COLLATOR = new Intl.Collator("ja");
@@ -114,6 +115,7 @@ const REPORT_MONTH_LABELS: Record<(typeof REPORT_MONTH_OFFSETS)[number], string>
   1: "先月",
   2: "2ヶ月前",
 };
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const CALENDAR_WEEK_DAYS = 7;
 const MAX_DAY_DOT_SLOTS = 6;
 const DAY_DOT_VISIBLE_WHEN_OVERFLOW = 5;
@@ -6284,22 +6286,6 @@ export function KajiApp() {
           />
         );
       })() : null}
-
-      {pendingCalendarPlanDuplicateConfirm ? (
-        <ConfirmDialog
-          open={Boolean(pendingCalendarPlanDuplicateConfirm)}
-          onClose={() => setPendingCalendarPlanDuplicateConfirm(null)}
-          onCancel={() => resolveCalendarPlanDuplicateConfirm(false)}
-          onConfirm={() => resolveCalendarPlanDuplicateConfirm(true)}
-          title="同じ日に同じ家事があります"
-          description={`「${pendingCalendarPlanDuplicateConfirm.choreTitle}」を追加しますか？`}
-          detail={`${pendingCalendarPlanDuplicateConfirm.dateKey} に重複登録します`}
-          cancelLabel="やめる"
-          confirmLabel="追加する"
-          confirmVariant="success"
-          loading={recordUpdatingIds.includes(buildRecordMutationKey(pendingCalendarPlanDuplicateConfirm.choreId, pendingCalendarPlanDuplicateConfirm.dateKey))}
-        />
-      ) : null}
 
       {pendingMergeDuplicateConfirm ? (() => {
         const copy = mergeDuplicateDialogCopy({

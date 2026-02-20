@@ -1,0 +1,5644 @@
+{
+  "version": "2.8",
+  "children": [
+    {
+      "type": "frame",
+      "id": "Oerya",
+      "x": 0,
+      "y": 0,
+      "name": "SUB__Foundation__Kit",
+      "width": 440,
+      "fill": "$bg/surface",
+      "layout": "vertical",
+      "gap": 12,
+      "padding": 12,
+      "children": [
+        {
+          "type": "frame",
+          "id": "TE78x",
+          "name": "TopBar",
+          "reusable": true,
+          "width": 402,
+          "height": 64,
+          "fill": "$bg/elevated",
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "padding": [
+            0,
+            16
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "T258F",
+              "name": "topBarLabel",
+              "fill": "$fg/secondary",
+              "content": "トップバー",
+              "fontFamily": "DM Sans",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "QAtkh",
+          "name": "BottomNav4",
+          "reusable": true,
+          "width": 402,
+          "height": 84,
+          "fill": "$bg/elevated",
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "top": 1
+            },
+            "fill": "$border/base"
+          },
+          "padding": [
+            12,
+            16,
+            20,
+            16
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "bPxKC",
+              "name": "bottomNavLabel",
+              "fill": "$fg/secondary",
+              "content": "下部ナビ（4タブ）",
+              "fontFamily": "DM Sans",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "C3iFn",
+          "name": "TaskCard",
+          "reusable": true,
+          "width": 362,
+          "height": 88,
+          "fill": "$bg/elevated",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "layout": "vertical",
+          "gap": 6,
+          "padding": 12,
+          "children": [
+            {
+              "type": "text",
+              "id": "QzvtB",
+              "name": "taskCardLabel",
+              "fill": "$fg/primary",
+              "content": "家事カード",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Yhf22",
+          "name": "FeedPostCard",
+          "reusable": true,
+          "width": 362,
+          "height": 132,
+          "fill": "$bg/elevated",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "children": [
+            {
+              "type": "text",
+              "id": "CQe5z",
+              "name": "feedCardLabel",
+              "fill": "$fg/primary",
+              "content": "投稿カード",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "brkaP",
+          "name": "DialogBase",
+          "reusable": true,
+          "width": 300,
+          "height": 180,
+          "fill": "$bg/elevated",
+          "cornerRadius": 18,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "layout": "vertical",
+          "gap": 10,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "fjCdP",
+              "name": "dialogLabel",
+              "fill": "$fg/primary",
+              "content": "ダイアログ",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "700"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "777Su",
+      "x": 472,
+      "y": 0,
+      "name": "SUB__Entry__Auth__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "qcI1k",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "C9Fbn",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "RVTgx",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "2w7ho",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "W11mg",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "rNwkc",
+      "x": 944,
+      "y": 0,
+      "name": "SUB__Entry__Auth__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "b1TMH",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "P8DjA",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "f5RWX",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "CX6kt",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "MAc05",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "An6A5",
+      "x": 1416,
+      "y": 0,
+      "name": "SUB__Entry__Onboarding__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "AofJG",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "4TnCK",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "DsmpN",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "rRHdA",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "67ZHs",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "VkrZb",
+      "x": 1888,
+      "y": 0,
+      "name": "SUB__Entry__Onboarding__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "CFLmF",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "4eTJA",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "V9l7f",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "tixwo",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "VVnI4",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "5bLVo",
+      "x": 2360,
+      "y": 0,
+      "name": "SUB__Entry__Onboarding__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "oyRB6",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "RSQIb",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "4q4K5",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "mcH1I",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "z5AtW",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "nR1fm",
+      "x": 2832,
+      "y": 0,
+      "name": "SUB__Tab__Home__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "mSOm0",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "cJYjJ",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "aSXBX",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "09oBA",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "4PO26",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ynJGe",
+      "x": 3304,
+      "y": 0,
+      "name": "SUB__Tab__Home__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "CumyB",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "lBRdP",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "ylM3u",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "xcbMu",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "n3Fo4",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "GfozS",
+      "x": 3776,
+      "y": 0,
+      "name": "SUB__Tab__Home__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "iOWi8",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "1pY5E",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "RiAfn",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "6Rfby",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "tf8VL",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "BLfvz",
+      "x": 4248,
+      "y": 0,
+      "name": "SUB__Tab__Records__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "ckyxU",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "O4fNd",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "u1Kgu",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "aUW3i",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "1yhIT",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "oBXjy",
+      "x": 4720,
+      "y": 0,
+      "name": "SUB__Tab__Records__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "wo8ow",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "DkqRO",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "dvSwl",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "iml0H",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "mcHFj",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "CNL2R",
+      "x": 5192,
+      "y": 0,
+      "name": "SUB__Tab__Records__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "MOKr1",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "XWZ9q",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "CiDwa",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "el0Ka",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "vHLOV",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "K64uB",
+      "x": 5664,
+      "y": 0,
+      "name": "SUB__Tab__CalendarWeek__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "SlL7U",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "zzzfY",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "YXEYM",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "3DyPw",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "cmd9y",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "GaFZq",
+      "x": 6136,
+      "y": 0,
+      "name": "SUB__Tab__CalendarWeek__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "neGiN",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "cO8uh",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "FhvMJ",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "c21mj",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "XYCWX",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "mpVAq",
+      "x": 6608,
+      "y": 0,
+      "name": "SUB__Tab__CalendarWeek__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "Kfm4F",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "U9Bx2",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "81v1V",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "5vBMJ",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "7b937",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "p8Yc5",
+      "x": 7080,
+      "y": 0,
+      "name": "SUB__Tab__CalendarMonth__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "Wuk3Q",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "LWdXT",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "v8QIh",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "mV1lU",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "gqQIj",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "OwJTZ",
+      "x": 7552,
+      "y": 0,
+      "name": "SUB__Tab__CalendarMonth__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "PltWK",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "nBYVl",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "hGmHk",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "meXO4",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "CP7vj",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "oIsa8",
+      "x": 8024,
+      "y": 0,
+      "name": "SUB__Tab__CalendarMonth__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "OgLvQ",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "C460h",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "0XsrI",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "aBZGK",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "Vzuyl",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "AETcx",
+      "x": 8496,
+      "y": 0,
+      "name": "SUB__Tab__Stats__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "59vSB",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "03WV6",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "SCtRH",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "DBu7U",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "CTxZn",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "3UlNL",
+      "x": 8968,
+      "y": 0,
+      "name": "SUB__Tab__Stats__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "kEbJ5",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "Lgeuq",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "3asYG",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "m5qCp",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "QL85E",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "gUsrd",
+      "x": 9440,
+      "y": 0,
+      "name": "SUB__Tab__Stats__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "qZmuB",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "QLSTO",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "4MOTU",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "gRwmO",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "T977N",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "mhXXU",
+      "x": 9912,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__Push__NormalOn",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "O1A2G",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "frs0W",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "MTUpB",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "IfwSo",
+              "type": "ref",
+              "ref": "C3iFn",
+              "name": "task",
+              "width": "fill_container",
+              "height": 88
+            },
+            {
+              "id": "EWxDf",
+              "type": "ref",
+              "ref": "Yhf22",
+              "name": "feed",
+              "width": "fill_container",
+              "height": 132
+            }
+          ]
+        },
+        {
+          "id": "8eYxk",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "i56H7",
+      "x": 10384,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__Push__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "z8oxr",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "60aGd",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "ChjGg",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "vDprb",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "2KCLn",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Asdvq",
+      "x": 10856,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__Push__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "KlOsz",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "SP7Kx",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "UeWvM",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "rqlh9",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "vyUSj",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "uHF2z",
+      "x": 11328,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__Push__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "69nn9",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "k5SBH",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "kObMU",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "c23TP",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "NHu6Q",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Jp8HD",
+      "x": 11800,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__PushGuide__iPhone",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "JhNOM",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "6U5Oq",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "2N4BC",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "DbH0B",
+              "type": "ref",
+              "ref": "C3iFn",
+              "name": "task",
+              "width": "fill_container",
+              "height": 88
+            },
+            {
+              "id": "EWTVQ",
+              "type": "ref",
+              "ref": "Yhf22",
+              "name": "feed",
+              "width": "fill_container",
+              "height": 132
+            }
+          ]
+        },
+        {
+          "id": "D4X5C",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "IKZU1",
+      "x": 12272,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__Family__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "Sw16z",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "52pJa",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "gSQBc",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "WoAIq",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "G7cnW",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "UKyOd",
+      "x": 12744,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__Family__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "elJDZ",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "tdZuZ",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "1X2o7",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "q4KXN",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "Bj9Kr",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Scp1w",
+      "x": 13216,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__Family__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "qXRP2",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "Ie3Vy",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "abwZ0",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "RDlad",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "4jifY",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "1F4q0",
+      "x": 13688,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__ManageList__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "CYKs0",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "PykH5",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "Qi1Ky",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "U8xCf",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "mmvJ0",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "xstIy",
+      "x": 14160,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__ManageList__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "5w05r",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "7ECDg",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "M96WE",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "WZzqv",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "cZ1AF",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "vEQsT",
+      "x": 14632,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__ManageList__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "oQvtY",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "bWRYw",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "nIozm",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "KaH5S",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "vtywn",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Mqnvv",
+      "x": 15104,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__ManageDetail__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "XeJx8",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "IdM9m",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "gbgfk",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "ONuqI",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "PwCXk",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "1KcmB",
+      "x": 15576,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__ManageDetail__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "3U7Q4",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "FHxAr",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "JMoy0",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "J5Pq8",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "NR6Ut",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "LaUEx",
+      "x": 16048,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__ManageDetail__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "Gs7pp",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "lsH8D",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "iD03L",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "yBDSp",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "fZEJ1",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "5obsU",
+      "x": 16520,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__MyReport__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "M0DjJ",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "vWVEY",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "PhkrK",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "3IiBk",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "eX3DF",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "1V6Fo",
+      "x": 16992,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__MyReport__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "R8JBz",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "YPfel",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "JA5xc",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "zvpPn",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "DoUCO",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "TGlRC",
+      "x": 17464,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__MyReport__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "BqRl7",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "x0cEY",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "2DQWt",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "8TWVB",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "ZPb0i",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "bg4s2",
+      "x": 17936,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__MyRecords__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "ukSID",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "VuG8g",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "hHGM8",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "rGC3t",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "AZXkH",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ym0QE",
+      "x": 18408,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__MyRecords__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "kukGI",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "D35qW",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "6AK4Q",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "ITov4",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "F6vjP",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "RUooA",
+      "x": 18880,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__MyRecords__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "xti7H",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "VSo9E",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "33C8u",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "tUoAw",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "pMG8S",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "4lkPQ",
+      "x": 19352,
+      "y": 0,
+      "name": "SUB__SettingsDrawer__Sleep__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "Px6Mi",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "pVp5Z",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "vdwQP",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "KuFPC",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "zoSrS",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "UbSrw",
+      "x": 19824,
+      "y": 0,
+      "name": "SUB__Standalone__ManageList__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "LAI7o",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "oY95Q",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "jWgDq",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "VxoGE",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "11w4D",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "S1IRk",
+      "x": 20296,
+      "y": 0,
+      "name": "SUB__Standalone__ManageList__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "peBS7",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "KQNgs",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "Dop18",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "dJvZ4",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "NgcJ3",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "up714",
+      "x": 20768,
+      "y": 0,
+      "name": "SUB__Standalone__ManageList__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "mKm4y",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "hwqp1",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "Pzju2",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "bGyCA",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "QSyuy",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "j2Sry",
+      "x": 21240,
+      "y": 0,
+      "name": "SUB__Standalone__ManageDetail__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "HzAWa",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "1js5W",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "Izz2E",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "AIH7j",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "zPgd7",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "3MmBR",
+      "x": 21712,
+      "y": 0,
+      "name": "SUB__Standalone__ManageDetail__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "Qn6he",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "EUvD4",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "5lDXN",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "KYw6j",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "C3BgJ",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "2rVIL",
+      "x": 22184,
+      "y": 0,
+      "name": "SUB__Standalone__ManageDetail__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "mGwZV",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "FwcIO",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "3JA11",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "utcKz",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "g6URm",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "WDsiv",
+      "x": 22656,
+      "y": 0,
+      "name": "SUB__Standalone__MyReport__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "EcFRX",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "WgEoH",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "NrbrQ",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "Qy6EO",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "NMrEa",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "sOjip",
+      "x": 23128,
+      "y": 0,
+      "name": "SUB__Standalone__MyReport__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "mvdDy",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "YkVJg",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "rnu0a",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "VwgqF",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "qr777",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "fHh8J",
+      "x": 23600,
+      "y": 0,
+      "name": "SUB__Standalone__MyReport__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "GAdio",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "pC0ZP",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "hwz8T",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "kfsai",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "G37Vj",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "YDm9t",
+      "x": 24072,
+      "y": 0,
+      "name": "SUB__Standalone__MyRecords__Empty",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "aa1pJ",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "3eWIO",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "Qypj8",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "空の状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "Ifo0y",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "データがありません",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "XJIxB",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "U467s",
+      "x": 24544,
+      "y": 0,
+      "name": "SUB__Standalone__MyRecords__Error",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "rbyWg",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "TWU3z",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "nLPZr",
+              "name": "title",
+              "fill": "$danger/main",
+              "content": "エラー状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "9caPd",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "通信に失敗しました",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "YkuPz",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "8mLwQ",
+      "x": 25016,
+      "y": 0,
+      "name": "SUB__Standalone__MyRecords__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "ClSSP",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "h6Bfb",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "1OXJg",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "QNqHQ",
+              "name": "desc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "lovd0",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "bPm0g",
+      "x": 25488,
+      "y": 0,
+      "name": "SUB__Overlay__AssignmentDaily__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "9TIzn",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "S09rX",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "5rrgf",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "J3lWB",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "oPZNq",
+      "x": 25960,
+      "y": 0,
+      "name": "SUB__Overlay__AssignmentBig__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "Qf8Tm",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "VPQqQ",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "O2NgP",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "IxThU",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "GupPi",
+      "x": 26432,
+      "y": 0,
+      "name": "SUB__Overlay__ChoreEditorCreate__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "EtELk",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "GNz1R",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "WPmQ4",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "7rfSY",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "akB81",
+      "x": 26904,
+      "y": 0,
+      "name": "SUB__Overlay__ChoreEditorEdit__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "JD69Q",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "PpEt9",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "ymoLh",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "XhEZR",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "HDTzi",
+      "x": 27376,
+      "y": 0,
+      "name": "SUB__Overlay__CustomIconPicker__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "YB3Uc",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "ovnlb",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "AC3mB",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "UaWSo",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "nhaQM",
+      "x": 27848,
+      "y": 0,
+      "name": "SUB__Overlay__CalendarBlankChoice__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "Vr9ia",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "nexRl",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "5TTry",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "cQAdm",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "GZnSH",
+      "x": 28320,
+      "y": 0,
+      "name": "SUB__Overlay__CalendarBlankRecord__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "yMXTg",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "quDWe",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "SZHyG",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "TGFS8",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "FFP2p",
+      "x": 28792,
+      "y": 0,
+      "name": "SUB__Overlay__MemoDefault__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "rnewo",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "68fW5",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "TLi60",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "QTYQ0",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "lzPIy",
+      "x": 29264,
+      "y": 0,
+      "name": "SUB__Overlay__MemoQuick__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "DGOMN",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "i73il",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "ssKmA",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "100y5",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "rnXBi",
+      "x": 29736,
+      "y": 0,
+      "name": "SUB__Overlay__SkipCountDialog__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "mI3fg",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "6TqhV",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "r7LCL",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "gJpiQ",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "UYcso",
+      "x": 30208,
+      "y": 0,
+      "name": "SUB__Overlay__RescheduleSheet__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "MAumL",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "WSB9d",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "oqVb5",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "J4gKs",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "yo3xA",
+      "x": 30680,
+      "y": 0,
+      "name": "SUB__Overlay__ConfirmRecordDateChoice__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "DTo61",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "7Sx6y",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "cZ1NZ",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "CduEJ",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Nx2iz",
+      "x": 31152,
+      "y": 0,
+      "name": "SUB__Overlay__ConfirmCalendarDuplicate__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "aefNX",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "vkvSA",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "K8fzD",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "vC7Vk",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "pXB5G",
+      "x": 31624,
+      "y": 0,
+      "name": "SUB__Overlay__ConfirmMergeDuplicate__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "1l86Y",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "QHITb",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "Knd2t",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "6Gd4P",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "1hGcn",
+      "x": 32096,
+      "y": 0,
+      "name": "SUB__Overlay__ConfirmRescheduleSeries__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "4mXE4",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "KrsZB",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "52ZX9",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "Kv3ze",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "RGUQ1",
+      "x": 32568,
+      "y": 0,
+      "name": "SUB__Overlay__ConfirmUndo__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "2Fcv4",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "CgL4a",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "nZ5dS",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "RVitN",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Js7FH",
+      "x": 33040,
+      "y": 0,
+      "name": "SUB__Overlay__ConfirmDelete__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "v9GrM",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "DF3oV",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "cXT72",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "MdVQ3",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "XRXdV",
+      "x": 33512,
+      "y": 0,
+      "name": "SUB__Overlay__InfoDialog__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "7Gerr",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "QsAIr",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "2bhdo",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "fo26l",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "lE7Om",
+      "x": 33984,
+      "y": 0,
+      "name": "SUB__Overlay__UndoToast__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "OoZYS",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "B6wZx",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "uNHmw",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "BzYCA",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "BoIBo",
+      "x": 34456,
+      "y": 0,
+      "name": "SUB__Overlay__TaskBannerGreen__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "MUG4b",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "DPfz6",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "ZREDI",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "nsH3E",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "HCkPf",
+      "x": 34928,
+      "y": 0,
+      "name": "SUB__Overlay__TaskBannerBlue__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "Hmbiq",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "GM4kO",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "5HPz5",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "IOO2w",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "2QDNN",
+      "x": 35400,
+      "y": 0,
+      "name": "SUB__Overlay__AppReloadOverlay__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "lyV6Q",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "vlraP",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "ZJ5wq",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "TRGVo",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "sf3aW",
+      "x": 35872,
+      "y": 0,
+      "name": "SUB__Overlay__DragGhost__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "AOlR6",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "scFgV",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "pOrL4",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "58XZ4",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ooBOn",
+      "x": 36344,
+      "y": 0,
+      "name": "SUB__Overlay__SettingsDrawerBackdrop__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "gWZbu",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "yor79",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "YzR3S",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "v4uFf",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Kw6Hy",
+      "x": 36816,
+      "y": 0,
+      "name": "SUB__Overlay__StandaloneContainer__Variant",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "WQpS4",
+          "x": 0,
+          "y": 0,
+          "name": "bg",
+          "fill": "$bg/base",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "type": "rectangle",
+          "id": "SVs6n",
+          "x": 0,
+          "y": 0,
+          "name": "dim",
+          "fill": "#00000066",
+          "width": 402,
+          "height": 874
+        },
+        {
+          "id": "bxaur",
+          "type": "ref",
+          "ref": "brkaP",
+          "name": "dialog",
+          "x": 51,
+          "y": 320,
+          "width": 300,
+          "height": 180
+        },
+        {
+          "type": "text",
+          "id": "5CjMI",
+          "x": 125,
+          "y": 390,
+          "name": "label",
+          "fill": "$fg/primary",
+          "content": "オーバーレイ",
+          "fontFamily": "DM Sans",
+          "fontSize": 14,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "eWmaT",
+      "x": 37288,
+      "y": 0,
+      "name": "SUB__ThemeDark__Home__Normal",
+      "theme": {
+        "theme": "dark"
+      },
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "6O73U",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "VVYSu",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "j9Oce",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "Ik9SP",
+              "type": "ref",
+              "ref": "C3iFn",
+              "name": "task",
+              "width": "fill_container",
+              "height": 88
+            },
+            {
+              "id": "3Iihn",
+              "type": "ref",
+              "ref": "Yhf22",
+              "name": "feed",
+              "width": "fill_container",
+              "height": 132
+            }
+          ]
+        },
+        {
+          "id": "vHi0J",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "JB6oB",
+      "x": 37760,
+      "y": 0,
+      "name": "SUB__ThemeDark__Records__Normal",
+      "theme": {
+        "theme": "dark"
+      },
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "ig251",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "aV7K6",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "dK9Ax",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "T4oXo",
+              "type": "ref",
+              "ref": "C3iFn",
+              "name": "task",
+              "width": "fill_container",
+              "height": 88
+            },
+            {
+              "id": "TJxUd",
+              "type": "ref",
+              "ref": "Yhf22",
+              "name": "feed",
+              "width": "fill_container",
+              "height": 132
+            }
+          ]
+        },
+        {
+          "id": "QYrS6",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Ojkil",
+      "x": 38232,
+      "y": 0,
+      "name": "SUB__ThemeDark__CalendarWeek__Normal",
+      "theme": {
+        "theme": "dark"
+      },
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "sjhvM",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "J5N2p",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "9Mvcy",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "UBy12",
+              "type": "ref",
+              "ref": "C3iFn",
+              "name": "task",
+              "width": "fill_container",
+              "height": 88
+            },
+            {
+              "id": "nX3QD",
+              "type": "ref",
+              "ref": "Yhf22",
+              "name": "feed",
+              "width": "fill_container",
+              "height": 132
+            }
+          ]
+        },
+        {
+          "id": "nNhuj",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "KmA72",
+      "x": 38704,
+      "y": 0,
+      "name": "SUB__ThemeDark__CalendarMonth__Normal",
+      "theme": {
+        "theme": "dark"
+      },
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "CNVu3",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "6cjZx",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "1C5UA",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "gzTxX",
+              "type": "ref",
+              "ref": "C3iFn",
+              "name": "task",
+              "width": "fill_container",
+              "height": 88
+            },
+            {
+              "id": "YOnv5",
+              "type": "ref",
+              "ref": "Yhf22",
+              "name": "feed",
+              "width": "fill_container",
+              "height": 132
+            }
+          ]
+        },
+        {
+          "id": "zg2CR",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "XOcSs",
+      "x": 39176,
+      "y": 0,
+      "name": "SUB__ThemeDark__Stats__Normal",
+      "theme": {
+        "theme": "dark"
+      },
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "y28YK",
+          "type": "ref",
+          "ref": "TE78x",
+          "name": "top",
+          "width": "fill_container",
+          "height": 64
+        },
+        {
+          "type": "frame",
+          "id": "v8nlz",
+          "name": "body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "l4WAX",
+              "name": "title",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "Ye9Nn",
+              "type": "ref",
+              "ref": "C3iFn",
+              "name": "task",
+              "width": "fill_container",
+              "height": 88
+            },
+            {
+              "id": "lmkvm",
+              "type": "ref",
+              "ref": "Yhf22",
+              "name": "feed",
+              "width": "fill_container",
+              "height": 132
+            }
+          ]
+        },
+        {
+          "id": "S3fNx",
+          "type": "ref",
+          "ref": "QAtkh",
+          "name": "bottom",
+          "width": "fill_container",
+          "height": 84
+        }
+      ]
+    }
+  ],
+  "themes": {
+    "theme": [
+      "light",
+      "dark"
+    ]
+  },
+  "variables": {
+    "accent/hover": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#16A34A",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#4ADE80",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "accent/main": {
+      "type": "color",
+      "value": "#22C55E"
+    },
+    "accent/soft": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#DCFCE7",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#052E16",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "bg/base": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FFFFFF",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#000000",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "bg/elevated": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FCFCFC",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#1A1A1A",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "bg/surface": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#F7F7F7",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#121212",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "border/base": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#E5E5E5",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#2A2A2A",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "danger/main": {
+      "type": "color",
+      "value": "#DC2626"
+    },
+    "danger/soft": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FEE2E2",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#3B0A0A",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "fg/muted": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#8A8A8A",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#A3A3A3",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "fg/primary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#111111",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#F5F5F5",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "fg/secondary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#4A4A4A",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#D4D4D4",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "font/body": {
+      "type": "string",
+      "value": "DM Sans"
+    },
+    "font/display": {
+      "type": "string",
+      "value": "Bricolage Grotesque"
+    },
+    "radius/lg": {
+      "type": "number",
+      "value": 20
+    },
+    "radius/md": {
+      "type": "number",
+      "value": 16
+    },
+    "radius/sm": {
+      "type": "number",
+      "value": 12
+    },
+    "space/12": {
+      "type": "number",
+      "value": 12
+    },
+    "space/16": {
+      "type": "number",
+      "value": 16
+    },
+    "space/20": {
+      "type": "number",
+      "value": 20
+    },
+    "space/24": {
+      "type": "number",
+      "value": 24
+    },
+    "space/4": {
+      "type": "number",
+      "value": 4
+    },
+    "space/8": {
+      "type": "number",
+      "value": 8
+    },
+    "task-user-color-1": {
+      "type": "color",
+      "value": "#7CB9E8"
+    },
+    "task-user-color-2": {
+      "type": "color",
+      "value": "#82D9A5"
+    },
+    "task-user-color-3": {
+      "type": "color",
+      "value": "#B8A9E8"
+    },
+    "task-user-color-4": {
+      "type": "color",
+      "value": "#F6D57E"
+    }
+  }
+}
