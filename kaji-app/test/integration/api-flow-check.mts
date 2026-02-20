@@ -230,6 +230,54 @@ async function main() {
   assert.equal(settingsBody.notifyReminder, true);
 
   const todayStart = startOfJstDay(new Date());
+  const todayDateKey = toJstDateKey(todayStart);
+  const tomorrowStart = addDays(todayStart, 1);
+  const tomorrowDateKey = toJstDateKey(tomorrowStart);
+
+  const createStartDateTodayRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "start-date-today",
+      intervalDays: 3,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      startDate: todayStart.toISOString(),
+    }),
+  });
+  assert.equal(createStartDateTodayRes.status, 200);
+  const createStartDateTodayBody = await createStartDateTodayRes.json();
+  const startDateTodayChoreId: string = createStartDateTodayBody.chore.id;
+  assert.equal(toJstDateKey(new Date(createStartDateTodayBody.chore.dueAt)), todayDateKey);
+  const todayStartDateProgress = await readBootstrapHomeProgress(startDateTodayChoreId, todayDateKey);
+  assert.ok(todayStartDateProgress);
+  assert.equal(todayStartDateProgress.total, 1);
+  assert.equal(todayStartDateProgress.pending, 1);
+
+  const createStartDateTomorrowRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "start-date-tomorrow",
+      intervalDays: 3,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      startDate: tomorrowStart.toISOString(),
+    }),
+  });
+  assert.equal(createStartDateTomorrowRes.status, 200);
+  const createStartDateTomorrowBody = await createStartDateTomorrowRes.json();
+  const startDateTomorrowChoreId: string = createStartDateTomorrowBody.chore.id;
+  assert.equal(toJstDateKey(new Date(createStartDateTomorrowBody.chore.dueAt)), tomorrowDateKey);
+  const todayProgressForTomorrowStart = await readBootstrapHomeProgress(startDateTomorrowChoreId, todayDateKey);
+  assert.equal(todayProgressForTomorrowStart, undefined);
+  const tomorrowStartDateProgress = await readBootstrapHomeProgress(startDateTomorrowChoreId, tomorrowDateKey);
+  assert.ok(tomorrowStartDateProgress);
+  assert.equal(tomorrowStartDateProgress.total, 1);
+  assert.equal(tomorrowStartDateProgress.pending, 1);
+
   const sourceDateKey = toJstDateKey(addDays(todayStart, 1));
   const nextIfNoRecalc = toJstDateKey(addDays(todayStart, 3));
   const nextIfRecalc = toJstDateKey(addDays(todayStart, 2));

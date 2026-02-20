@@ -15,6 +15,7 @@ type CreateChoreBody = {
   icon?: string;
   iconColor?: string;
   bgColor?: string;
+  startDate?: string;
   lastPerformedAt?: string;
   defaultAssigneeId?: string | null;
 };
@@ -67,37 +68,49 @@ export async function POST(request: Request) {
   if (!session) return response;
 
   const body = await readJsonBody<CreateChoreBody>(request);
-  if (!body) return badRequest("リクエスト形式が不正です。");
+  if (!body) return badRequest("Request body is invalid.");
 
   const title = body.title?.trim();
   const intervalDays = Number(body.intervalDays ?? 0);
   const dailyTargetCount = Number(body.dailyTargetCount ?? 1);
+  const startDate = body.startDate;
   const lastPerformedAt = body.lastPerformedAt;
 
-  if (!title) return badRequest("家事名を入力してください。");
+  if (!title) return badRequest("Title is required.");
   if (!Number.isInteger(intervalDays) || intervalDays <= 0 || intervalDays > 365) {
-    return badRequest("リマインド間隔は1〜365の整数で指定してください。");
+    return badRequest("intervalDays must be an integer between 1 and 365.");
   }
   if (!Number.isInteger(dailyTargetCount) || dailyTargetCount < 1 || dailyTargetCount > 5) {
     return badRequest("dailyTargetCount must be an integer between 1 and 5.");
   }
-  if (!lastPerformedAt) {
-    return badRequest("開始日を指定してください。");
+  if (!startDate && !lastPerformedAt) {
+    return badRequest("Start date is required.");
   }
 
-  const performedAt = new Date(lastPerformedAt);
-  if (Number.isNaN(performedAt.getTime())) {
-    return badRequest("開始日の形式が不正です。");
-  }
+  let initialPerformedAt: Date;
+  if (startDate) {
+    const startDateTime = new Date(startDate);
+    if (Number.isNaN(startDateTime.getTime())) {
+      return badRequest("Start date is invalid.");
+    }
+    const startDayStart = startOfJstDay(startDateTime);
+    initialPerformedAt = addDays(startDayStart, -intervalDays);
+  } else {
+    const performedAt = new Date(lastPerformedAt!);
+    if (Number.isNaN(performedAt.getTime())) {
+      return badRequest("Start date is invalid.");
+    }
 
-  // If a future date is passed, treat it as "first scheduled date" (todo),
-  // not as an already completed record on that future day.
-  const todayStart = startOfJstDay(new Date());
-  const selectedDayStart = startOfJstDay(performedAt);
-  const initialPerformedAt =
-    selectedDayStart > todayStart
-      ? addDays(selectedDayStart, -intervalDays)
-      : performedAt;
+    // Backward compatibility path for older clients that send lastPerformedAt.
+    // If a future date is passed, treat it as "first scheduled date" (todo),
+    // not as an already completed record on that future day.
+    const todayStart = startOfJstDay(new Date());
+    const selectedDayStart = startOfJstDay(performedAt);
+    initialPerformedAt =
+      selectedDayStart > todayStart
+        ? addDays(selectedDayStart, -intervalDays)
+        : performedAt;
+  }
 
   let chore;
   try {
@@ -146,9 +159,10 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  if (!chore) return badRequest("家事の作成に失敗しました。", 500);
+  if (!chore) return badRequest("Failed to create chore.", 500);
 
   await touchHousehold(session.householdId);
 
   return NextResponse.json({ chore: computeChore(chore) });
 }
+

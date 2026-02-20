@@ -23,6 +23,11 @@ test("Main app keeps mobile-first shell and editor sheet behavior", () => {
   assert.match(app, /fixed inset-0 z-\[70\][\s\S]*h-full overflow-y-auto px-4 pb-24 pt-6/);
   assert.match(app, /fixed inset-0 z-\[75\] bg-\[#F8F9FA\][\s\S]*mx-auto h-full w-full max-w-\[430px\] overflow-y-auto px-5 pb-24 pt-5/);
   assert.match(app, /openAddChore[\s\S]*lastPerformedAt:\s*defaultLastPerformedAt\(\)/);
+  assert.match(app, /const createPayload = \{[\s\S]*startDate:\s*editingChore\.lastPerformedAt \?\? undefined/);
+  const onboardingAddBlock =
+    app.match(/const handleOnboardingAddPreset = useCallback\([\s\S]*?\n  \}, \[onboardingPresetSelections, onboardingSubmitting, refreshAll\]\);/)?.[0] ?? "";
+  assert.match(onboardingAddBlock, /startDate/);
+  assert.doesNotMatch(onboardingAddBlock, /lastPerformedAt/);
   assert.match(app, /toJstDateKey\(date\)/);
   assert.doesNotMatch(app, /toISOString\(\)\.slice\(0,\s*10\)/);
   assert.match(app, /open=\{choreEditorOpen && !customIconOpen\}/);

@@ -258,14 +258,13 @@ function defaultCustomDateRange(now = new Date()): CustomDateRange {
 }
 
 function defaultLastPerformedAt(now = new Date()) {
-  const previousDay = addDays(now, -1);
-  return previousDay.toISOString();
+  const todayStart = startOfJstDay(now);
+  return todayStart.toISOString();
 }
 
-function onboardingPresetLastPerformedAt(intervalDays: number, now = new Date()) {
+function onboardingPresetStartDate(now = new Date()) {
   const todayStart = startOfJstDay(now);
-  const normalizedInterval = Math.max(1, Math.trunc(intervalDays));
-  return addDays(todayStart, -normalizedInterval).toISOString();
+  return todayStart.toISOString();
 }
 
 function applyPullResistance(distance: number) {
@@ -1838,7 +1837,7 @@ export function KajiApp() {
       setOnboardingSubmitting(true);
       setError("");
       for (const preset of selectedPresets) {
-        const lastPerformedAt = onboardingPresetLastPerformedAt(preset.intervalDays);
+        const startDate = onboardingPresetStartDate();
         await apiFetch("/api/chores", {
           method: "POST",
           body: JSON.stringify({
@@ -1848,7 +1847,7 @@ export function KajiApp() {
             bgColor: preset.bgColor,
             intervalDays: preset.intervalDays,
             isBigTask: preset.isBigTask,
-            lastPerformedAt,
+            startDate,
           }),
         });
       }
@@ -1939,7 +1938,7 @@ export function KajiApp() {
       return;
     }
 
-    const payload = {
+    const commonPayload = {
       title: editingChore.title,
       intervalDays: Number(editingChore.intervalDays),
       dailyTargetCount: Number(editingChore.dailyTargetCount),
@@ -1947,15 +1946,22 @@ export function KajiApp() {
       icon: editingChore.icon,
       iconColor: editingChore.iconColor,
       bgColor: editingChore.bgColor,
-      lastPerformedAt: editingChore.lastPerformedAt ?? undefined,
       defaultAssigneeId: editingChore.defaultAssigneeId ?? undefined,
     };
     try {
       setSaveChoreLoading(true);
       if (editingChore.id) {
-        await apiFetch(`/api/chores/${editingChore.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+        const updatePayload = {
+          ...commonPayload,
+          lastPerformedAt: editingChore.lastPerformedAt ?? undefined,
+        };
+        await apiFetch(`/api/chores/${editingChore.id}`, { method: "PATCH", body: JSON.stringify(updatePayload) });
       } else {
-        await apiFetch("/api/chores", { method: "POST", body: JSON.stringify(payload) });
+        const createPayload = {
+          ...commonPayload,
+          startDate: editingChore.lastPerformedAt ?? undefined,
+        };
+        await apiFetch("/api/chores", { method: "POST", body: JSON.stringify(createPayload) });
       }
       await refreshAll(statsPeriod);
       if (editingChoreId && manageDetailChoreId === editingChoreId) {
