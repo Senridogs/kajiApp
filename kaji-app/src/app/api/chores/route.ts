@@ -11,7 +11,6 @@ type CreateChoreBody = {
   title?: string;
   intervalDays?: number;
   dailyTargetCount?: number;
-  isBigTask?: boolean;
   icon?: string;
   iconColor?: string;
   bgColor?: string;
@@ -47,7 +46,7 @@ export async function GET() {
 
   const chores = await prisma.chore.findMany({
     where: { householdId: session.householdId, archived: false },
-    orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
+    orderBy: [{ createdAt: "asc" }],
     include: {
       defaultAssignee: { select: { id: true, name: true } },
       records: {
@@ -121,7 +120,6 @@ export async function POST(request: Request) {
           title,
           intervalDays,
           dailyTargetCount,
-          isBigTask: Boolean(body.isBigTask),
           icon: body.icon || "sparkles",
           iconColor: body.iconColor || "#202124",
           bgColor: body.bgColor || "#EAF5FF",

@@ -19,7 +19,6 @@ export type ChoreForm = {
   title: string;
   intervalDays: number;
   dailyTargetCount: number;
-  isBigTask: boolean;
   icon: string;
   iconColor: string;
   bgColor: string;
@@ -440,27 +439,6 @@ export function ChoreEditor({
             ＋ カスタムアイコン
           </button>
         </div>
-      </div>
-
-      <div>
-        <button
-          type="button"
-          onClick={() => onChange({ ...value, isBigTask: !value.isBigTask })}
-          className="flex w-full items-center justify-between rounded-[14px] border border-[#DADCE0] bg-white p-3 text-left"
-        >
-          <div>
-            <p className="text-[13px] font-bold text-[#202124]">大きめ家事として扱う</p>
-          </div>
-          <div
-            className={`relative h-6 w-[42px] rounded-xl ${value.isBigTask ? "bg-[#33C28A]" : "bg-[#E8EAED]"
-              }`}
-          >
-            <div
-              className={`absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white transition-all ${value.isBigTask ? "left-[21px]" : "left-[3px]"
-                }`}
-            />
-          </div>
-        </button>
       </div>
 
       {users.length > 0 ? (

@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 
 import { computeChore, getStatsRange } from "../../src/lib/dashboard.js";
@@ -15,7 +15,6 @@ test("computeChore handles skipped status correctly", () => {
         bgColor: "#000",
         intervalDays: 1,
         dailyTargetCount: 1,
-        isBigTask: false,
         defaultAssigneeId: null,
         defaultAssigneeName: null,
         archived: false,
@@ -59,6 +58,7 @@ test("getStatsRange handles ALL period", () => {
     assert.ok(range.end.getTime() >= now.getTime());
     assert.equal(range.label, "\u5168\u671f\u9593");
 });
+
 
 
 

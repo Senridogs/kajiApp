@@ -41,7 +41,7 @@ export async function GET(request: Request) {
         },
       };
 
-  const [choreCountsRaw, userCountsRaw, bigTaskUserCountsRaw, choreUserCountsRaw, chores, users] =
+  const [choreCountsRaw, userCountsRaw, choreUserCountsRaw, chores, users] =
     await Promise.all([
       prisma.choreRecord.groupBy({
         by: ["choreId"],
@@ -54,22 +54,14 @@ export async function GET(request: Request) {
         _count: { _all: true },
       }),
       prisma.choreRecord.groupBy({
-        by: ["userId"],
-        where: {
-          ...where,
-          chore: { isBigTask: true },
-        },
-        _count: { _all: true },
-      }),
-      prisma.choreRecord.groupBy({
         by: ["choreId", "userId"],
         where,
         _count: { _all: true },
       }),
       prisma.chore.findMany({
         where: { householdId: session.householdId, archived: false },
-        select: { id: true, title: true, isBigTask: true },
-        orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
+        select: { id: true, title: true },
+        orderBy: [{ createdAt: "asc" }],
       }),
       prisma.user.findMany({
         where: { householdId: session.householdId },
@@ -80,7 +72,6 @@ export async function GET(request: Request) {
 
   const choreCountMap = new Map(choreCountsRaw.map((r) => [r.choreId, r._count._all]));
   const userCountMap = new Map(userCountsRaw.map((r) => [r.userId, r._count._all]));
-  const bigTaskUserCountMap = new Map(bigTaskUserCountsRaw.map((r) => [r.userId, r._count._all]));
   const choreUserCountMap = new Map(
     choreUserCountsRaw.map((r) => [`${r.choreId}:${r.userId}`, r._count._all]),
   );
@@ -90,7 +81,6 @@ export async function GET(request: Request) {
     return {
       choreId: c.id,
       title: c.title,
-      isBigTask: c.isBigTask,
       count,
       userCounts: users.map((u) => {
         const userCount = choreUserCountMap.get(`${c.id}:${u.id}`) ?? 0;
@@ -110,16 +100,9 @@ export async function GET(request: Request) {
     count: userCountMap.get(u.id) ?? 0,
   }));
 
-  const bigTaskUserCounts = users.map((u) => ({
-    userId: u.id,
-    name: u.name,
-    count: bigTaskUserCountMap.get(u.id) ?? 0,
-  }));
-
   return NextResponse.json({
     rangeLabel: range.label,
     choreCounts,
     userCounts,
-    bigTaskUserCounts,
   });
 }

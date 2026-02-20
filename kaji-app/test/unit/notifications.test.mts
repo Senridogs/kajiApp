@@ -16,9 +16,9 @@ test("buildReminderPayload formats top chores and suffix", () => {
   });
 
   assert.equal(payload.type, "reminder");
-  assert.equal(payload.title, "きょうのにんむ（6件）");
-  assert.match(payload.body, /🚽 トイレ掃除/);
-  assert.match(payload.body, /🍽 食器洗い/);
+  assert.equal(payload.title, "今日 6件");
+  assert.match(payload.body, /トイレ掃除/);
+  assert.match(payload.body, /食器洗い/);
   assert.match(payload.body, /ほか1件/);
 });
 
@@ -31,6 +31,6 @@ test("buildCompletionPayload trims memo and formats body", () => {
   });
 
   assert.equal(payload.type, "completion");
-  assert.equal(payload.title, "🍽 食器洗い");
-  assert.equal(payload.body, "せんりさんがやってくれたよ！\n夜ごはん後に実施");
+  assert.equal(payload.title, "食器洗い");
+  assert.equal(payload.body, "せんりさんがやってくれたよ\n夜ごはん後に実施");
 });

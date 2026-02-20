@@ -37,7 +37,6 @@ import {
   dueInDaysLabel,
   formatJpDate,
   formatMonthDay,
-  formatTopDate,
   iconByName,
   relativeLastPerformed,
   urlBase64ToUint8Array,
@@ -78,8 +77,6 @@ import {
 } from "@/lib/home-order";
 import {
   buildHomeRowsByDate,
-  countDoneHomeOccurrences,
-  countTotalHomeOccurrences,
 } from "@/lib/home-occurrence";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
@@ -91,7 +88,7 @@ const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
   { key: "kana", label: "かな順" },
 ];
 
-const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
+const HOME_SECTION_STICKY_FALLBACK_TOP = 60;
 const TAB_HEADER_HEIGHT_FALLBACK = 72;
 const ASSIGNMENT_SHEET_SLIDE_MS = 240;
 const ASSIGNMENT_BACK_SWIPE_EDGE_PX = 72;
@@ -108,7 +105,7 @@ const REACTION_ICON_MAP: Record<(typeof REACTION_CHOICES)[number], { icon: strin
   "🎉": { icon: "star", color: "#9C27B0" },
 };
 const WEEKDAY_SHORT = ["日", "月", "火", "水", "木", "金", "土"] as const;
-const REPORT_MONTH_OFFSETS = [0, 1, 2] as const;
+const REPORT_MONTH_OFFSETS = [2, 1, 0] as const;
 const REPORT_MONTH_LABELS: Record<(typeof REPORT_MONTH_OFFSETS)[number], string> = {
   0: "今月",
   1: "先月",
@@ -120,8 +117,8 @@ const DAY_DOT_VISIBLE_WHEN_OVERFLOW = 5;
 
 type TabKey = "home" | "list" | "records" | "stats" | "settings";
 const TAB_ORDER: readonly TabKey[] = ["home", "records", "list", "stats"] as const;
-type AssignmentTabKey = "daily" | "big";
-const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily", "big"] as const;
+type AssignmentTabKey = "daily";
+const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily"] as const;
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
 type SettingsViewKey = "menu" | "my-report" | "my-records" | "push" | "push-guide" | "family" | "manage" | "sleep";
@@ -184,10 +181,10 @@ const ONBOARDING_PENDING_STORAGE_KEY = "kaji_onboarding_pending";
 const HOME_ORDER_STORAGE_KEY_PREFIX = "kaji_home_order_v1";
 const HOME_ORDER_RETENTION_DAYS = 7;
 const ONBOARDING_PRESET_CHORES = [
-  { title: "食器洗い", icon: "cooking-pot", iconColor: "#33C28A", bgColor: "#EAF7EF", intervalDays: 1, isBigTask: false },
-  { title: "洗濯", icon: "shirt", iconColor: "#7A6FF0", bgColor: "#EFEAFE", intervalDays: 2, isBigTask: false },
-  { title: "ゴミ出し", icon: "recycle", iconColor: "#B97700", bgColor: "#FFF6E3", intervalDays: 3, isBigTask: false },
-  { title: "水まわり掃除", icon: "droplets", iconColor: "#4D8BFF", bgColor: "#EEF3FF", intervalDays: 7, isBigTask: false },
+  { title: "食器洗い", icon: "cooking-pot", iconColor: "#33C28A", bgColor: "#EAF7EF", intervalDays: 1 },
+  { title: "洗濯", icon: "shirt", iconColor: "#7A6FF0", bgColor: "#EFEAFE", intervalDays: 2 },
+  { title: "ゴミ出し", icon: "recycle", iconColor: "#B97700", bgColor: "#FFF6E3", intervalDays: 3 },
+  { title: "水まわり掃除", icon: "droplets", iconColor: "#4D8BFF", bgColor: "#EEF3FF", intervalDays: 7 },
 ] as const;
 const PUSH_GUIDE_CONFIRM_STEPS = [
   "・「いま通知を送信」で通知が来たらOK",
@@ -345,14 +342,6 @@ function isSameDateKey(a: string, b: string) {
   return a === b;
 }
 
-function topDateWithWeekday(now = new Date()) {
-  const weekday = new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    weekday: "long",
-  }).format(now);
-  return `${weekday} ${formatTopDate(now)}`;
-}
-
 function formatDateKeyMonthDayWeekday(dateKey: string) {
   const date = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
   if (Number.isNaN(date.getTime())) return dateKey;
@@ -389,9 +378,7 @@ function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
     (c) =>
       c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || c.doneToday)),
   );
-  const upcomingBigChores: ChoreWithComputed[] = [];
-
-  return { todayChores, tomorrowChores, upcomingBigChores };
+  return { todayChores, tomorrowChores };
 }
 
 /** Assignee priority: self=0 > partner=1 > none=2 */
@@ -484,7 +471,6 @@ function removeChoreFromBootstrap(
     chores: nextChores,
     todayChores: split.todayChores,
     tomorrowChores: split.tomorrowChores,
-    upcomingBigChores: split.upcomingBigChores,
   };
 }
 
@@ -502,7 +488,6 @@ function restoreChoreToBootstrap(
     chores: nextChores,
     todayChores: split.todayChores,
     tomorrowChores: split.tomorrowChores,
-    upcomingBigChores: split.upcomingBigChores,
   };
 }
 
@@ -988,7 +973,7 @@ export function KajiApp() {
       return;
     }
     if (todayMissionCompletedForBanner && !previousTodayMissionCompletedRef.current) {
-      showTaskBanner("🎉 きょうのにんむ ぜんぶおわり！おつかれさま！", "green");
+      showTaskBanner("今日のにんむ ぜんぶおわり！おつかれさま！", "green");
     }
     previousTodayMissionCompletedRef.current = todayMissionCompletedForBanner;
   }, [boot, onboardingOpen, sessionUser, showTaskBanner, todayMissionCompletedForBanner]);
@@ -1090,12 +1075,8 @@ export function KajiApp() {
         })
         .filter(Boolean) as Array<{ date: Date; dateKey: string; dayChores: typeof chores }>;
 
-    const dailyFiltered = chores.filter((c) => !c.isBigTask);
-    const bigFiltered = chores.filter((c) => c.isBigTask);
-
     return {
-      daily: mapDays(dailyFiltered, true),
-      big: mapDays(bigFiltered, true),
+      daily: mapDays(chores, true),
     };
   }, [chores, priorityHomeChoreIds, countScheduledOccurrencesOnDate]);
 
@@ -1757,7 +1738,6 @@ export function KajiApp() {
           chores: nextChores,
           todayChores: split.todayChores,
           tomorrowChores: split.tomorrowChores,
-          upcomingBigChores: split.upcomingBigChores,
         };
       });
     },
@@ -1846,7 +1826,6 @@ export function KajiApp() {
             iconColor: preset.iconColor,
             bgColor: preset.bgColor,
             intervalDays: preset.intervalDays,
-            isBigTask: preset.isBigTask,
             startDate,
           }),
         });
@@ -1866,7 +1845,6 @@ export function KajiApp() {
       title: "",
       intervalDays: 7,
       dailyTargetCount: 1,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#1A9BE8",
       bgColor: "#EAF5FF",
@@ -1886,7 +1864,6 @@ export function KajiApp() {
       title: "",
       intervalDays: 7,
       dailyTargetCount: 1,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#1A9BE8",
       bgColor: "#EAF5FF",
@@ -1915,7 +1892,6 @@ export function KajiApp() {
       title: chore.title,
       intervalDays: chore.intervalDays,
       dailyTargetCount: chore.dailyTargetCount,
-      isBigTask: chore.isBigTask,
       icon: chore.icon,
       iconColor: chore.iconColor,
       bgColor: chore.bgColor,
@@ -1942,7 +1918,6 @@ export function KajiApp() {
       title: editingChore.title,
       intervalDays: Number(editingChore.intervalDays),
       dailyTargetCount: Number(editingChore.dailyTargetCount),
-      isBigTask: editingChore.isBigTask,
       icon: editingChore.icon,
       iconColor: editingChore.iconColor,
       bgColor: editingChore.bgColor,
@@ -2705,7 +2680,7 @@ export function KajiApp() {
       ]);
 
       if (!chore.doneToday && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
-        showTaskBanner("👏 明日のものをやってえらい！", "blue");
+        showTaskBanner("明日のものをやってえらい！", "blue");
       }
 
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
@@ -2932,7 +2907,7 @@ export function KajiApp() {
         ]);
       }
       if (!skipped && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
-        showTaskBanner("👏 明日のものをやってえらい！", "blue");
+        showTaskBanner("明日のものをやってえらい！", "blue");
       }
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
@@ -3680,7 +3655,7 @@ export function KajiApp() {
             </div>
             <div className="space-y-2 pt-1">
               <div className="flex items-center gap-1.5">
-                <span className="text-[14px] text-[#5F6368]">🏷️</span>
+                <span className="material-symbols-rounded text-[16px] text-[#5F6368]">sell</span>
                 <p className="text-[15px] font-bold text-[#202124]">家族コード</p>
                 <p className="text-[13px] font-medium text-[#9AA0A6]">（任意）</p>
               </div>
@@ -3817,7 +3792,7 @@ export function KajiApp() {
                 disabled={onboardingSubmitting || onboardingBulkSelectOpen}
                 className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-semibold text-[#202124] disabled:opacity-60"
               >
-                🏠 よくある家事をまとめて追加
+                よくある家事をまとめて追加
               </button>
               {onboardingBulkSelectOpen ? (
                 <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-3">
@@ -3980,24 +3955,20 @@ export function KajiApp() {
   const homeSections = [
     {
       key: "yesterday" as const,
-      title: "きのうのにんむ",
+      title: "昨日",
       rows: orderHomeRows("yesterday", yesterdayKey, yesterdayRowsForHome),
     },
     {
       key: "today" as const,
-      title: "きょうのにんむ",
+      title: "今日",
       rows: orderHomeRows("today", todayKey, todayRowsForHome),
     },
     {
       key: "tomorrow" as const,
-      title: "あしたのにんむ",
+      title: "明日",
       rows: orderHomeRows("tomorrow", tomorrowKey, tomorrowRowsForHome),
     },
-  ].map((section) => ({
-    ...section,
-    doneCount: countDoneHomeOccurrences(section.rows),
-    totalCount: countTotalHomeOccurrences(section.rows),
-  }));
+  ];
   homeSectionChoreIdsRef.current = Object.fromEntries(
     homeSections.map((section) => [
       getHomeSectionDateKey(section.key),
@@ -4166,9 +4137,8 @@ export function KajiApp() {
 
   const renderTabHeader = (tab: TabKey) => {
     if (tab === "home") {
-      const topDate = topDateWithWeekday();
       return (
-        <div ref={homeHeaderRef} className="border-b border-[#D7DCE2] bg-[#F8F9FA]/95 px-4 pb-3 pt-3 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+        <div ref={homeHeaderRef} className="border-b border-[#D7DCE2] bg-[#F8F9FA]/95 px-4 pb-2.5 pt-2.5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
           <div className="flex items-center justify-between">
             <button
               type="button"
@@ -4180,7 +4150,7 @@ export function KajiApp() {
                 account_circle
               </span>
             </button>
-            <p className="text-[44px] font-bold leading-none text-[#5F6368]">{topDate}</p>
+            <div className="h-8 w-8" />
             <div className="h-8 w-8" />
           </div>
         </div>
@@ -4305,9 +4275,7 @@ export function KajiApp() {
                 account_circle
               </span>
             </button>
-            <div className="text-center">
-              <p className="text-[28px] font-bold leading-none text-[#202124]">月間レポート</p>
-            </div>
+            <div className="w-9" />
             <div className="w-9" />
           </div>
           <div className="flex gap-1 rounded-[12px] bg-[#E9EEF6] p-1">
@@ -4439,8 +4407,8 @@ export function KajiApp() {
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
       return (
-        <div className="space-y-[10px]" style={{ paddingTop: homeHeaderHeight }}>
-          <div className="space-y-[10px]" style={getPullAnimatedContentStyle(tab)}>
+        <div className="space-y-4" style={{ paddingTop: homeHeaderHeight }}>
+          <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             {hasAnyUpcomingChores ? (
               <>
@@ -4450,7 +4418,7 @@ export function KajiApp() {
                     <div
                       key={section.key}
                       data-drop-date={sectionDateKey}
-                      className={`space-y-[6px] rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[#EEF4FE] px-1 py-1" : ""}`}
+                      className={`space-y-2 rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[#EEF4FE] px-1 py-1" : ""}`}
                       onDragOver={(event) => {
                         if (!draggingChore) return;
                         event.preventDefault();
@@ -4476,7 +4444,7 @@ export function KajiApp() {
                         className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
                         style={{ top: 0 }}
                       >
-                        <HomeSectionTitle title={`${section.title}（${section.doneCount}/${section.totalCount}）`} />
+                        <HomeSectionTitle title={section.title} />
                         {section.key === "tomorrow" ? (
                           <p className="mt-0.5 text-[12px] font-medium text-[#5F6368]">今日やっちゃってもOK！</p>
                         ) : null}
@@ -4486,17 +4454,11 @@ export function KajiApp() {
                           <p className="py-2 text-center text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
                         ) : section.rows.map((row, choreIndex) => {
                           const chore = row.chore;
-                          const assignedEntry = assignments.find(
-                            (x) => x.choreId === chore.id && x.date === sectionDateKey,
-                          );
-                          const isDefaultCleared = clearedDefaults.has(`${chore.id}:${sectionDateKey}`);
-                          const effectiveAssigneeId = assignedEntry?.userId ?? (isDefaultCleared ? null : chore.defaultAssigneeId) ?? null;
-                          const assigneeName = assignedEntry?.userName ?? (isDefaultCleared ? null : chore.defaultAssigneeName) ?? null;
-                          const assigneeUser = effectiveAssigneeId ? boot.users.find((u) => u.id === effectiveAssigneeId) : null;
-                          const assigneeColor = assigneeUser?.color ?? null;
                           const disableTomorrowDailyCheck = false;
-                          const performerUser = chore.lastPerformerId ? boot.users.find((u) => u.id === chore.lastPerformerId) : null;
-                          const performerColor = performerUser?.color ?? null;
+                          const progressLabel =
+                            row.total > 1
+                              ? `${row.completed + row.skipped}/${row.total}`
+                              : undefined;
                           const displayChore = chore;
                           const isHomeDropTarget =
                             homeDropTarget?.targetDateKey === sectionDateKey &&
@@ -4560,12 +4522,9 @@ export function KajiApp() {
                                 chore={displayChore}
                                 onRecord={(target) => openMemo(target, sectionDateKey)}
                                 onUndo={requestUndoRecord}
-                                meta={`${row.completed + row.skipped}/${row.total} ・ 完了${row.completed} / スキップ${row.skipped} / 残り${row.pending}`}
+                                progressLabel={progressLabel}
                                 isUpdating={recordUpdatingIds.includes(chore.id)}
                                 recordDisabled={disableTomorrowDailyCheck}
-                                assigneeName={assigneeName}
-                                assigneeColor={assigneeColor}
-                                performerColor={performerColor}
                               />
                             </div>
                           );
@@ -4591,7 +4550,7 @@ export function KajiApp() {
               </div>
             )}
             {latestRecordItem ? (
-              <div className="space-y-[6px]">
+              <div className="space-y-2">
                 <div className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85" style={{ top: 0 }}>
                   <HomeSectionTitle title="さいしんのきろく" />
                 </div>
@@ -4925,7 +4884,7 @@ export function KajiApp() {
             </button>
             <div className="space-y-3">
               <div className="rounded-[16px] bg-white px-5 py-5">
-                <p className="text-[18px] font-bold text-[#202124]">今月のおうち 🏠</p>
+                <p className="text-[18px] font-bold text-[#202124]">今月のおうち</p>
                 {reportLoading && !householdReport ? (
                   <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F6368]">
                     <Loader2 size={14} className="animate-spin" />
@@ -4966,7 +4925,7 @@ export function KajiApp() {
               </div>
 
               <div className="rounded-[16px] bg-white px-5 py-5">
-                <p className="text-[18px] font-bold text-[#202124]">久しぶりかも？ 🤔</p>
+                <p className="text-[18px] font-bold text-[#202124]">久しぶりかも？</p>
                 <div className="mt-3 space-y-2">
                   {staleTasks.length === 0 ? (
                     <p className="text-[13px] font-medium text-[#9AA0A6]">問題のある家事はありません。</p>
@@ -5288,10 +5247,9 @@ export function KajiApp() {
             <button type="button" onClick={() => { if (standaloneScreen === "my-report") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
               <ChevronLeft size={18} />
             </button>
-            <p className="text-[22px] font-bold text-[#202124]">私のレポート</p>
           </div>
           <div className="rounded-[16px] bg-white px-5 py-5">
-            <p className="text-[18px] font-bold text-[#202124]">今月のわたし 🏠</p>
+            <p className="text-[18px] font-bold text-[#202124]">今月のわたし</p>
             {myReportLoading ? (
               <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F6368]">
                 <Loader2 size={14} className="animate-spin" />
@@ -5330,7 +5288,7 @@ export function KajiApp() {
             </div>
           </div>
           <div className="rounded-[16px] bg-white px-5 py-5">
-            <p className="text-[18px] font-bold text-[#202124]">久しぶりかも？ 🤔</p>
+            <p className="text-[18px] font-bold text-[#202124]">久しぶりかも？</p>
             <div className="mt-3 space-y-2">
               {staleTasks.length === 0 ? (
                 <p className="text-[13px] font-medium text-[#9AA0A6]">問題のある家事はありません。</p>
@@ -5553,7 +5511,7 @@ export function KajiApp() {
         }}
       >
         <div className="relative h-full overflow-hidden">
-          <div className="absolute left-0 right-0 top-0 z-30 overflow-hidden" style={isSwipeSheetMoving ? undefined : { height: activeTab === "home" ? homeHeaderHeight : activeTab === "list" ? listHeaderHeight : activeTab === "records" ? recordsHeaderHeight : activeTab === "stats" ? statsHeaderHeight : settingsHeaderHeight }}>
+          <div className="pointer-events-none absolute left-0 right-0 top-0 z-30 overflow-hidden" style={isSwipeSheetMoving ? undefined : { height: activeTab === "home" ? homeHeaderHeight : activeTab === "list" ? listHeaderHeight : activeTab === "records" ? recordsHeaderHeight : activeTab === "stats" ? statsHeaderHeight : settingsHeaderHeight }}>
             <div
               className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
               style={{
@@ -5562,7 +5520,7 @@ export function KajiApp() {
               }}
             >
               {TAB_ORDER.map((tab) => (
-                <div key={tab} className="w-full shrink-0">
+                <div key={tab} className="pointer-events-auto w-full shrink-0">
                   {renderTabHeader(tab)}
                 </div>
               ))}
@@ -5638,22 +5596,6 @@ export function KajiApp() {
                     })}
                   </div>
 
-                  <div className="flex gap-1 rounded-xl bg-[#F1F3F4] p-1">
-                    <button
-                      type="button"
-                      onClick={() => setAssignmentTab("daily")}
-                      className={`flex-1 rounded-lg py-1.5 text-[13px] font-bold ${assignmentTab === "daily" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
-                    >
-                      日々のタスク
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAssignmentTab("big")}
-                      className={`flex-1 rounded-lg py-1.5 text-[13px] font-bold ${assignmentTab === "big" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
-                    >
-                      大仕事
-                    </button>
-                  </div>
                 </div>
 
                 <div

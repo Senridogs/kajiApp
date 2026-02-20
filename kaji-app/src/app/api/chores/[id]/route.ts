@@ -10,7 +10,6 @@ type UpdateChoreBody = {
   title?: string;
   intervalDays?: number;
   dailyTargetCount?: number;
-  isBigTask?: boolean;
   icon?: string;
   iconColor?: string;
   bgColor?: string;
@@ -65,7 +64,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     }
     data.dailyTargetCount = body.dailyTargetCount;
   }
-  if (typeof body.isBigTask === "boolean") data.isBigTask = body.isBigTask;
   if (typeof body.icon === "string") data.icon = body.icon;
   if (typeof body.iconColor === "string") data.iconColor = body.iconColor;
   if (typeof body.bgColor === "string") data.bgColor = body.bgColor;

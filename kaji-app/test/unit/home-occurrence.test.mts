@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
@@ -18,7 +18,6 @@ function makeChore(overrides: Partial<ChoreWithComputed> = {}): ChoreWithCompute
     bgColor: overrides.bgColor ?? "#EAF5FF",
     intervalDays: overrides.intervalDays ?? 1,
     dailyTargetCount: overrides.dailyTargetCount ?? 1,
-    isBigTask: overrides.isBigTask ?? false,
     archived: overrides.archived ?? false,
     defaultAssigneeId: overrides.defaultAssigneeId ?? null,
     defaultAssigneeName: overrides.defaultAssigneeName ?? null,
@@ -244,3 +243,4 @@ test("buildHomeProgressByDate keeps denominator fixed for mixed done/skip", () =
     latestState: "pending",
   });
 });
+

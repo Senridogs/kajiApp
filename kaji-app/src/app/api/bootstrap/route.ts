@@ -16,7 +16,6 @@ function emptyBootstrapPayload() {
     chores: [],
     todayChores: [],
     tomorrowChores: [],
-    upcomingBigChores: [],
     assignments: [],
     householdInviteCode: null,
     notificationSettings: null,
@@ -62,7 +61,7 @@ export async function GET() {
           householdId: household.id,
           archived: false,
         },
-        orderBy: [{ isBigTask: "desc" }, { createdAt: "asc" }],
+        orderBy: [{ createdAt: "asc" }],
         include: {
           defaultAssignee: { select: { id: true, name: true } },
           records: {
@@ -158,7 +157,6 @@ export async function GET() {
       chores: computed,
       todayChores: homeSplit.todayChores,
       tomorrowChores: homeSplit.tomorrowChores,
-      upcomingBigChores: homeSplit.upcomingBigChores,
       assignments: assignments.map((a) => ({
         choreId: a.choreId,
         userId: a.userId,

@@ -1,0 +1,2 @@
+ALTER TABLE "Chore"
+DROP COLUMN IF EXISTS "isBigTask";

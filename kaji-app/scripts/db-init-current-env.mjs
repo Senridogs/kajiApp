@@ -31,6 +31,15 @@ const run = (args) => {
 };
 
 run(["prisma", "generate"]);
+run([
+  "prisma",
+  "db",
+  "execute",
+  "--file",
+  "scripts/drop-is-big-task-column.sql",
+  "--schema",
+  "prisma/schema.prisma",
+]);
 run(["prisma", "db", "push", "--skip-generate"]);
 run([
   "prisma",

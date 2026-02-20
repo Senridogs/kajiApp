@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 
 const baseUrl = process.env.TEST_BASE_URL ?? "http://127.0.0.1:4310";
 const cookieJar = new Map<string, string>();
@@ -148,7 +148,6 @@ async function main() {
     body: JSON.stringify({
       title: "統合テスト家事",
       intervalDays: 3,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -166,7 +165,6 @@ async function main() {
     body: JSON.stringify({
       title: "前回実施日時なし",
       intervalDays: 7,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -239,7 +237,6 @@ async function main() {
     body: JSON.stringify({
       title: "start-date-today",
       intervalDays: 3,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -260,7 +257,6 @@ async function main() {
     body: JSON.stringify({
       title: "start-date-tomorrow",
       intervalDays: 3,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -289,7 +285,6 @@ async function main() {
     body: JSON.stringify({
       title: "future-no-recalc",
       intervalDays: 2,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -330,7 +325,6 @@ async function main() {
     body: JSON.stringify({
       title: "future-recalc",
       intervalDays: 2,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -376,7 +370,6 @@ async function main() {
     body: JSON.stringify({
       title: "add-mode-duplicate-guard",
       intervalDays: 3,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -428,7 +421,6 @@ async function main() {
       title: "daily-target-count",
       intervalDays: 1,
       dailyTargetCount: 3,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -454,7 +446,6 @@ async function main() {
       title: "fixed-denominator-daily-target",
       intervalDays: 1,
       dailyTargetCount: 4,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -623,7 +614,6 @@ async function main() {
       body: JSON.stringify({
         title: `sequence-${sequenceCase.name}`,
         intervalDays: 1,
-        isBigTask: false,
         icon: "sparkles",
         iconColor: "#202124",
         bgColor: "#EAF5FF",
@@ -696,7 +686,6 @@ async function main() {
     body: JSON.stringify({
       title: "duplicate-no-merge",
       intervalDays: 1,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -809,7 +798,6 @@ async function main() {
     body: JSON.stringify({
       title: "duplicate-merge",
       intervalDays: 1,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -854,7 +842,6 @@ async function main() {
     body: JSON.stringify({
       title: "record-move-no-recalc",
       intervalDays: 2,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -902,7 +889,6 @@ async function main() {
     body: JSON.stringify({
       title: "record-move-recalc",
       intervalDays: 2,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -951,7 +937,6 @@ async function main() {
     body: JSON.stringify({
       title: "record-dup-no-merge",
       intervalDays: 1,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -999,7 +984,6 @@ async function main() {
     body: JSON.stringify({
       title: "record-dup-merge",
       intervalDays: 1,
-      isBigTask: false,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -1070,3 +1054,4 @@ async function main() {
 
 await main();
 console.log("Integration API flow passed.");
+

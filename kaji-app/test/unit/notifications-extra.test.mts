@@ -12,8 +12,8 @@ test("buildReactionPayload formats correctly", () => {
     });
 
     assert.equal(payload.type, "reaction");
-    assert.equal(payload.title, "👍 Partnerがリアクション");
-    assert.match(payload.body, /👕 Laundry に👍を送りました/);
+    assert.equal(payload.title, "Partnerがリアクション");
+    assert.equal(payload.body, "Laundry にリアクションしました");
 });
 
 test("buildReactionPayload uses default emoji for null icon", () => {
@@ -24,5 +24,5 @@ test("buildReactionPayload uses default emoji for null icon", () => {
         choreIcon: null,
     });
 
-    assert.match(payload.body, /✅ Unknown に❤️を送りました/);
+    assert.equal(payload.body, "Unknown にリアクションしました");
 });

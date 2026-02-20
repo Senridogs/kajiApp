@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 
 import { dueInDaysLabel, labelForDue, relativeLastPerformed } from "../../src/components/kaji/helpers.js";
@@ -22,7 +22,6 @@ test("dueInDaysLabel returns future/today/overdue labels", () => {
     bgColor: "#000",
     intervalDays: 1,
     dailyTargetCount: 1,
-    isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
     archived: false,
@@ -64,7 +63,6 @@ test("labelForDue formats due date in JST", () => {
     bgColor: "#000",
     intervalDays: 1,
     dailyTargetCount: 1,
-    isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
     archived: false,
@@ -85,3 +83,4 @@ test("labelForDue formats due date in JST", () => {
   const label = labelForDue({ ...base, dueAt: "2026-02-14T15:30:00.000Z" });
   assert.match(label, /02\/15/);
 });
+

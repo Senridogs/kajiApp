@@ -7,7 +7,6 @@ type DemoChore = {
   key: string;
   title: string;
   intervalDays: number;
-  isBigTask: boolean;
   icon: string;
   iconColor: string;
   bgColor: string;
@@ -18,7 +17,6 @@ const DEMO_CHORES: DemoChore[] = [
     key: "toilet",
     title: "トイレ掃除",
     intervalDays: 4,
-    isBigTask: false,
     icon: "flame",
     iconColor: "#FFFFFF",
     bgColor: "#EA4335",
@@ -27,7 +25,6 @@ const DEMO_CHORES: DemoChore[] = [
     key: "dish",
     title: "食器洗い",
     intervalDays: 1,
-    isBigTask: false,
     icon: "sparkles",
     iconColor: "#FFFFFF",
     bgColor: "#FBBC05",
@@ -36,7 +33,6 @@ const DEMO_CHORES: DemoChore[] = [
     key: "sink",
     title: "洗面台みがき",
     intervalDays: 2,
-    isBigTask: false,
     icon: "droplets",
     iconColor: "#FFFFFF",
     bgColor: "#4285F4",
@@ -45,7 +41,6 @@ const DEMO_CHORES: DemoChore[] = [
     key: "fan",
     title: "換気扇掃除",
     intervalDays: 30,
-    isBigTask: true,
     icon: "wind",
     iconColor: "#FFFFFF",
     bgColor: "#34A853",
@@ -54,7 +49,6 @@ const DEMO_CHORES: DemoChore[] = [
     key: "washer",
     title: "洗濯槽クリーニング",
     intervalDays: 45,
-    isBigTask: true,
     icon: "washing-machine",
     iconColor: "#FFFFFF",
     bgColor: "#34A853",
@@ -63,7 +57,6 @@ const DEMO_CHORES: DemoChore[] = [
     key: "bath",
     title: "お風呂 防カビ",
     intervalDays: 30,
-    isBigTask: true,
     icon: "droplets",
     iconColor: "#FFFFFF",
     bgColor: "#34A853",
@@ -131,7 +124,6 @@ export async function ensureDemoDataForHousehold(householdId: string, sessionUse
             householdId,
             title: item.title,
             intervalDays: item.intervalDays,
-            isBigTask: item.isBigTask,
             icon: item.icon,
             iconColor: item.iconColor,
             bgColor: item.bgColor,

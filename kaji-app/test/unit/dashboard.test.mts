@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 
 import { computeChore, getStatsRange, splitChoresForHome } from "../../src/lib/dashboard.js";
@@ -15,7 +15,6 @@ test("computeChore marks due today and doneToday correctly", () => {
     bgColor: "#000",
     intervalDays: 1,
     dailyTargetCount: 1,
-    isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
     archived: false,
@@ -58,7 +57,6 @@ test("computeChore keeps initial record as not-done and flags lastRecordIsInitia
     bgColor: "#000",
     intervalDays: 1,
     dailyTargetCount: 1,
-    isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
     archived: false,
@@ -94,13 +92,12 @@ test("computeChore marks overdue items", () => {
 
   const chore = {
     id: "chore-2",
-    title: "換気扇掁E��",
+    title: "換気扇掁E��",
     icon: "wind",
     iconColor: "#fff",
     bgColor: "#000",
     intervalDays: 2,
     dailyTargetCount: 1,
-    isBigTask: true,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
     archived: false,
@@ -140,7 +137,6 @@ test("computeChore ignores future completion records and treats them as pending"
     bgColor: "#000",
     intervalDays: 1,
     dailyTargetCount: 1,
-    isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
     archived: false,
@@ -182,7 +178,6 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
       bgColor: "",
       intervalDays: 1,
       dailyTargetCount: 1,
-      isBigTask: false,
       archived: false,
       defaultAssigneeId: null,
       defaultAssigneeName: null,
@@ -208,7 +203,6 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
       bgColor: "",
       intervalDays: 1,
       dailyTargetCount: 1,
-      isBigTask: true,
       archived: false,
       defaultAssigneeId: null,
       defaultAssigneeName: null,
@@ -231,7 +225,6 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
   const split = splitChoresForHome(chores, now);
   assert.equal(split.todayChores.length, 1);
   assert.equal(split.tomorrowChores.length, 2);
-  assert.equal(split.upcomingBigChores.length, 0);
 });
 
 test("splitChoresForHome keeps doneToday daily chore in both today and tomorrow", () => {
@@ -244,7 +237,6 @@ test("splitChoresForHome keeps doneToday daily chore in both today and tomorrow"
     bgColor: "",
     intervalDays: 1,
     dailyTargetCount: 1,
-    isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
     archived: false,
@@ -281,5 +273,6 @@ test("getStatsRange validates custom range and returns end-of-day", () => {
   assert.equal(valid?.start?.toISOString(), "2026-01-31T15:00:00.000Z");
   assert.equal(valid?.end.toISOString(), "2026-02-10T14:59:59.999Z");
 });
+
 
 

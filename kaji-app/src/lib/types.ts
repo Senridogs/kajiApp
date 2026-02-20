@@ -31,7 +31,6 @@ export type ChoreWithComputed = {
   bgColor: string;
   intervalDays: number;
   dailyTargetCount: number;
-  isBigTask: boolean;
   archived: boolean;
   defaultAssigneeId: string | null;
   defaultAssigneeName: string | null;
@@ -88,7 +87,6 @@ export type StatsChoreUserBreakdown = StatsUserCount & {
 export type StatsChoreCount = {
   choreId: string;
   title: string;
-  isBigTask: boolean;
   count: number;
   userCounts: StatsChoreUserBreakdown[];
 };
@@ -97,7 +95,6 @@ export type StatsResponse = {
   rangeLabel: string;
   choreCounts: StatsChoreCount[];
   userCounts: StatsUserCount[];
-  bigTaskUserCounts: StatsUserCount[];
 };
 
 export type HouseholdReportResponse = {
@@ -149,7 +146,6 @@ export type BootstrapResponse = {
   chores: ChoreWithComputed[];
   todayChores: ChoreWithComputed[];
   tomorrowChores: ChoreWithComputed[];
-  upcomingBigChores: ChoreWithComputed[];
   assignments: ChoreAssignmentEntry[];
   notificationSettings: NotificationSettings | null;
   customIcons: Array<{ id: string; label: string; icon: string; iconColor: string; bgColor: string }>;

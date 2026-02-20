@@ -45,7 +45,6 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
     bgColor: chore.bgColor,
     intervalDays: chore.intervalDays,
     dailyTargetCount: chore.dailyTargetCount,
-    isBigTask: chore.isBigTask,
     archived: chore.archived,
     defaultAssigneeId: chore.defaultAssigneeId ?? null,
     defaultAssigneeName: chore.defaultAssignee?.name ?? null,
@@ -73,9 +72,7 @@ export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()
     (c) =>
       c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || c.doneToday)),
   );
-  const upcomingBigChores: ChoreWithComputed[] = [];
-
-  return { todayChores, tomorrowChores, upcomingBigChores };
+  return { todayChores, tomorrowChores };
 }
 
 export function getStatsRange(
