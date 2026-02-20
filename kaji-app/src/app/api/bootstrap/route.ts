@@ -3,10 +3,10 @@ import { Prisma } from "@prisma/client";
 
 import { computeChore, splitChoresForHome } from "@/lib/dashboard";
 import { ensureDemoDataForHousehold } from "@/lib/dummy-data";
-import { buildHomeProgressByDate } from "@/lib/home-occurrence";
+import { buildOccurrenceReadModelByDate } from "@/lib/occurrence-read-model";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { addDays, buildHomeDateKeys, startOfJstDay } from "@/lib/time";
 
 function emptyBootstrapPayload() {
   return {
@@ -83,10 +83,13 @@ export async function GET() {
         orderBy: { createdAt: "asc" },
         select: { id: true, label: true, icon: true, iconColor: true, bgColor: true },
       }),
-      prisma.choreScheduleOverride.findMany({
-        where: { chore: { householdId: household.id, archived: false } },
-        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-        select: { id: true, choreId: true, date: true, createdAt: true },
+      prisma.choreOccurrence.findMany({
+        where: {
+          status: "pending",
+          chore: { householdId: household.id, archived: false },
+        },
+        orderBy: [{ dateKey: "asc" }, { createdAt: "asc" }],
+        select: { id: true, choreId: true, dateKey: true, createdAt: true },
       }),
     ]);
 
@@ -94,18 +97,30 @@ export async function GET() {
     const homeSplit = splitChoresForHome(computed);
     const todayStart = startOfJstDay(new Date());
     const yesterdayStart = addDays(todayStart, -1);
-    const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrowStart = addDays(todayStart, 2);
+    const homeDateKeyRange = buildHomeDateKeys(todayStart);
     const homeDateKeys = [
-      toJstDateKey(yesterdayStart),
-      toJstDateKey(todayStart),
-      toJstDateKey(tomorrowStart),
+      homeDateKeyRange.yesterday,
+      homeDateKeyRange.today,
+      homeDateKeyRange.tomorrow,
     ];
     const scheduleOverridesByChore = new Map<string, Array<{ id: string; choreId: string; date: string; createdAt: Date }>>();
     for (const override of scheduleOverrides) {
       const list = scheduleOverridesByChore.get(override.choreId) ?? [];
-      list.push(override);
+      list.push({ id: override.id, choreId: override.choreId, date: override.dateKey, createdAt: override.createdAt });
       scheduleOverridesByChore.set(override.choreId, list);
+    }
+    if (scheduleOverridesByChore.size === 0) {
+      const legacyOverrides = await prisma.choreScheduleOverride.findMany({
+        where: { chore: { householdId: household.id, archived: false } },
+        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+        select: { id: true, choreId: true, date: true, createdAt: true },
+      });
+      for (const override of legacyOverrides) {
+        const list = scheduleOverridesByChore.get(override.choreId) ?? [];
+        list.push({ id: override.id, choreId: override.choreId, date: override.date, createdAt: override.createdAt });
+        scheduleOverridesByChore.set(override.choreId, list);
+      }
     }
     const choreIds = computed.map((chore) => chore.id);
     const homeProgressRecords =
@@ -133,22 +148,41 @@ export async function GET() {
           },
         })
         : [];
-    const homeProgressByDate = buildHomeProgressByDate({
-      chores: computed,
+    const homeOccurrenceReadModelByDate = buildOccurrenceReadModelByDate({
       dateKeys: homeDateKeys,
-      scheduleOverridesByChore: new Map(
-        Array.from(scheduleOverridesByChore.entries()).map(([choreId, values]) => [
-          choreId,
-          values.map((value) => ({
-            id: value.id,
-            choreId: value.choreId,
-            date: value.date,
-            createdAt: value.createdAt.toISOString(),
-          })),
-        ]),
-      ),
+      chores: computed.map((chore) => ({
+        id: chore.id,
+        intervalDays: chore.intervalDays,
+        dailyTargetCount: chore.dailyTargetCount,
+        dueAt: chore.dueAt ? new Date(chore.dueAt) : null,
+        scheduleOverrides: (scheduleOverridesByChore.get(chore.id) ?? []).map((override) => ({ date: override.date })),
+      })),
       records: homeProgressRecords,
     });
+    const homeProgressByDate = Object.fromEntries(
+      Object.entries(homeOccurrenceReadModelByDate).map(([dateKey, byChore]) => [
+        dateKey,
+        Object.fromEntries(
+          Object.entries(byChore).map(([choreId, entry]) => [
+            choreId,
+            {
+              total: entry.scheduled,
+              completed: entry.completed,
+              skipped: entry.skipped,
+              pending: entry.pending,
+              latestState:
+                entry.pending > 0
+                  ? "pending"
+                  : entry.completed > 0
+                    ? "done"
+                    : entry.skipped > 0
+                      ? "skipped"
+                      : "pending",
+            },
+          ]),
+        ),
+      ]),
+    );
 
     return NextResponse.json({
       needsRegistration: false,
@@ -172,7 +206,7 @@ export async function GET() {
         notifyCompletion: household.notifyCompletion,
       },
       customIcons,
-      scheduleOverrides: scheduleOverrides.map((override) => ({
+      scheduleOverrides: Array.from(scheduleOverridesByChore.values()).flat().map((override) => ({
         id: override.id,
         choreId: override.choreId,
         date: override.date,
@@ -216,4 +250,3 @@ export async function GET() {
     );
   }
 }
-

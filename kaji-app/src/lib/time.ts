@@ -45,6 +45,15 @@ export function addDateKeyDays(dateKey: string, days: number): string | null {
 
 export function compareDateKey(left: string, right: string): number {
   return left.localeCompare(right);
+export function buildHomeDateKeys(now = new Date()) {
+  const todayStart = startOfJstDay(now);
+  const yesterdayStart = addDays(todayStart, -1);
+  const tomorrowStart = addDays(todayStart, 1);
+  return {
+    today: toJstDateKey(todayStart),
+    yesterday: toJstDateKey(yesterdayStart),
+    tomorrow: toJstDateKey(tomorrowStart),
+  };
 }
 
 export function diffDaysFloor(from: Date, to: Date): number {

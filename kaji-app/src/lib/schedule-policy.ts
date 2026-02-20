@@ -25,30 +25,6 @@ export function sortedDateKeys(dateKeys: string[]) {
   return [...dateKeys].sort((a, b) => a.localeCompare(b));
 }
 
-function removeOneOccurrence(dateKeys: string[], targetDateKey: string) {
-  const next = [...dateKeys];
-  const index = next.findIndex((dateKey) => dateKey === targetDateKey);
-  if (index >= 0) {
-    next.splice(index, 1);
-  }
-  return next;
-}
-
-function mergeTargetDateKey(dateKeys: string[], targetDateKey: string) {
-  let seenTarget = false;
-  const merged: string[] = [];
-  for (const dateKey of dateKeys) {
-    if (dateKey !== targetDateKey) {
-      merged.push(dateKey);
-      continue;
-    }
-    if (seenTarget) continue;
-    seenTarget = true;
-    merged.push(dateKey);
-  }
-  return merged;
-}
-
 export function resolveScheduleWindow(sourceDateKey: string, targetDateKey: string): WindowRange {
   const nowStart = startOfJstDay(new Date());
   const fallbackFrom = toJstDateKey(addDays(nowStart, -PAST_WINDOW_DAYS));
@@ -58,6 +34,8 @@ export function resolveScheduleWindow(sourceDateKey: string, targetDateKey: stri
   return { fromDateKey, toDateKey };
 }
 
+// occurrence テーブルが運用状態の正となるため、このモジュールは
+// 「理論上の定期発生を生成する」責務だけを持つ。
 export function buildRecurrenceDateKeys(params: {
   dueDateKey: string;
   intervalDays: number;
@@ -98,78 +76,4 @@ export function buildRecurrenceDateKeys(params: {
     cursor = addDays(cursor, intervalDays);
   }
   return results;
-}
-
-export function resolveCurrentScheduleDateKeys(params: {
-  overrideDateKeys: string[];
-  dueDateKey: string;
-  intervalDays: number;
-  dailyTargetCount?: number;
-  window: WindowRange;
-}) {
-  const { overrideDateKeys, dueDateKey, intervalDays, window } = params;
-  if (overrideDateKeys.length > 0) {
-    return sortedDateKeys(
-      overrideDateKeys.filter(
-        (dateKey) => dateKey >= window.fromDateKey && dateKey <= window.toDateKey,
-      ),
-    );
-  }
-  return buildRecurrenceDateKeys({
-    dueDateKey,
-    intervalDays,
-    dailyTargetCount: params.dailyTargetCount,
-    fromDateKey: window.fromDateKey,
-    toDateKey: window.toDateKey,
-  });
-}
-
-export function rebuildScheduleDateKeys(params: {
-  currentDateKeys: string[];
-  sourceDateKey: string;
-  targetDateKey: string;
-  recalculateFuture: boolean;
-  mergeIfDuplicate: boolean;
-  intervalDays: number;
-  dailyTargetCount?: number;
-  window: WindowRange;
-}) {
-  const {
-    currentDateKeys,
-    sourceDateKey,
-    targetDateKey,
-    recalculateFuture,
-    mergeIfDuplicate,
-    intervalDays,
-    dailyTargetCount,
-    window,
-  } = params;
-  if (!recalculateFuture) {
-    const moved = removeOneOccurrence(currentDateKeys, sourceDateKey);
-    moved.push(targetDateKey);
-    const normalized = mergeIfDuplicate
-      ? mergeTargetDateKey(moved, targetDateKey)
-      : moved;
-    return sortedDateKeys(normalized);
-  }
-
-  const keepBefore = currentDateKeys.filter((dateKey) => dateKey < sourceDateKey);
-  const toDate = dateKeyToJstDate(window.toDateKey);
-  const futureDates: string[] = [];
-  let cursor = dateKeyToJstDate(targetDateKey);
-  if (!Number.isNaN(cursor.getTime()) && intervalDays > 0) {
-    while (cursor.getTime() <= toDate.getTime()) {
-      const dateKey = toJstDateKey(cursor);
-      const occurrenceCount = Math.max(1, Math.trunc(dailyTargetCount ?? 1));
-      for (let i = 0; i < occurrenceCount; i += 1) {
-        futureDates.push(dateKey);
-      }
-      cursor = addDays(cursor, intervalDays);
-    }
-  }
-  const rebuilt = [...keepBefore, ...futureDates];
-  const normalized = mergeIfDuplicate
-    ? mergeTargetDateKey(rebuilt, targetDateKey)
-    : rebuilt;
-  return sortedDateKeys(normalized);
 }

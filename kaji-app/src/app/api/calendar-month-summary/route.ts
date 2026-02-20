@@ -1,6 +1,6 @@
 import { badRequest, requireSession } from "@/lib/api";
 import {
-  buildCalendarMonthCountsByDate,
+  buildCalendarMonthReadModelByDate,
   isValidMonthKey,
 } from "@/lib/calendar-month-summary";
 import { prisma } from "@/lib/prisma";
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     },
   });
 
-  const countsByDate = buildCalendarMonthCountsByDate(
+  const occurrenceByDate = buildCalendarMonthReadModelByDate(
     month,
     chores.map((chore) => ({
       id: chore.id,
@@ -59,9 +59,17 @@ export async function GET(request: Request) {
     })),
   );
 
+  const countsByDate = Object.fromEntries(
+    Object.entries(occurrenceByDate).map(([dateKey, byChore]) => [
+      dateKey,
+      Object.values(byChore).reduce((sum, entry) => sum + entry.scheduled, 0),
+    ]),
+  );
+
   return Response.json({
     month,
     countsByDate,
+    occurrenceByDate,
     generatedAt: new Date().toISOString(),
   });
 }
