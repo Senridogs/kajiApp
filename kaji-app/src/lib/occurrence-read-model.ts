@@ -21,6 +21,7 @@ export type OccurrenceSourceRecord = {
 export type OccurrenceEntry = {
   scheduled: number;
   completed: number;
+  skipped: number;
   pending: number;
 };
 
@@ -36,6 +37,23 @@ function isScheduledOnDate(dueAt: Date, intervalDays: number, targetDate: Date):
   return diffDays % Math.max(1, intervalDays) === 0;
 }
 
+
+export function countScheduledOccurrencesOnDate(params: {
+  dateKey: string;
+  chore: OccurrenceSourceChore;
+}): number {
+  const { dateKey, chore } = params;
+  const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
+  if (Number.isNaN(targetDate.getTime())) return 0;
+
+  if (chore.scheduleOverrides.length > 0) {
+    return chore.scheduleOverrides.filter((override) => override.date === dateKey).length;
+  }
+
+  if (!chore.dueAt) return 0;
+  if (!isScheduledOnDate(chore.dueAt, chore.intervalDays, targetDate)) return 0;
+  return Math.max(1, Math.trunc(chore.dailyTargetCount ?? 1));
+}
 export function buildOccurrenceReadModelByDate(params: {
   dateKeys: string[];
   chores: OccurrenceSourceChore[];
@@ -63,6 +81,7 @@ export function buildOccurrenceReadModelByDate(params: {
         result[dateKey][chore.id] = {
           scheduled,
           completed: 0,
+          skipped: 0,
           pending: scheduled,
         };
       }
@@ -81,16 +100,22 @@ export function buildOccurrenceReadModelByDate(params: {
       result[effectiveDateKey][record.choreId] ?? {
         scheduled: 0,
         completed: 0,
+        skipped: 0,
         pending: 0,
       };
 
-    current.completed += 1;
-    const consumed = current.completed;
+    if (record.isSkipped) {
+      current.skipped += 1;
+    } else {
+      current.completed += 1;
+    }
+    const consumed = current.completed + current.skipped;
     const total = Math.max(current.scheduled, consumed);
     current.pending = Math.max(0, total - consumed);
     result[effectiveDateKey][record.choreId] = {
       scheduled: total,
       completed: current.completed,
+      skipped: current.skipped,
       pending: current.pending,
     };
   }

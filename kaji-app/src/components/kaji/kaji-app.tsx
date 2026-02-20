@@ -78,6 +78,7 @@ import {
 import {
   buildHomeRowsByDate,
 } from "@/lib/home-occurrence";
+import { countScheduledOccurrencesOnDate as countScheduledOccurrencesOnDateByReadModel } from "@/lib/occurrence-read-model";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const JA_COLLATOR = new Intl.Collator("ja");
@@ -1026,8 +1027,20 @@ export function KajiApp() {
     if (homeEntry) {
       return homeEntry.total;
     }
-    return 0;
-  }, [boot?.homeProgressByDate, calendarMonthSummary?.occurrenceByDate]);
+
+    const chore = chores.find((item) => item.id === choreId);
+    if (!chore) return 0;
+    return countScheduledOccurrencesOnDateByReadModel({
+      dateKey,
+      chore: {
+        id: chore.id,
+        intervalDays: chore.intervalDays,
+        dailyTargetCount: chore.dailyTargetCount,
+        dueAt: chore.dueAt ? new Date(chore.dueAt) : null,
+        scheduleOverrides: (scheduleOverridesByChore.get(chore.id) ?? []).map((override) => ({ date: override.date })),
+      },
+    });
+  }, [boot?.homeProgressByDate, calendarMonthSummary?.occurrenceByDate, chores, scheduleOverridesByChore]);
 
   const assignmentDaysByTab = useMemo(() => {
     const today = startOfJstDay(new Date());

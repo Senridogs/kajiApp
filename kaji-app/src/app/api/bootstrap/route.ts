@@ -153,9 +153,16 @@ export async function GET() {
             {
               total: entry.scheduled,
               completed: entry.completed,
-              skipped: 0,
+              skipped: entry.skipped,
               pending: entry.pending,
-              latestState: entry.pending > 0 ? "pending" : entry.completed > 0 ? "done" : "pending",
+              latestState:
+                entry.pending > 0
+                  ? "pending"
+                  : entry.completed > 0
+                    ? "done"
+                    : entry.skipped > 0
+                      ? "skipped"
+                      : "pending",
             },
           ]),
         ),

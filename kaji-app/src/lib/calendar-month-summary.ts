@@ -79,7 +79,7 @@ export function buildCalendarMonthReadModelByDate(
     if (!chore.latestRecord || chore.latestRecord.isSkipped) continue;
     const dateKey = toJstDateKey(chore.latestRecord.performedAt);
     if (!(dateKey in readModel)) continue;
-    const current = readModel[dateKey][chore.id] ?? { scheduled: 0, completed: 0, pending: 0 };
+    const current = readModel[dateKey][chore.id] ?? { scheduled: 0, completed: 0, skipped: 0, pending: 0 };
     current.scheduled += 1;
     readModel[dateKey][chore.id] = current;
   }
