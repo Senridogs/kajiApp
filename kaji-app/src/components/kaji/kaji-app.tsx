@@ -4881,20 +4881,18 @@ export function KajiApp() {
         <div className="space-y-4" style={{ paddingTop: getTabHeaderHeight("records") }}>
           <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
-            <button
-              type="button"
-              data-tap-priority-zone="true"
-              onClick={() => {
-                if (process.env.NODE_ENV !== "production") {
-                  console.debug("[records] my-records button onClick reached");
-                }
-                openStandaloneScreen("my-records", "records");
-              }}
-              className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
-            >
-              <span className="text-[14px] font-semibold text-[#202124]">わたしのきろくを見る</span>
-              <ChevronRight size={16} color="#9AA0A6" />
-            </button>
+            <div data-tap-priority-zone="true" className="-mx-1 px-1 py-1">
+              <button
+                type="button"
+                onClick={() => {
+                  openStandaloneScreen("my-records", "records");
+                }}
+                className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
+              >
+                <span className="text-[14px] font-semibold text-[#202124]">わたしのきろくを見る</span>
+                <ChevronRight size={16} color="#9AA0A6" />
+              </button>
+            </div>
             {renderTimelineRecords(groupedTimelineRecords, "家事を完了するとここにタイムライン表示されます。")}
           </div>
         </div>
