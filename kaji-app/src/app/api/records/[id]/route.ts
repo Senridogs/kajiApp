@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { badRequest, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { OCCURRENCE_SOURCE_OVERRIDE, ensureOccurrenceBackfill } from "@/lib/chore-occurrence";
 import { touchHousehold } from "@/lib/sync";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
@@ -63,15 +64,19 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
       });
     }
 
-    // If this chore is currently driven by schedule overrides, restore one
-    // occurrence on the undone day.
-    const hasOverrides = await tx.choreScheduleOverride.findFirst({
-      where: { choreId: record.choreId },
+    await ensureOccurrenceBackfill(tx, record.choreId);
+    const hasPendingOccurrences = await tx.choreOccurrence.findFirst({
+      where: { choreId: record.choreId, status: "pending" },
       select: { id: true },
     });
-    if (hasOverrides || chore.dailyTargetCount > 1) {
-      await tx.choreScheduleOverride.create({
-        data: { choreId: record.choreId, date: sourceDateKey },
+    if (hasPendingOccurrences || chore.dailyTargetCount > 1) {
+      await tx.choreOccurrence.create({
+        data: {
+          choreId: record.choreId,
+          dateKey: sourceDateKey,
+          status: "pending",
+          sourceType: OCCURRENCE_SOURCE_OVERRIDE,
+        },
       });
     }
   });

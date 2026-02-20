@@ -9,6 +9,19 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   if (!session) return response;
   const { id } = await params;
 
+  const occurrence = await prisma.choreOccurrence.findFirst({
+    where: { id, status: "pending", chore: { householdId: session.householdId } },
+    select: { id: true },
+  });
+  if (occurrence) {
+    await prisma.choreOccurrence.update({
+      where: { id: occurrence.id },
+      data: { status: "consumed" },
+    });
+    await touchHousehold(session.householdId);
+    return Response.json({ ok: true });
+  }
+
   const override = await prisma.choreScheduleOverride.findFirst({
     where: { id, chore: { householdId: session.householdId } },
     select: { id: true },

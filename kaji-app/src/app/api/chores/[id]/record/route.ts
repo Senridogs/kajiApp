@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { buildCompletionPayload, canSendPush, sendWebPush } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
-import {
-  isDateKey,
-  rebuildScheduleDateKeys,
-  resolveCurrentScheduleDateKeys,
-  resolveScheduleWindow,
-} from "@/lib/schedule-policy";
+import { isDateKey } from "@/lib/schedule-policy";
 import { touchHousehold } from "@/lib/sync";
+import {
+  OCCURRENCE_SOURCE_OVERRIDE,
+  consumePendingOccurrences,
+  ensureOccurrenceBackfill,
+} from "@/lib/chore-occurrence";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 type Body = {
@@ -30,35 +29,6 @@ const SKIP_COUNT_REQUIRES_SOURCE_DATE = "skipCount requires sourceDate.";
 const SKIP_COUNT_ONLY_FOR_SKIP = "skipCount can be used only when skipped=true.";
 const SKIP_COUNT_INVALID = "skipCount must be an integer greater than or equal to 1.";
 const SKIP_COUNT_OUT_OF_RANGE = "skipCount exceeds pending occurrences on sourceDate.";
-
-function removeOneOccurrence(dateKeys: string[], targetDateKey: string) {
-  const next = [...dateKeys];
-  const index = next.findIndex((dateKey) => dateKey === targetDateKey);
-  if (index >= 0) {
-    next.splice(index, 1);
-  }
-  return next;
-}
-
-async function consumeOverrideOccurrencesOnDate(
-  tx: Prisma.TransactionClient,
-  choreId: string,
-  dateKey: string,
-  count: number,
-) {
-  let consumed = 0;
-  for (let i = 0; i < count; i += 1) {
-    const target = await tx.choreScheduleOverride.findFirst({
-      where: { choreId, date: dateKey },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { id: true },
-    });
-    if (!target) break;
-    await tx.choreScheduleOverride.delete({ where: { id: target.id } });
-    consumed += 1;
-  }
-  return consumed;
-}
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { session, response } = await requireSession();
@@ -109,8 +79,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const skipped = body.skipped ?? false;
-  const recalculateFuture = body?.recalculateFuture === true;
-  const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
+    const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
   const requestedSkipCount = body?.skipCount === undefined ? 1 : Number(body.skipCount);
   if (body?.skipCount !== undefined && !skipped) {
     return badRequest(SKIP_COUNT_ONLY_FOR_SKIP);
@@ -125,39 +94,20 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const consumeCount = skipped ? requestedSkipCount : 1;
-  const isFuturePerformedAt = requestedPerformedAt >= tomorrowStart;
-  const performedAt = requestedPerformedAt;
+    const performedAt = requestedPerformedAt;
   const targetDateKey = toJstDateKey(startOfJstDay(performedAt));
 
   let record: { id: string; performedAt: Date; memo: string | null };
   try {
     record = await prisma.$transaction(async (tx) => {
-      let currentOverrides: Array<{ date: string }> = [];
-      let currentDateKeys: string[] = [];
-
       if (sourceDate) {
-        currentOverrides = await tx.choreScheduleOverride.findMany({
-          where: { choreId: chore.id },
-          orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-          select: { date: true },
+        await ensureOccurrenceBackfill(tx, chore.id);
+        const sourcePendingCount = await tx.choreOccurrence.count({
+          where: { choreId: chore.id, dateKey: sourceDate, status: "pending" },
         });
-
-        const dueBase = chore.records[0]?.performedAt ?? chore.createdAt;
-        const dueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
-        const window = resolveScheduleWindow(sourceDate, targetDateKey);
-        currentDateKeys = resolveCurrentScheduleDateKeys({
-          overrideDateKeys: currentOverrides.map((entry) => entry.date),
-          dueDateKey,
-          intervalDays: chore.intervalDays,
-          dailyTargetCount: chore.dailyTargetCount,
-          window,
-        });
-
-        if (!currentDateKeys.includes(sourceDate)) {
+        if (sourcePendingCount === 0) {
           throw new Error(SOURCE_DATE_NOT_SCHEDULED);
         }
-
-        const sourcePendingCount = currentDateKeys.filter((dateKey) => dateKey === sourceDate).length;
         if (consumeCount > sourcePendingCount) {
           throw new Error(SKIP_COUNT_OUT_OF_RANGE);
         }
@@ -185,49 +135,26 @@ export async function POST(request: Request, { params }: RouteParams) {
       const latestCreated = createdRecords[createdRecords.length - 1]!;
 
       if (sourceDate) {
-        const shouldApplySchedulePolicy =
-          sourceDate !== targetDateKey ||
-          isFuturePerformedAt ||
-          currentOverrides.length > 0 ||
-          chore.dailyTargetCount > 1 ||
-          consumeCount > 1;
-
-        if (!shouldApplySchedulePolicy) {
-          await consumeOverrideOccurrencesOnDate(tx, chore.id, targetDateKey, consumeCount);
-          return latestCreated;
+        const consumed = await consumePendingOccurrences(tx, chore.id, sourceDate, consumeCount);
+        if (consumed < consumeCount) {
+          throw new Error(SKIP_COUNT_OUT_OF_RANGE);
         }
 
-        const window = resolveScheduleWindow(sourceDate, targetDateKey);
-        let nextDateKeys = [...currentDateKeys];
-        for (let i = 0; i < consumeCount; i += 1) {
-          if (!recalculateFuture && sourceDate === targetDateKey) {
-            nextDateKeys = removeOneOccurrence(nextDateKeys, targetDateKey);
-            continue;
-          }
-          nextDateKeys = rebuildScheduleDateKeys({
-            currentDateKeys: nextDateKeys,
-            sourceDateKey: sourceDate,
-            targetDateKey,
-            recalculateFuture,
-            mergeIfDuplicate,
-            intervalDays: chore.intervalDays,
-            dailyTargetCount: chore.dailyTargetCount,
-            window,
-          });
-          nextDateKeys = removeOneOccurrence(nextDateKeys, targetDateKey);
-        }
-
-        await tx.choreScheduleOverride.deleteMany({ where: { choreId: chore.id } });
-        if (nextDateKeys.length > 0) {
-          await tx.choreScheduleOverride.createMany({
-            data: nextDateKeys.map((dateKey) => ({ choreId: chore.id, date: dateKey })),
+        if (sourceDate !== targetDateKey && !mergeIfDuplicate) {
+          await tx.choreOccurrence.createMany({
+            data: Array.from({ length: consumeCount }).map(() => ({
+              choreId: chore.id,
+              dateKey: targetDateKey,
+              status: "pending",
+              sourceType: OCCURRENCE_SOURCE_OVERRIDE,
+            })),
           });
         }
         return latestCreated;
       }
 
-      // Backward-compatible fallback: consume one override on performed day.
-      await consumeOverrideOccurrencesOnDate(tx, chore.id, targetDateKey, 1);
+      await ensureOccurrenceBackfill(tx, chore.id);
+      await consumePendingOccurrences(tx, chore.id, targetDateKey, 1);
       return latestCreated;
     });
   } catch (error: unknown) {
