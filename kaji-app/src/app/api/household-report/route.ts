@@ -15,11 +15,10 @@ function addMonths(monthKey: string, delta: number) {
 
 function monthRange(monthKey: string) {
   const [year, month] = monthKey.split("-").map(Number);
-  const start = parseDateKey(`${year}-${String(month).padStart(2, "0")}-01`);
-  if (!start) return null;
+  const start = new Date(`${year}-${String(month).padStart(2, "0")}-01T00:00:00+09:00`);
+  if (Number.isNaN(start.getTime())) return null;
   const nextMonth = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
-  const end = parseDateKey(nextMonth);
-  if (!end) return null;
+  const end = new Date(`${nextMonth}T00:00:00+09:00`);
   end.setMilliseconds(end.getMilliseconds() - 1);
   return { start, end };
 }
