@@ -1,7 +1,7 @@
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { addDays, toJstDateKey } from "@/lib/time";
+import { buildOccurrenceReadModelByDate } from "@/lib/occurrence-read-model";
 
 const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 export type CalendarSummaryChoreSource = {
   id: string;
@@ -37,25 +37,6 @@ function monthDateKeys(monthInfo: MonthInfo): string[] {
   });
 }
 
-function monthDates(monthInfo: MonthInfo): Array<{ dateKey: string; date: Date }> {
-  return monthDateKeys(monthInfo).map((dateKey) => ({
-    dateKey,
-    date: startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`)),
-  }));
-}
-
-function scheduledDayOffset(dueAt: Date, targetDate: Date): number {
-  const dueStart = startOfJstDay(dueAt);
-  const targetStart = startOfJstDay(targetDate);
-  return Math.floor((targetStart.getTime() - dueStart.getTime()) / DAY_IN_MS);
-}
-
-function isScheduledOnDate(dueAt: Date, intervalDays: number, targetDate: Date): boolean {
-  const diffDays = scheduledDayOffset(dueAt, targetDate);
-  if (diffDays < 0) return false;
-  return diffDays % Math.max(1, intervalDays) === 0;
-}
-
 export function isValidMonthKey(month: string): boolean {
   return parseMonthKey(month) !== null;
 }
@@ -64,51 +45,44 @@ export function buildCalendarMonthCountsByDate(
   month: string,
   chores: CalendarSummaryChoreSource[],
 ): Record<string, number> {
+  const readModel = buildCalendarMonthReadModelByDate(month, chores);
+  return Object.fromEntries(
+    Object.entries(readModel).map(([dateKey, byChore]) => {
+      const total = Object.values(byChore).reduce((sum, entry) => sum + entry.scheduled, 0);
+      return [dateKey, total];
+    }),
+  );
+}
+
+export function buildCalendarMonthReadModelByDate(
+  month: string,
+  chores: CalendarSummaryChoreSource[],
+) {
   const monthInfo = parseMonthKey(month);
   if (!monthInfo) {
     throw new Error(`Invalid month key: ${month}`);
   }
-
-  const dateEntries = monthDates(monthInfo);
-  const countsByDate = Object.fromEntries(
-    dateEntries.map((entry) => [entry.dateKey, 0]),
-  ) as Record<string, number>;
+  const dateKeys = monthDateKeys(monthInfo);
+  const readModel = buildOccurrenceReadModelByDate({
+    dateKeys,
+    chores: chores.map((chore) => ({
+      id: chore.id,
+      intervalDays: chore.intervalDays,
+      dailyTargetCount: chore.dailyTargetCount,
+      dueAt: addDays(chore.latestRecord?.performedAt ?? chore.createdAt, chore.intervalDays),
+      scheduleOverrides: chore.scheduleOverrides,
+    })),
+    records: [],
+  });
 
   for (const chore of chores) {
-    const countByDateForChore = new Map<string, number>();
-    const addCount = (dateKey: string) => {
-      if (!(dateKey in countsByDate)) return;
-      countByDateForChore.set(dateKey, (countByDateForChore.get(dateKey) ?? 0) + 1);
-    };
-
-    if (chore.latestRecord && !chore.latestRecord.isSkipped) {
-      const performedDateKey = toJstDateKey(startOfJstDay(chore.latestRecord.performedAt));
-      addCount(performedDateKey);
-    }
-
-    const overrideKeys = chore.scheduleOverrides
-      .map((override) => override.date)
-      .filter((dateKey) => dateKey in countsByDate);
-
-    if (overrideKeys.length > 0) {
-      overrideKeys.forEach((dateKey) => addCount(dateKey));
-    } else {
-      const dueBase = chore.latestRecord?.performedAt ?? chore.createdAt;
-      const dueAt = addDays(dueBase, chore.intervalDays);
-      const occurrenceCount = Math.max(1, Math.trunc(chore.dailyTargetCount ?? 1));
-      for (const entry of dateEntries) {
-        if (isScheduledOnDate(dueAt, chore.intervalDays, entry.date)) {
-          for (let i = 0; i < occurrenceCount; i += 1) {
-            addCount(entry.dateKey);
-          }
-        }
-      }
-    }
-
-    countByDateForChore.forEach((count, dateKey) => {
-      countsByDate[dateKey] += count;
-    });
+    if (!chore.latestRecord || chore.latestRecord.isSkipped) continue;
+    const dateKey = toJstDateKey(chore.latestRecord.performedAt);
+    if (!(dateKey in readModel)) continue;
+    const current = readModel[dateKey][chore.id] ?? { scheduled: 0, completed: 0, pending: 0 };
+    current.scheduled += 1;
+    readModel[dateKey][chore.id] = current;
   }
 
-  return countsByDate;
+  return readModel;
 }

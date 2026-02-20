@@ -82,3 +82,19 @@ test("duplicate override dates are counted as separate occurrences", () => {
 
   assert.equal(counts["2026-03-10"], 3);
 });
+
+import {
+  OCCURRENCE_TEST_DATE_KEYS,
+  OCCURRENCE_TEST_MONTH,
+  calendarFixtureChores,
+} from "./fixtures/occurrence-consistency.fixture.mts";
+
+test("shared fixture count matches expected scheduled occurrences", () => {
+  const counts = buildCalendarMonthCountsByDate(OCCURRENCE_TEST_MONTH, calendarFixtureChores);
+  const picked = Object.fromEntries(OCCURRENCE_TEST_DATE_KEYS.map((dateKey) => [dateKey, counts[dateKey] ?? 0]));
+  assert.deepEqual(picked, {
+    "2026-03-05": 1,
+    "2026-03-10": 1,
+    "2026-03-12": 1,
+  });
+});

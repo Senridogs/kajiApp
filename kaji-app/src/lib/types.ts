@@ -157,5 +157,6 @@ export type BootstrapResponse = {
 export type CalendarMonthSummaryResponse = {
   month: string;
   countsByDate: Record<string, number>;
+  occurrenceByDate: Record<string, Record<string, { scheduled: number; completed: number; pending: number }>>;
   generatedAt: string;
 };

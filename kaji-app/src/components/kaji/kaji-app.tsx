@@ -92,7 +92,6 @@ const HOME_SECTION_STICKY_FALLBACK_TOP = 60;
 const TAB_HEADER_HEIGHT_FALLBACK = 72;
 const ASSIGNMENT_SHEET_SLIDE_MS = 240;
 const ASSIGNMENT_BACK_SWIPE_EDGE_PX = 72;
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PULL_REFRESH_TRIGGER_PX = 74;
 const PULL_REFRESH_MAX_PX = 128;
 const PULL_REFRESH_HOLD_PX = 28;
@@ -350,26 +349,6 @@ function formatDateKeyMonthDayWeekday(dateKey: string) {
   const day = jstDate.getUTCDate();
   const weekday = WEEKDAY_SHORT[jstDate.getUTCDay()];
   return `${month}/${day}(${weekday})`;
-}
-
-function scheduledDayOffset(
-  chore: Pick<ChoreWithComputed, "dueAt">,
-  targetDate: Date,
-) {
-  if (!chore.dueAt) return null;
-  const dueStart = startOfJstDay(new Date(chore.dueAt));
-  if (Number.isNaN(dueStart.getTime())) return null;
-  const targetStart = startOfJstDay(targetDate);
-  return Math.floor((targetStart.getTime() - dueStart.getTime()) / DAY_IN_MS);
-}
-
-function isScheduledOnDate(
-  chore: Pick<ChoreWithComputed, "dueAt" | "intervalDays">,
-  targetDate: Date,
-) {
-  const diffDays = scheduledDayOffset(chore, targetDate);
-  if (diffDays === null || diffDays < 0) return false;
-  return diffDays % Math.max(1, chore.intervalDays) === 0;
 }
 
 function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
@@ -1039,18 +1018,16 @@ export function KajiApp() {
   }, [scheduleOverrides]);
 
   const countScheduledOccurrencesOnDate = useCallback((choreId: string, dateKey: string) => {
-    const chore = chores.find((item) => item.id === choreId);
-    if (!chore) return 0;
-
-    const overrideList = scheduleOverridesByChore.get(choreId) ?? [];
-    if (overrideList.length > 0) {
-      return overrideList.filter((override) => override.date === dateKey).length;
+    const monthEntry = calendarMonthSummary?.occurrenceByDate?.[dateKey]?.[choreId];
+    if (monthEntry) {
+      return monthEntry.scheduled;
     }
-
-    const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-    if (Number.isNaN(targetDate.getTime())) return 0;
-    return isScheduledOnDate(chore, targetDate) ? Math.max(1, chore.dailyTargetCount) : 0;
-  }, [chores, scheduleOverridesByChore]);
+    const homeEntry = boot?.homeProgressByDate?.[dateKey]?.[choreId];
+    if (homeEntry) {
+      return homeEntry.total;
+    }
+    return 0;
+  }, [boot?.homeProgressByDate, calendarMonthSummary?.occurrenceByDate]);
 
   const assignmentDaysByTab = useMemo(() => {
     const today = startOfJstDay(new Date());
@@ -1133,74 +1110,36 @@ export function KajiApp() {
     return items;
   }, [manageDetailTarget, scheduleOverridesByChore]);
 
-  const calendarWindowStart = useMemo(
-    () => startOfJstWeekMonday(addDays(calendarMonthCursor, -31)),
-    [calendarMonthCursor],
-  );
-  const calendarWindowEnd = useMemo(
-    () => addDays(calendarWindowStart, 130),
-    [calendarWindowStart],
-  );
   const calendarMonthKey = useMemo(
     () => toMonthKey(calendarMonthCursor),
     [calendarMonthCursor],
   );
   const calendarScheduleMap = useMemo(() => {
     const map = new Map<string, ChoreWithComputed[]>();
-    const addToMap = (dateKey: string, chore: ChoreWithComputed) => {
-      const current = map.get(dateKey) ?? [];
-      current.push(chore);
-      map.set(dateKey, current);
-    };
+    const choreById = new Map(chores.map((chore) => [chore.id, chore]));
+    const occurrenceByDate = calendarMonthSummary?.occurrenceByDate ?? {};
 
-    chores.forEach((chore) => {
-      // Show the latest completed day on calendar as completed (initial seed records are excluded).
-      if (chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial) {
-        const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
-        if (
-          performedDateKey >= toJstDateKey(calendarWindowStart) &&
-          performedDateKey <= toJstDateKey(calendarWindowEnd)
-        ) {
-          addToMap(performedDateKey, chore);
+    Object.entries(occurrenceByDate).forEach(([dateKey, byChore]) => {
+      const items: ChoreWithComputed[] = [];
+      Object.entries(byChore).forEach(([choreId, entry]) => {
+        const chore = choreById.get(choreId);
+        if (!chore) return;
+        for (let i = 0; i < entry.scheduled; i += 1) {
+          items.push(chore);
         }
-      }
-
-      const overrideList = (scheduleOverridesByChore.get(chore.id) ?? []).filter((override) => {
-        if (override.date < toJstDateKey(calendarWindowStart)) return false;
-        if (override.date > toJstDateKey(calendarWindowEnd)) return false;
-        return true;
       });
-
-      if (overrideList.length > 0) {
-        const overrideDateCounts = new Map<string, number>();
-        overrideList.forEach((ov) => {
-          overrideDateCounts.set(ov.date, (overrideDateCounts.get(ov.date) ?? 0) + 1);
-        });
-        overrideDateCounts.forEach((count, dKey) => {
-          for (let i = 0; i < count; i += 1) addToMap(dKey, chore);
-        });
-        return;
-      }
-
-      for (let day = calendarWindowStart; day <= calendarWindowEnd; day = addDays(day, 1)) {
-        const dKey = toJstDateKey(day);
-        if (!isScheduledOnDate(chore, day)) continue;
-        const occurrenceCount = Math.max(1, chore.dailyTargetCount);
-        for (let i = 0; i < occurrenceCount; i += 1) {
-          addToMap(dKey, chore);
-        }
-      }
-    });
-
-    map.forEach((items) => {
       items.sort((a, b) => {
         const titleDiff = JA_COLLATOR.compare(a.title, b.title);
         if (titleDiff !== 0) return titleDiff;
         return JA_COLLATOR.compare(a.id, b.id);
       });
+      if (items.length > 0) {
+        map.set(dateKey, items);
+      }
     });
+
     return map;
-  }, [calendarWindowEnd, calendarWindowStart, chores, scheduleOverridesByChore]);
+  }, [calendarMonthSummary?.occurrenceByDate, chores]);
 
   const calendarMonthGridDates = useMemo(() => {
     const monthStart = startOfJstDay(new Date(calendarMonthCursor));
