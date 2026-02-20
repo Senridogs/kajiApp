@@ -2333,9 +2333,18 @@ export function KajiApp() {
   const handleChorePointerDown = useCallback(
     (chore: ChoreWithComputed, sourceDateKey: string, event: React.PointerEvent<HTMLElement>) => {
       if (!event.isPrimary) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
       const { clientX: startX, clientY: startY } = event;
       touchDragInfoRef.current = { active: false, chore, sourceDateKey, startX, startY };
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (event.pointerType === "mouse") {
+        touchDragInfoRef.current.active = true;
+        suppressChipClickRef.current = true;
+        beginChoreDrag(chore, sourceDateKey);
+        setTouchDragging(true);
+        setTouchDragPos({ x: startX, y: startY });
+        return;
+      }
       longPressTimerRef.current = window.setTimeout(() => {
         if (!touchDragInfoRef.current) return;
         touchDragInfoRef.current.active = true;
@@ -2589,18 +2598,6 @@ export function KajiApp() {
       shiftCalendarWeek(direction);
     }
   }, [calendarExpanded, shiftCalendarMonth, shiftCalendarWeek]);
-
-  const shiftTargetDateByWeek = useCallback((direction: -1 | 1) => {
-    const source = dragSourceDateKey ?? toJstDateKey(startOfJstDay(new Date()));
-    const sourceDate = startOfJstDay(new Date(`${source}T00:00:00+09:00`));
-    const jstDay = new Date(sourceDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
-    const weekDayIndex = jstDay === 0 ? 6 : jstDay - 1;
-    // Use the source date's own week start (not calendarWeekStart) so that week-nav buttons
-    // always move relative to the drag source even when the month calendar cursor diverges.
-    const sourceWeekStart = startOfJstWeekMonday(sourceDate);
-    const target = addDays(sourceWeekStart, direction * 7 + weekDayIndex);
-    return toJstDateKey(target);
-  }, [dragSourceDateKey]);
 
   const submitCalendarQuickCompletion = useCallback(async ({
     chore,
@@ -4419,26 +4416,6 @@ export function KajiApp() {
                       key={section.key}
                       data-drop-date={sectionDateKey}
                       className={`space-y-2 rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[#EEF4FE] px-1 py-1" : ""}`}
-                      onDragOver={(event) => {
-                        if (!draggingChore) return;
-                        event.preventDefault();
-                        setDragTargetDateKey(sectionDateKey);
-                        setHomeDropTarget(null);
-                      }}
-                      onDragLeave={() => {
-                        setDragTargetDateKey((prev) => (prev === sectionDateKey ? null : prev));
-                        setHomeDropTarget(null);
-                      }}
-                      onDrop={(event) => {
-                        if (!draggingChore) return;
-                        event.preventDefault();
-                        setHomeDropTarget(null);
-                        if (dragSourceDateKey === sectionDateKey) {
-                          clearDragState();
-                          return;
-                        }
-                        void dropDraggedChoreToDate(sectionDateKey);
-                      }}
                     >
                       <div
                         className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
@@ -4469,54 +4446,11 @@ export function KajiApp() {
                           return (
                             <div
                               key={homeRowKey}
-                              draggable
                               data-home-drop-date={sectionDateKey}
                               data-home-drop-chore-id={chore.id}
                               className={`${showDropBefore ? "border-t-2 border-[#1A73E8] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[#1A73E8] pb-1" : ""}`}
-                              onDragStart={(event) => {
-                                beginChoreDrag(displayChore, sectionDateKey);
-                                event.dataTransfer.effectAllowed = "move";
-                                event.dataTransfer.setData("text/plain", chore.id);
-                              }}
-                              onDragOver={(event) => {
-                                if (!draggingChore) return;
-                                event.preventDefault();
-                                event.stopPropagation();
-                                const position = resolveDropPosition(event.clientY, event.currentTarget);
-                                setDragTargetDateKey(sectionDateKey);
-                                setHomeDropTarget({
-                                  targetDateKey: sectionDateKey,
-                                  targetChoreId: chore.id,
-                                  position,
-                                });
-                              }}
-                              onDragLeave={(event) => {
-                                event.stopPropagation();
-                                setHomeDropTarget((previous) => {
-                                  if (
-                                    previous &&
-                                    previous.targetDateKey === sectionDateKey &&
-                                    previous.targetChoreId === chore.id
-                                  ) {
-                                    return null;
-                                  }
-                                  return previous;
-                                });
-                              }}
-                              onDrop={(event) => {
-                                if (!draggingChore) return;
-                                event.preventDefault();
-                                event.stopPropagation();
-                                const position = resolveDropPosition(event.clientY, event.currentTarget);
-                                handleHomeDrop({
-                                  targetDateKey: sectionDateKey,
-                                  targetChoreId: chore.id,
-                                  position,
-                                });
-                              }}
-                              onDragEnd={clearDragState}
                               onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
-                              style={{ touchAction: "none" }}
+                              style={{ touchAction: "pan-y" }}
                             >
                               <HomeTaskRow
                                 chore={displayChore}
@@ -4586,12 +4520,6 @@ export function KajiApp() {
         year: "numeric",
         month: "long",
       }).format(calendarMonthCursor);
-      const selectedDate = startOfJstDay(new Date(`${calendarSelectedDateKey}T00:00:00+09:00`));
-      const selectedDateJst = new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000);
-      const selectedDateLabel = `${WEEKDAY_SHORT[selectedDateJst.getUTCDay()]} ${selectedDateJst.getUTCDate()}`;
-      const previousWeekTarget = shiftTargetDateByWeek(-1);
-      const nextWeekTarget = shiftTargetDateByWeek(1);
-
       const renderCalendarChip = (chore: ChoreWithComputed, dateKey: string, chipIndex: number) => {
         const ChipIcon = iconByName(chore.icon);
         const performerUser = chore.lastPerformerId
@@ -4621,16 +4549,9 @@ export function KajiApp() {
               if (suppressChipClickRef.current) { suppressChipClickRef.current = false; return; }
               openReschedule(chore, dateKey);
             }}
-            draggable
-            onDragStart={(event) => {
-              beginChoreDrag(chore, dateKey);
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", chore.id);
-            }}
-            onDragEnd={clearDragState}
             onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
             className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
-            style={{ touchAction: "none", ...doneStyle }}
+            style={{ touchAction: "pan-y", ...doneStyle }}
           >
             <ChipIcon size={13} color={chore.iconColor} />
             <span>{chore.title}</span>
@@ -4770,11 +4691,6 @@ export function KajiApp() {
             {draggingChore ? (
               <div
                 data-drag-navigate="prev-week"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  void dropDraggedChoreToDate(previousWeekTarget);
-                }}
                 className="rounded-[12px] border border-dashed border-[#F9AB00] bg-[#FFF8E8] px-3 py-2 text-center text-[12px] font-bold text-[#B06000]"
               >
                 <span data-drag-navigate="prev-week">↑ ここに乗せると前の週に移動</span>
@@ -4791,18 +4707,6 @@ export function KajiApp() {
                     className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[#EEF4FE]" : entry.dateKey === calendarSelectedDateKey ? "bg-[#F5F9FF]" : ""}`}
                     onClick={(event) => {
                       handleCalendarSurfaceTap(event, entry.dateKey);
-                    }}
-                    onDragOver={(event) => {
-                      if (!draggingChore) return;
-                      event.preventDefault();
-                      setDragTargetDateKey(entry.dateKey);
-                    }}
-                    onDragLeave={() => {
-                      setDragTargetDateKey((prev) => (prev === entry.dateKey ? null : prev));
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      void dropDraggedChoreToDate(entry.dateKey);
                     }}
                   >
                     <div className="flex items-center gap-2">
@@ -4830,11 +4734,6 @@ export function KajiApp() {
             {draggingChore ? (
               <div
                 data-drag-navigate="next-week"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  void dropDraggedChoreToDate(nextWeekTarget);
-                }}
                 className="rounded-[12px] border border-dashed border-[#34A853] bg-[#E8F5E9] px-3 py-2 text-center text-[12px] font-bold text-[#1E8E3E]"
               >
                 <span data-drag-navigate="next-week">↓ ここに乗せると次の週に移動</span>
@@ -5456,6 +5355,13 @@ export function KajiApp() {
       <section
         className="relative flex-1 overflow-hidden overscroll-y-none"
         onTouchStart={(e) => {
+          const dragGestureActive = Boolean(touchDragInfoRef.current?.active) || Boolean(draggingChore);
+          if (dragGestureActive) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchCancel();
+            sectionSwipeSuppressedRef.current = false;
+            return;
+          }
           const t = e.touches[0];
           sectionTouchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
           const target = e.target as HTMLElement | null;
@@ -5472,6 +5378,12 @@ export function KajiApp() {
           assignmentEdgeSwipe.onTouchStart(e);
         }}
         onTouchMove={(e) => {
+          const dragGestureActive = Boolean(touchDragInfoRef.current?.active) || Boolean(draggingChore);
+          if (dragGestureActive) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchCancel();
+            return;
+          }
           if (sectionSwipeSuppressedRef.current) return;
           const start = sectionTouchStartRef.current;
           const t = e.touches[0];
@@ -5492,6 +5404,12 @@ export function KajiApp() {
           assignmentEdgeSwipe.onTouchMove(e);
         }}
         onTouchEnd={(e) => {
+          const dragGestureActive = Boolean(touchDragInfoRef.current?.active) || Boolean(draggingChore);
+          if (dragGestureActive) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchCancel();
+            return;
+          }
           sectionTouchStartRef.current = null;
           if (sectionSwipeSuppressedRef.current) {
             sectionSwipeSuppressedRef.current = false;
