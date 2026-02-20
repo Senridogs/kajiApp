@@ -19,7 +19,6 @@ type Body = {
   mergeIfDuplicate?: boolean;
   sourceRecordId?: string;
   mode?: "move" | "add";
-  allowDuplicate?: boolean;
 };
 
 function removeOneOccurrence(dateKeys: string[], targetDateKey: string) {
@@ -62,7 +61,17 @@ function isDuplicateScheduleOverrideError(error: unknown) {
 }
 
 const DUPLICATE_SCHEDULE_MESSAGE = "その日には同じ家事がすでに登録されています。";
-const DUPLICATE_INDEX_MISMATCH_CODE = "SCHEDULE_OVERRIDE_DUPLICATE_INDEX_CONFLICT";
+const DUPLICATE_SCHEDULE_CODE = "SCHEDULE_OVERRIDE_DUPLICATE";
+
+function duplicateScheduleConflictResponse() {
+  return Response.json(
+    {
+      error: DUPLICATE_SCHEDULE_MESSAGE,
+      code: DUPLICATE_SCHEDULE_CODE,
+    },
+    { status: 409 },
+  );
+}
 
 function moveDateKeepingTimeOfDay(
   originalPerformedAt: Date,
@@ -90,7 +99,6 @@ export async function POST(request: Request) {
   const mode = body?.mode;
   const recalculateFuture = body?.recalculateFuture === true;
   const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
-  const allowDuplicate = body?.allowDuplicate === true;
   const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
   const tomorrowStart = addDays(startOfJstDay(new Date()), 1);
 
@@ -142,8 +150,8 @@ export async function POST(request: Request) {
             window,
           });
       const scheduledCount = currentDateKeys.filter((dateKey) => dateKey === date).length;
-      if (scheduledCount > 0 && !allowDuplicate) {
-        return badRequest(DUPLICATE_SCHEDULE_MESSAGE, 409);
+      if (scheduledCount > 0) {
+        return duplicateScheduleConflictResponse();
       }
 
       const nextDateKeys = sortedDateKeys([...currentDateKeys, date]);
@@ -165,7 +173,6 @@ export async function POST(request: Request) {
         added: true,
         choreId,
         date,
-        allowDuplicate,
         overrides: mapOverridesForResponse(savedOverrides),
       });
     }
@@ -315,16 +322,7 @@ export async function POST(request: Request) {
   });
   } catch (error) {
     if (isDuplicateScheduleOverrideError(error)) {
-      if (mode === "add" && allowDuplicate) {
-        return Response.json(
-          {
-            error: "重複予定の登録に失敗しました。DBの一意制約が残っている可能性があります。",
-            code: DUPLICATE_INDEX_MISMATCH_CODE,
-          },
-          { status: 409 },
-        );
-      }
-      return badRequest(DUPLICATE_SCHEDULE_MESSAGE, 409);
+      return duplicateScheduleConflictResponse();
     }
     throw error;
   }
