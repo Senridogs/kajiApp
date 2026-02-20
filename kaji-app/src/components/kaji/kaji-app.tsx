@@ -665,6 +665,8 @@ export function KajiApp() {
     useState<PendingCalendarPlanDuplicateConfirm | null>(null);
   const [undoConfirmTarget, setUndoConfirmTarget] = useState<ChoreWithComputed | null>(null);
   const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
+  const recordMutationSequenceRef = useRef(0);
+  const latestRecordMutationByKeyRef = useRef<Record<string, number>>({});
   const [reactionUpdatingId, setReactionUpdatingId] = useState<string | null>(null);
   const [manageDetailChoreId, setManageDetailChoreId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState("all");
@@ -1234,6 +1236,14 @@ export function KajiApp() {
     return data;
   }, []);
 
+  const loadChoreMutationSnapshot = useCallback(async (choreId: string, dateKey: string) => {
+    return apiFetch<{
+      chore: ChoreWithComputed;
+      scheduleOverrides: ChoreScheduleOverride[];
+      homeProgressEntry: HomeProgressEntry | null;
+    }>(`/api/chores/${choreId}?date=${encodeURIComponent(dateKey)}`, { cache: "no-store" });
+  }, []);
+
   const loadHouseholdReport = useCallback(async (offset: (typeof REPORT_MONTH_OFFSETS)[number]) => {
     const currentMonth = toMonthKey(new Date());
     const month = monthKeyWithOffset(currentMonth, offset);
@@ -1715,15 +1725,73 @@ export function KajiApp() {
     };
   }, [assignmentOpen, pullRefreshing]);
 
+  const buildRecordMutationKey = useCallback((choreId: string, dateKey: string) => `${choreId}:${dateKey}`, []);
 
+  const beginRecordMutation = useCallback((mutationKey: string) => {
+    const mutationId = recordMutationSequenceRef.current + 1;
+    recordMutationSequenceRef.current = mutationId;
+    latestRecordMutationByKeyRef.current[mutationKey] = mutationId;
+    return mutationId;
+  }, []);
 
+  const isLatestRecordMutation = useCallback((mutationKey: string, mutationId: number) => {
+    return latestRecordMutationByKeyRef.current[mutationKey] === mutationId;
+  }, []);
 
-  const setRecordUpdating = useCallback((choreId: string, isUpdating: boolean) => {
+  const setRecordUpdating = useCallback((choreId: string, dateKey: string, isUpdating: boolean) => {
+    const updatingKey = `${choreId}:${dateKey}`;
     setRecordUpdatingIds((prev) => {
       if (isUpdating) {
-        return prev.includes(choreId) ? prev : [...prev, choreId];
+        return prev.includes(updatingKey) ? prev : [...prev, updatingKey];
       }
-      return prev.filter((id) => id !== choreId);
+      return prev.filter((id) => id !== updatingKey);
+    });
+  }, []);
+
+  const patchBootForRecordMutation = useCallback((
+    choreId: string,
+    dateKey: string,
+    patch: {
+      chore?: ChoreWithComputed;
+      homeProgressEntry?: HomeProgressEntry | null;
+      scheduleOverrides?: ChoreScheduleOverride[];
+    },
+  ) => {
+    setBoot((prev) => {
+      if (!prev || prev.needsRegistration) return prev;
+      const nextChores = patch.chore
+        ? prev.chores.map((chore) => (chore.id === choreId ? patch.chore! : chore))
+        : prev.chores;
+      const split = patch.chore ? splitComputedChoresForHome(nextChores) : null;
+      const nextHomeProgressByDate = { ...prev.homeProgressByDate };
+      if (patch.homeProgressEntry !== undefined) {
+        const currentDateProgress = { ...(nextHomeProgressByDate[dateKey] ?? {}) };
+        if (patch.homeProgressEntry === null) {
+          delete currentDateProgress[choreId];
+        } else {
+          currentDateProgress[choreId] = patch.homeProgressEntry;
+        }
+        if (Object.keys(currentDateProgress).length > 0) {
+          nextHomeProgressByDate[dateKey] = currentDateProgress;
+        } else {
+          delete nextHomeProgressByDate[dateKey];
+        }
+      }
+      const nextScheduleOverrides = patch.scheduleOverrides
+        ? [
+          ...prev.scheduleOverrides.filter((override) => override.choreId !== choreId),
+          ...patch.scheduleOverrides,
+        ]
+        : prev.scheduleOverrides;
+
+      return {
+        ...prev,
+        chores: nextChores,
+        todayChores: split ? split.todayChores : prev.todayChores,
+        tomorrowChores: split ? split.tomorrowChores : prev.tomorrowChores,
+        homeProgressByDate: nextHomeProgressByDate,
+        scheduleOverrides: nextScheduleOverrides,
+      };
     });
   }, []);
 
@@ -2612,7 +2680,11 @@ export function KajiApp() {
     memoText: string;
   }) => {
     const targetId = chore.id;
-    const previousBoot = boot;
+    const mutationKey = buildRecordMutationKey(targetId, dateKey);
+    const mutationId = beginRecordMutation(mutationKey);
+    const previousChore = chores.find((item) => item.id === targetId) ?? null;
+    const previousHomeProgressEntry = boot?.homeProgressByDate?.[dateKey]?.[targetId] ?? null;
+    const previousOverrides = scheduleOverridesByChore.get(targetId) ?? [];
     const now = new Date();
     const todayStart = startOfJstDay(now);
     const tomorrowStart = addDays(todayStart, 1);
@@ -2623,13 +2695,14 @@ export function KajiApp() {
     const completedTomorrowTask = chore.isDueTomorrow;
 
     setMemoOpen(false);
-    setRecordUpdating(targetId, true);
+    setRecordUpdating(targetId, dateKey, true);
 
     if (sessionUser) {
+      let optimisticChore: ChoreWithComputed | null = null;
       updateBootChoreOptimistically(targetId, (current) => {
         const nextDueAt = addDays(performedAt, current.intervalDays);
         const nextDueAtTime = nextDueAt.getTime();
-        return {
+        optimisticChore = {
           ...current,
           doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
           lastPerformedAt: performedAtIso,
@@ -2648,7 +2721,27 @@ export function KajiApp() {
               : 0,
           daysSinceLast: 0,
         };
+        return optimisticChore;
       });
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, dateKey);
+      const currentProgress = boot?.homeProgressByDate?.[dateKey]?.[targetId] ?? null;
+      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseCompleted = currentProgress?.completed ?? 0;
+      const baseSkipped = currentProgress?.skipped ?? 0;
+      const nextCompleted = Math.min(baseTotal, baseCompleted + 1);
+      const nextPending = Math.max(0, baseTotal - nextCompleted - baseSkipped);
+      if (optimisticChore) {
+        patchBootForRecordMutation(targetId, dateKey, {
+          chore: optimisticChore,
+          homeProgressEntry: {
+            total: baseTotal,
+            completed: nextCompleted,
+            skipped: baseSkipped,
+            pending: nextPending,
+            latestState: "done",
+          },
+        });
+      }
     }
 
     try {
@@ -2667,6 +2760,7 @@ export function KajiApp() {
         method: "POST",
         body: JSON.stringify(body),
       });
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
       if (result?.record?.id) {
         updateBootChoreOptimistically(targetId, (current) => ({
           ...current,
@@ -2674,7 +2768,14 @@ export function KajiApp() {
         }));
       }
 
-      await Promise.all([
+      const snapshot = await loadChoreMutationSnapshot(targetId, dateKey);
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
+      patchBootForRecordMutation(targetId, dateKey, {
+        chore: snapshot.chore,
+        homeProgressEntry: snapshot.homeProgressEntry,
+        scheduleOverrides: snapshot.scheduleOverrides,
+      });
+      void Promise.all([
         loadBootstrap(),
         loadCalendarMonthSummary(calendarMonthKeyRef.current),
       ]);
@@ -2685,12 +2786,20 @@ export function KajiApp() {
 
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
-      if (previousBoot) {
-        setBoot(previousBoot);
+      if (isLatestRecordMutation(mutationKey, mutationId) && previousChore) {
+        patchBootForRecordMutation(targetId, dateKey, {
+          chore: previousChore,
+          homeProgressEntry: previousHomeProgressEntry,
+          scheduleOverrides: previousOverrides,
+        });
       }
-      setError((err as Error).message ?? "記録に失敗しました。");
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setError((err as Error).message ?? "記録に失敗しました。");
+      }
     } finally {
-      setRecordUpdating(targetId, false);
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setRecordUpdating(targetId, dateKey, false);
+      }
       setMemoTarget(null);
       setMemoBaseDateKey(null);
       setMemo("");
@@ -2698,12 +2807,19 @@ export function KajiApp() {
       setMemoQuickDateKey(null);
     }
   }, [
-    boot,
+    beginRecordMutation,
+    boot?.homeProgressByDate,
+    buildRecordMutationKey,
+    chores,
+    countScheduledOccurrencesOnDate,
+    isLatestRecordMutation,
     loadBootstrap,
     loadCalendarMonthSummary,
+    loadChoreMutationSnapshot,
     loadHistory,
     loadStats,
-    countScheduledOccurrencesOnDate,
+    patchBootForRecordMutation,
+    scheduleOverridesByChore,
     sessionUser,
     setRecordUpdating,
     showTaskBanner,
@@ -2723,7 +2839,7 @@ export function KajiApp() {
     }
 
     setError("");
-    setRecordUpdating(chore.id, true);
+    setRecordUpdating(chore.id, dateKey, true);
     try {
       await apiFetch("/api/schedule-override", {
         method: "POST",
@@ -2756,7 +2872,7 @@ export function KajiApp() {
       }
       setError(message);
     } finally {
-      setRecordUpdating(chore.id, false);
+      setRecordUpdating(chore.id, dateKey, false);
     }
   }, [
     closeCalendarBlankActionSheet,
@@ -2810,7 +2926,6 @@ export function KajiApp() {
   }) => {
     if (!memoTarget) return;
     const targetId = memoTarget.id;
-    const previousBoot = boot;
     const now = new Date();
     const todayStart = startOfJstDay(now);
     const tomorrowStart = addDays(todayStart, 1);
@@ -2844,16 +2959,23 @@ export function KajiApp() {
     }
     const performedAtIso = performedAt.toISOString();
     const performedAtDateKey = toJstDateKey(startOfJstDay(performedAt));
+    const mutationDateKey = sourceDateKey ?? performedAtDateKey;
+    const mutationKey = buildRecordMutationKey(targetId, mutationDateKey);
+    const mutationId = beginRecordMutation(mutationKey);
+    const previousChore = chores.find((item) => item.id === targetId) ?? null;
+    const previousHomeProgressEntry = boot?.homeProgressByDate?.[mutationDateKey]?.[targetId] ?? null;
+    const previousOverrides = scheduleOverridesByChore.get(targetId) ?? [];
     const completedTomorrowTask = memoTarget.isDueTomorrow;
 
     setMemoOpen(false);
-    setRecordUpdating(targetId, true);
+    setRecordUpdating(targetId, mutationDateKey, true);
 
     if (sessionUser) {
+      let optimisticChore: ChoreWithComputed | null = null;
       updateBootChoreOptimistically(targetId, (chore) => {
         const nextDueAt = addDays(performedAt, chore.intervalDays);
         const nextDueAtTime = nextDueAt.getTime();
-        return {
+        optimisticChore = {
           ...chore,
           doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
           lastPerformedAt: performedAtIso,
@@ -2870,11 +2992,33 @@ export function KajiApp() {
           isOverdue: nextDueAt < todayStart,
           overdueDays:
             nextDueAt < todayStart
-              ? Math.floor((todayStart.getTime() - nextDueAtTime) / (24 * 60 * 60 * 1000))
+              ? Math.floor((todayStart.getTime() - nextDueAtTime) / DAY_IN_MS)
               : 0,
           daysSinceLast: 0,
         };
+        return optimisticChore;
       });
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, mutationDateKey);
+      const currentProgress = boot?.homeProgressByDate?.[mutationDateKey]?.[targetId] ?? null;
+      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseCompleted = currentProgress?.completed ?? 0;
+      const baseSkipped = currentProgress?.skipped ?? 0;
+      const consume = skipped ? Math.max(1, Math.min(skipCount ?? 1, skipCountMax)) : 1;
+      const nextCompleted = skipped ? baseCompleted : Math.min(baseTotal, baseCompleted + consume);
+      const nextSkipped = skipped ? Math.min(baseTotal, baseSkipped + consume) : baseSkipped;
+      const nextPending = Math.max(0, baseTotal - nextCompleted - nextSkipped);
+      if (optimisticChore) {
+        patchBootForRecordMutation(targetId, mutationDateKey, {
+          chore: optimisticChore,
+          homeProgressEntry: {
+            total: baseTotal,
+            completed: nextCompleted,
+            skipped: nextSkipped,
+            pending: nextPending,
+            latestState: skipped ? "skipped" : "done",
+          },
+        });
+      }
     }
 
     try {
@@ -2894,29 +3038,43 @@ export function KajiApp() {
         method: "POST",
         body: JSON.stringify(body),
       });
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
       if (result?.record?.id) {
         updateBootChoreOptimistically(targetId, (chore) => ({
           ...chore,
           lastRecordId: result.record.id,
         }));
       }
-      if (shouldSendSourceDate && sourceDateKey) {
-        await Promise.all([
-          loadBootstrap(),
-          loadCalendarMonthSummary(calendarMonthKeyRef.current),
-        ]);
-      }
+      const snapshot = await loadChoreMutationSnapshot(targetId, mutationDateKey);
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
+      patchBootForRecordMutation(targetId, mutationDateKey, {
+        chore: snapshot.chore,
+        homeProgressEntry: snapshot.homeProgressEntry,
+        scheduleOverrides: snapshot.scheduleOverrides,
+      });
+      void Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
       if (!skipped && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
         showTaskBanner("明日のものをやってえらい！", "blue");
       }
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
-      if (previousBoot) {
-        setBoot(previousBoot);
+      if (isLatestRecordMutation(mutationKey, mutationId) && previousChore) {
+        patchBootForRecordMutation(targetId, mutationDateKey, {
+          chore: previousChore,
+          homeProgressEntry: previousHomeProgressEntry,
+          scheduleOverrides: previousOverrides,
+        });
       }
-      setError((err as Error).message ?? (skipped ? "スキップに失敗しました。" : "記録に失敗しました。"));
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setError((err as Error).message ?? (skipped ? "スキップに失敗しました。" : "記録に失敗しました。"));
+      }
     } finally {
-      setRecordUpdating(targetId, false);
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setRecordUpdating(targetId, mutationDateKey, false);
+      }
       setMemoTarget(null);
       setMemoBaseDateKey(null);
       setMemoFlowMode("default");
@@ -2926,20 +3084,27 @@ export function KajiApp() {
       setSkipCountMax(1);
     }
   }, [
-    boot,
+    beginRecordMutation,
+    boot?.homeProgressByDate,
+    buildRecordMutationKey,
+    chores,
+    countScheduledOccurrencesOnDate,
+    isLatestRecordMutation,
     loadBootstrap,
     loadCalendarMonthSummary,
+    loadChoreMutationSnapshot,
     loadHistory,
     loadStats,
     memo,
     memoBaseDateKey,
     memoTarget,
     openRescheduleConfirmWithCollisionCheck,
+    patchBootForRecordMutation,
+    scheduleOverridesByChore,
     sessionUser,
     setRecordUpdating,
     showTaskBanner,
     skipCountMax,
-    skipCountValue,
     statsPeriod,
     updateBootChoreOptimistically,
   ]);
@@ -3040,7 +3205,8 @@ export function KajiApp() {
   const undoRecord = async (chore: ChoreWithComputed) => {
     if (!chore.lastRecordId) return;
     const previousBoot = boot;
-    setRecordUpdating(chore.id, true);
+    const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+    setRecordUpdating(chore.id, todayDateKey, true);
 
     // Recalculate due-date flags from the pre-check dueAt.
     // submitRecord shifted dueAt forward by intervalDays, so we reverse it.
@@ -3086,13 +3252,13 @@ export function KajiApp() {
       }
       setError((err as Error).message ?? "元に戻す処理に失敗しました。");
     } finally {
-      setRecordUpdating(chore.id, false);
+      setRecordUpdating(chore.id, todayDateKey, false);
     }
   };
 
   const requestUndoRecord = (chore: ChoreWithComputed) => {
     if (!chore.lastRecordId) return;
-    if (recordUpdatingIds.includes(chore.id)) return;
+    if (recordUpdatingIds.includes(buildRecordMutationKey(chore.id, toJstDateKey(startOfJstDay(new Date()))))) return;
     setUndoConfirmTarget(chore);
   };
 
@@ -4523,7 +4689,7 @@ export function KajiApp() {
                                 onRecord={(target) => openMemo(target, sectionDateKey)}
                                 onUndo={requestUndoRecord}
                                 progressLabel={progressLabel}
-                                isUpdating={recordUpdatingIds.includes(chore.id)}
+                                isUpdating={recordUpdatingIds.includes(buildRecordMutationKey(chore.id, sectionDateKey))}
                                 recordDisabled={disableTomorrowDailyCheck}
                               />
                             </div>
@@ -5887,7 +6053,7 @@ export function KajiApp() {
                   ) : (
                     calendarQuickRecordChores.map((chore) => {
                       const TaskIcon = iconByName(chore.icon);
-                      const updating = recordUpdatingIds.includes(chore.id);
+                      const updating = recordUpdatingIds.includes(buildRecordMutationKey(chore.id, calendarBlankActionDateKey));
                       return (
                         <div
                           key={`calendar-blank-record-${calendarBlankActionDateKey}-${chore.id}`}
@@ -6202,7 +6368,7 @@ export function KajiApp() {
           cancelLabel="やめる"
           confirmLabel="追加する"
           confirmVariant="success"
-          loading={recordUpdatingIds.includes(pendingCalendarPlanDuplicateConfirm.choreId)}
+          loading={recordUpdatingIds.includes(buildRecordMutationKey(pendingCalendarPlanDuplicateConfirm.choreId, pendingCalendarPlanDuplicateConfirm.dateKey))}
         />
       ) : null}
 
