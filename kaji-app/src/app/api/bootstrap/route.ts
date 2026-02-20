@@ -6,7 +6,7 @@ import { ensureDemoDataForHousehold } from "@/lib/dummy-data";
 import { buildHomeProgressByDate } from "@/lib/home-occurrence";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { addDays, buildHomeDateKeys, startOfJstDay } from "@/lib/time";
 
 function emptyBootstrapPayload() {
   return {
@@ -94,12 +94,12 @@ export async function GET() {
     const homeSplit = splitChoresForHome(computed);
     const todayStart = startOfJstDay(new Date());
     const yesterdayStart = addDays(todayStart, -1);
-    const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrowStart = addDays(todayStart, 2);
+    const homeDateKeyRange = buildHomeDateKeys(todayStart);
     const homeDateKeys = [
-      toJstDateKey(yesterdayStart),
-      toJstDateKey(todayStart),
-      toJstDateKey(tomorrowStart),
+      homeDateKeyRange.yesterday,
+      homeDateKeyRange.today,
+      homeDateKeyRange.tomorrow,
     ];
     const scheduleOverridesByChore = new Map<string, Array<{ id: string; choreId: string; date: string; createdAt: Date }>>();
     for (const override of scheduleOverrides) {

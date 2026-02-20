@@ -78,7 +78,7 @@ import {
 import {
   buildHomeRowsByDate,
 } from "@/lib/home-occurrence";
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { addDays, buildHomeDateKeys, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const JA_COLLATOR = new Intl.Collator("ja");
 type ListSortKey = "kana" | "due" | "icon";
@@ -170,6 +170,7 @@ type PendingCalendarPlanDuplicateConfirm = {
 };
 type StandaloneScreenKey = "manage" | "my-report" | "my-records";
 type StandaloneOriginKey = "settings" | "list" | "stats" | "records";
+type HomeRowUiState = "pending" | "done" | "skipped";
 type TimelineRecordGroup = {
   dateKey: string;
   label: string;
@@ -393,33 +394,22 @@ function sortHomeSectionChores(
   chores: ChoreWithComputed[],
   sessionUserId: string | null,
   resolveAssigneeId: (choreId: string) => string | null,
+  resolveHomeState: (choreId: string) => HomeRowUiState,
   customIcons: CustomIconOption[],
 ) {
   return [...chores].sort((a, b) => {
-    const aIsSkipped = !!a.lastRecordSkipped && a.doneToday;
-    const bIsSkipped = !!b.lastRecordSkipped && b.doneToday;
-    if (a.id === b.id) {
-      const doneFirstRank = (done: boolean, skipped: boolean) => {
-        if (!done) return 2;
-        return skipped ? 1 : 0;
-      };
-      const sameIdRankDiff =
-        doneFirstRank(a.doneToday, aIsSkipped) - doneFirstRank(b.doneToday, bIsSkipped);
-      if (sameIdRankDiff !== 0) return sameIdRankDiff;
-    }
-
-    // doneState: 0=not done, 1=done, 2=skipped
-    const getDoneState = (done: boolean, skipped: boolean) => {
-      if (sectionKey === "tomorrow") return 0; // Tomorrow section doesn't show done state sorting in the same way usually
-      if (!done) return 0;
-      return skipped ? 2 : 1;
+    const getDoneStateRank = (state: HomeRowUiState) => {
+      if (sectionKey === "tomorrow") return 0;
+      if (state === "pending") return 0;
+      if (state === "done") return 1;
+      return 2;
     };
 
-    const aState = getDoneState(a.doneToday, aIsSkipped);
-    const bState = getDoneState(b.doneToday, bIsSkipped);
+    const aStateRank = getDoneStateRank(resolveHomeState(a.id));
+    const bStateRank = getDoneStateRank(resolveHomeState(b.id));
 
     // 1. Sort by done state (Not Done -> Done -> Skipped)
-    if (aState !== bState) return aState - bState;
+    if (aStateRank !== bStateRank) return aStateRank - bStateRank;
 
     // 2. assignee priority: self > partner > none
     const aAssignee = resolveAssigneeId(a.id);
@@ -506,14 +496,6 @@ function mergeAssignments(
     merged.push(entry);
   }
   return merged;
-}
-
-function buildHomeDateKeys(now = new Date()) {
-  const base = startOfJstDay(now);
-  const today = toJstDateKey(base);
-  const yesterday = toJstDateKey(addDays(base, -1));
-  const tomorrow = toJstDateKey(addDays(base, 1));
-  return { today, yesterday, tomorrow };
 }
 
 function sameHomeOrderByDate(a: HomeOrderByDate, b: HomeOrderByDate) {
@@ -3932,14 +3914,16 @@ export function KajiApp() {
     dateKey: string,
     sectionRows: typeof todayRowsForHome,
   ) => {
+    const rowById = new Map(sectionRows.map((row) => [row.chore.id, row]));
     const sortedChores = sortHomeSectionChores(
       sectionKey,
       sectionRows.map((row) => row.chore),
       sessionUser?.id ?? null,
       (choreId) => {
-        const found = sectionRows.find((row) => row.chore.id === choreId)?.chore;
+        const found = rowById.get(choreId)?.chore;
         return resolveAssigneeForSort(choreId, sectionKey, found);
       },
+      (choreId) => rowById.get(choreId)?.state ?? "pending",
       customIcons,
     );
     const orderedIds = applyHomeStoredOrder(

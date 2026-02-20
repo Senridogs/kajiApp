@@ -20,6 +20,17 @@ export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+export function buildHomeDateKeys(now = new Date()) {
+  const todayStart = startOfJstDay(now);
+  const yesterdayStart = addDays(todayStart, -1);
+  const tomorrowStart = addDays(todayStart, 1);
+  return {
+    today: toJstDateKey(todayStart),
+    yesterday: toJstDateKey(yesterdayStart),
+    tomorrow: toJstDateKey(tomorrowStart),
+  };
+}
+
 export function diffDaysFloor(from: Date, to: Date): number {
   const ms = to.getTime() - from.getTime();
   return Math.floor(ms / (24 * 60 * 60 * 1000));
@@ -52,4 +63,3 @@ export function nowJstHourMinute(now = new Date()): string {
 
   return `${parts.hour ?? "00"}:${parts.minute ?? "00"}`;
 }
-
