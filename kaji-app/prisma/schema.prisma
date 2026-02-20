@@ -129,7 +129,7 @@ model ChoreScheduleOverride {
   createdAt DateTime @default(now())
   chore     Chore    @relation(fields: [choreId], references: [id], onDelete: Cascade)
 
-  @@index([choreId, date])
+  @@unique([choreId, date])
   @@index([choreId])
 }
 

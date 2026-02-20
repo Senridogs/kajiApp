@@ -82,3 +82,28 @@ test("duplicate override dates are counted as separate occurrences", () => {
 
   assert.equal(counts["2026-03-10"], 3);
 });
+
+
+test("同じ日に複数タスクがある場合は日別件数に合算される", () => {
+  const counts = buildCalendarMonthCountsByDate("2026-03", [
+    {
+      id: "c1",
+      intervalDays: 7,
+      createdAt: new Date("2026-02-01T00:00:00+09:00"),
+      latestRecord: {
+        performedAt: new Date("2026-03-10T09:00:00+09:00"),
+        isSkipped: false,
+      },
+      scheduleOverrides: [{ date: "2026-03-10" }],
+    },
+    {
+      id: "c2",
+      intervalDays: 7,
+      createdAt: new Date("2026-02-01T00:00:00+09:00"),
+      latestRecord: null,
+      scheduleOverrides: [{ date: "2026-03-10" }],
+    },
+  ]);
+
+  assert.equal(counts["2026-03-10"], 3);
+});
