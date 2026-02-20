@@ -5631,34 +5631,10 @@ export function KajiApp() {
 
           <div className="h-px bg-[var(--border)]" />
 
-          <div className="space-y-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] p-3">
-            <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">表示テーマ</p>
-            <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-[var(--secondary)] p-1">
-              {THEME_MODE_ITEMS.map((item) => {
-                const selected = themeMode === item.key;
-                return (
-                  <button
-                    key={`theme-mode-${item.key}`}
-                    type="button"
-                    onClick={() => handleThemeModeChange(item.key)}
-                    className={`rounded-[8px] px-2 py-1.5 text-[12px] font-bold transition-colors ${selected
-                      ? "bg-[var(--card)] text-[var(--foreground)]"
-                      : "text-[var(--muted-foreground)]"
-                      }`}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">
-              現在の表示: {resolvedTheme === "dark" ? "ダーク" : "ライト"}
-            </p>
-          </div>
-
           <div className="space-y-1">
             <button type="button" onClick={() => openStandaloneScreen("my-report")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">trending_up</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">私のレポート</span></button>
             <button type="button" onClick={() => openStandaloneScreen("my-records")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">menu_book</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">わたしのきろく</span></button>
+            <button type="button" onClick={() => openSettingsView("theme")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">palette</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">テーマカラー</span></button>
             <button type="button" onClick={() => openSettingsView("push")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">notifications</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">プッシュ通知設定</span></button>
             <button type="button" onClick={() => openSettingsView("family")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">group</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">家族招待・家族管理</span></button>
             <button type="button" onClick={() => openStandaloneScreen("manage")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">checklist</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">家事を管理</span></button>
