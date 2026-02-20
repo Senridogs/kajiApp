@@ -14,7 +14,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
 
   const record = await prisma.choreRecord.findFirst({
     where: { id, householdId: session.householdId },
-    select: { id: true, choreId: true, userId: true, performedAt: true },
+    select: { id: true, choreId: true, userId: true, performedAt: true, scheduledDate: true },
   });
   if (!record) return badRequest("対象の記録が見つかりません。", 404);
 
@@ -25,7 +25,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   }
 
   const tomorrowStart = addDays(todayStart, 1);
-  const sourceDateKey = toJstDateKey(startOfJstDay(record.performedAt));
+  const sourceDateKey = record.scheduledDate || toJstDateKey(startOfJstDay(record.performedAt));
 
   await prisma.$transaction(async (tx) => {
     await tx.choreRecord.delete({ where: { id } });

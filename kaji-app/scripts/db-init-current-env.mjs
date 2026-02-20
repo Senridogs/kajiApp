@@ -32,3 +32,12 @@ const run = (args) => {
 
 run(["prisma", "generate"]);
 run(["prisma", "db", "push", "--skip-generate"]);
+run([
+  "prisma",
+  "db",
+  "execute",
+  "--file",
+  "scripts/apply-schedule-override-duplicate-support.sql",
+  "--schema",
+  "prisma/schema.prisma",
+]);

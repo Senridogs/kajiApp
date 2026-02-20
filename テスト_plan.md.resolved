@@ -1,0 +1,319 @@
+# kajiApp 網羅的テスト計画（最終版）
+
+## テストの観点と網羅性基準
+
+### 何をもって「網羅的」と言えるか
+
+| 観点 | 基準 |
+|---|---|
+| **機能カバレッジ** | 現行の主要APIエンドポイントに対応するユーザー操作がテスト済み |
+| **画面カバレッジ** | 全タブ・全サブ画面（15画面）が表示・遷移確認済み |
+| **CRUD完全性** | 家事・記録・割当・カスタムアイコンの作成/取得/更新/削除が確認済み |
+| **状態整合性** | 操作後にUI・API・DBの状態が一致している（例：記録追加→ホームに反映）|
+| **エラーパス** | 入力バリデーション・API失敗時のエラー表示が正しい |
+| **リアルタイム同期** | パートナー操作後に自動でデータが更新される（syncポーリング動作）|
+| **ローカル状態** | ホーム並び順がlocalStorageに保存・復元される |
+| **バックグラウンド処理** | cronリマインダー通知が正しくトリガーされる（統合テスト） |
+
+### テストレベル定義
+
+```
+Unit（単体）       → 関数単位・副作用なし（node:test）
+Integration（結合）→ API ↔ DB の実際の動作確認（node:test + 実DB）
+System（総合）     → ブラウザ経由のエンドツーエンド（Playwright）
+```
+
+> [!IMPORTANT]
+> **前回計画からの主な追加項目**
+> 1. リアルタイム同期ポーリング（/api/sync 1秒ポーリング）
+> 2. ミッション完了バナー（全タスク完了時の🎉表示）
+> 3. ホーム並び順のlocalStorage保存・復元
+> 4. 大掃除タスク（isBigTask）の専用動作
+> 5. エラー状態（API失敗・バリデーション違反）
+> 6. cronリマインダー（統合テストで検証）
+> 7. タブ非表示時のポーリング停止（visibilitychange）
+
+---
+
+## 既存テスト状況
+
+- **ユニットテスト**: 68件 ✅
+- **統合テスト**: [api-flow-check.mts](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/test/integration/api-flow-check.mts)（実DB必要・既知バグ検知ケースを含む）⚠️
+- **E2Eテスト**: なし ❌
+
+---
+
+## Phase 1: ユニットテスト拡充（DBなし）
+
+| 追加ファイル | テスト関数 | 主なケース |
+|---|---|---|
+| `helpers-extra.test.mts` | [darkenColor](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/components/kaji/helpers.ts#133-156), [lightenColor](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/components/kaji/helpers.ts#157-179), [maxCount](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/components/kaji/helpers.ts#55-59), [formatMonthDay](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/components/kaji/helpers.ts#70-78), [formatDateShort](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/components/kaji/helpers.ts#79-91), [iconByName](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/components/kaji/helpers.ts#41-45) | hex境界値・無効入力・fallback |
+| `schedule-policy-extra.test.mts` | [buildRecurrenceDateKeys](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/lib/schedule-policy.ts#61-97), [resolveScheduleWindow](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/lib/schedule-policy.ts#52-60), [dateKeyToJstDate](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/lib/schedule-policy.ts#16-19), [uniqueSortedDateKeys](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/lib/schedule-policy.ts#20-23) | 間隔0・負数・重複除去 |
+| `notifications-extra.test.mts` | [buildReactionPayload](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/lib/notifications.ts#131-145) | icon=null時のデフォルト絵文字 |
+| `dashboard-extra.test.mts` | [computeChore](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/lib/dashboard.ts#15-66)（skipケース）, [getStatsRange](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/src/lib/dashboard.ts#80-121) | isSkipped=true・全期間キー |
+
+---
+
+## Phase 1b: 統合テスト拡充（cronリマインダー）
+
+> [!NOTE]
+> [api-flow-check.mts](file:///c:/Users/hueym/Documents/GitHub/kajiApp/kaji-app/test/integration/api-flow-check.mts) はAPI全フローをカバー済み。以下を追記でカバーする。
+
+| 追加項目 | 概要 |
+|---|---|
+| `GET /api/cron/reminders` | cronが呼ばれたとき、通知設定ONのユーザーへプッシュが送信されることを確認（pushをモック） |
+| スリープ時間外のみ送信 | `sleepModeEnabled=true` かつ現在時刻がスリープ時間内のとき通知がスキップされる |
+
+---
+
+## Phase 2: E2Eテスト（Playwright）
+
+### 2-A. 認証・登録フロー — `e2e/auth.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 1 | 未登録ユーザーアクセス | 登録フォームが表示される | `GET /api/bootstrap` |
+| 2 | 新規ユーザー登録（初回） | 名前・パスワード・カラー入力→登録完了→オンボーディング表示 | `POST /api/register` |
+| 3 | 招待コード入力での参加 | 既存世帯に参加できる（家事が引き継がれる） | `POST /api/register`（inviteCode付き）|
+| 4 | ログアウト | セッションが切れて登録画面に戻る | `POST /api/logout` |
+| 5 | セッション継続 | 登録済みユーザーが再訪するとホームに遷移 | `GET /api/bootstrap` |
+| **E1** | **名前未入力で登録** | **「名前を入力してください」エラーが表示される** | `POST /api/register` |
+| **E2** | **パスワード不一致** | **エラーが表示されて登録されない** | `POST /api/register` |
+
+### 2-B. ホーム画面 — `e2e/home.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 6 | 今日・明日セクション表示 | `isDueToday`, `isDueTomorrow` の家事が正しいセクションに表示 | `GET /api/bootstrap` |
+| 7 | タスクバッジ（担当者・期限） | 担当者バッジの色・テキストが正しい | - |
+| 8 | プルリフレッシュ | 下スワイプ→スピナー→データ更新 | `GET /api/bootstrap` |
+| 9 | タブ切替（ホーム→記録→一覧→統計） | 4タブへのスワイプ・タップ遷移 | - |
+| 10 | セクションタイトルのスティッキー | スクロール時にヘッダーが固定される | - |
+| **11** | **ミッション完了バナー** | **全タスク完了時に「🎉きょうのにんむ ぜんぶおわり！」バナーが表示される** | - |
+| **12** | **リアルタイム同期（syncポーリング）** | **別タブ/ページで記録追加→1〜2秒で現在ページに反映される** | `GET /api/sync` |
+| **13** | **ホーム並び順の保存・復元** | **ドラッグ→並び順が変わる→ページリロード後も並び順が維持される（localStorage）** | - |
+| **14** | **タブ非表示時の停止** | **別アプリに切替→戻ると即座にデータが更新される（visibilitychange）** | `GET /api/sync` |
+
+### 2-C. 家事の完了記録（メインユースケース） — `e2e/record-chore.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 15 | 家事タップ→記録シート表示 | 家事名・担当者が表示される | - |
+| 16 | メモなしで完了記録 | ホームから家事が「完了済み」状態に移動 | `POST /api/chores/[id]/record` |
+| 17 | メモあり完了記録 | メモが保存され記録タブに表示 | `POST /api/chores/[id]/record` |
+| 18 | スキップ記録 | 「スキップ」ボタン→家事が「スキップ済み」状態に | `POST /api/chores/[id]/record`（isSkipped）|
+| 19 | 記録の取り消し（Undo） | トーストの「元に戻す」→状態が戻る | `DELETE /api/records/[id]` |
+| 20 | カレンダー日付から記録 | カレンダーの過去日付タップ→その日付で記録 | `POST /api/chores/[id]/record` |
+| 21 | 未来スケジュールから記録 | 明日のタスクをタップ→「今日記録する」選択 | `POST /api/chores/[id]/record` |
+
+### 2-D. 家事のリスケジュール（日程変更） — `e2e/reschedule.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 22 | 「明日に延期」 | リスケシートで「明日」を選択→ホームで翌日に移動 | `POST /api/schedule-override` |
+| 23 | 「来週同じ曜日」 | ホームで正しい日付に移動 | `POST /api/schedule-override` |
+| 24 | カスタム日付のリスケ | カレンダーで日付選択→確定 | `POST /api/schedule-override` |
+| 25 | ドラッグ&ドロップ | ホーム画面でタスクを別日付にドラッグ→確認ダイアログ→確定 | `POST /api/schedule-override` |
+| 26 | 重複時のマージ確認 | 同日に同じ家事があるときマージダイアログが出る | `GET /api/schedule-overrides` |
+
+### 2-E. 家事の追加・編集・削除 — `e2e/manage-chore.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 27 | 家事新規追加（FAB） | タイトル・間隔・アイコン入力→保存→ホームに表示 | `POST /api/chores` |
+| 28 | **大掃除タスク（isBigTask）追加** | **「大掃除」チェックON→保存→一覧の大掃除セクションに表示** | `POST /api/chores` |
+| 29 | 家事編集 | 一覧からスワイプ→編集シート→タイトル変更→保存 | `PUT /api/chores/[id]` |
+| 30 | 家事の削除（スワイプ） | 赤いゴミ箱→削除確認→削除→UNDOで復元 | `DELETE /api/chores/[id]` |
+| 31 | 一覧ソート切替（期日/アイコン/かな） | セグメント切替で順序が変わる | - |
+| 32 | 担当者のデフォルト設定 | 家事エディタで担当者選択→保存→ホームに反映 | `PUT /api/chores/[id]` |
+| 33 | オンボーディング（初回一括追加） | チェックした家事がまとめて登録される | `POST /api/chores`（複数）|
+| **E3** | **タイトル未入力で追加** | **「家事名を入力してください」エラーが表示される** | `POST /api/chores` |
+| **E4** | **リマインド間隔に0を入力** | **「1〜365の整数で指定してください」エラーが表示される** | `POST /api/chores` |
+
+### 2-F. カスタムアイコン — `e2e/custom-icons.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 34 | カスタムアイコン一覧表示 | カスタムアイコンピッカーが開く | `GET /api/custom-icons` |
+| 35 | カスタムアイコン追加 | アップロード→アイコン一覧に反映 | `POST /api/custom-icons` |
+| 36 | カスタムアイコン削除 | 長押し→削除確認→削除 | `DELETE /api/custom-icons/[id]` |
+| 37 | パートナーとのアイコン共有 | 一方が追加→もう一方のピッカーに表示（世帯共有）| `GET /api/custom-icons` |
+
+### 2-G. 担当割当（アサイン）シート — `e2e/assignment.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 38 | アサインシートを開く | ヘッダーのアイコンタップ→スライドイン | - |
+| 39 | 家事に担当者を割り当て | 担当者バッジをタップ→割当保存 | `POST /api/assignments` |
+| 40 | 割当の削除 | 担当者をタップで解除 | `POST /api/assignments`（`userId: null`） |
+| 41 | **日常タブ（通常家事）** | **担当者が設定されている日常家事が表示される** | - |
+| 42 | **大掃除タブ（isBigTask）** | **大掃除タブに切替→大掃除タスクのみ表示** | - |
+| 43 | エッジスワイプで閉じる | 左端からスワイプ→シートが閉じる | - |
+
+### 2-H. 記録タブ — `e2e/records-tab.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 44 | 記録一覧表示 | 日付グループ・家事名・担当者が表示 | `GET /api/records` |
+| 45 | リアクション追加 | 記録行をタップ→絵文字選択→リアクション表示 | `PUT /api/records/[id]/reaction` |
+| 46 | リアクション削除 | 同じ絵文字を再タップ→リアクション消える | `DELETE /api/records/[id]/reaction` |
+| 47 | 記録フィルター（担当者別） | フィルター切替で担当者を絞り込む | - |
+| **48** | **スキップ記録が記録タブに表示されない** | **isSkipped=trueの記録は記録タブに表示されないこと** | - |
+
+### 2-I. カレンダー画面 — `e2e/calendar.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 49 | 週カレンダー表示 | 月〜日のヘッダーと件数ドットが表示 | `GET /api/calendar-month-summary` |
+| 50 | 前週・次週ナビゲーション | 矢印タップで週が切り替わる | `GET /api/calendar-month-summary` |
+| 51 | 月カレンダー展開 | ヘッダーの「↓」タップ→月カレンダーに展開 | `GET /api/calendar-month-summary` |
+| 52 | 日付タップで家事一覧 | カレンダーの日付タップ→その日の家事が下部に表示 | - |
+| 53 | カレンダーブランク日に記録追加 | 「＋」アクション→記録フォーム表示→記録 | `POST /api/chores/[id]/record` |
+| **54** | **スケジュール変更後のカレンダー反映** | **リスケ後、カレンダー上で変更後の日付にドットが移動する** | `GET /api/calendar-month-summary` |
+
+### 2-J. 統計タブ — `e2e/stats.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 55 | 期間切替（週/月/半年/年/全期間） | グラフ・棒が再描画される | `GET /api/stats` |
+| 56 | カスタム期間入力 | 開始・終了日を入力→グラフ更新 | `GET /api/stats` |
+| 57 | 世帯レポート表示 | 月別の実施件数・担当バランスが表示 | `GET /api/household-report` |
+| 58 | **月切替（今月/先月/2ヶ月前）** | **月オフセット切替でレポート内容が変わる** | `GET /api/household-report` |
+| 59 | マイレポート表示 | 自分の記録サマリーが表示 | `GET /api/my-stats` |
+| 60 | アニメーション：初回のみ再生 | タブ初回遷移でバーアニメが動き、再遷移では動かない | - |
+
+### 2-K. 設定画面 — `e2e/settings.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 61 | 設定メニューを開く | ユーザーアイコンタップ→設定シート | - |
+| 62 | プッシュ通知ON/OFF切替 | トグル操作→通知登録/解除 | `POST /api/subscriptions` |
+| 63 | リマインダー時刻変更 | 時刻ピッカー→保存 | `PATCH /api/notification-settings` |
+| 64 | スリープモード設定 | ON/時間帯設定→保存 | `PATCH /api/notification-settings` |
+| 65 | 招待コード表示・コピー | コピーボタン→クリップボードにコピー | `GET /api/notification-settings` |
+| 66 | ユーザー名・カラー変更 | 名前/カラー変更→保存→ヘッダーに反映 | `PATCH /api/user` |
+| 67 | アプリ更新確認 | 「更新確認」タップ→最新版チェック | `GET /api/sync` |
+| **68** | **マイ記録 (my-records) 画面** | **設定から「自分の記録」を開いて過去の活動が表示される** | `GET /api/my-stats` |
+| **69** | **ファミリー画面** | **世帯メンバーの一覧が表示される** | `GET /api/bootstrap` |
+
+### 2-L. 家事管理スタンドアロン画面 — `e2e/manage-screen.spec.ts`
+
+| # | シナリオ | 検証内容 | APIカバー |
+|---|---|---|---|
+| 70 | 家事一覧の表示 | 管理画面に全家事が表示 | `GET /api/chores` |
+| 71 | 家事詳細の表示 | 家事タップ→詳細（今後の予定日程・記録履歴） | `GET /api/schedule-overrides` |
+| 72 | 家事のアーカイブ | 削除ボタン→アーカイブ（論理削除） | `DELETE /api/chores/[id]` |
+| **73** | **アーカイブ後にホームから消える** | **管理画面で削除→ホームタブに戻ると非表示になっている** | `GET /api/bootstrap` |
+
+---
+
+## Phase 3: ビルド検証
+
+```bash
+cd kaji-app
+npm run build
+```
+
+期待: TypeScriptエラー0件・`next build` 正常終了
+
+---
+
+## 網羅性チェックリスト
+
+> [!NOTE]
+> 以下は「実装完了時に満たすべき目標チェック」です。現時点の達成状況そのものを示すものではありません。
+
+```
+APIエンドポイント（現行ルートに対応）:
+  [x] GET  /api/bootstrap          ← シナリオ 1,5,6,8,12,14,73
+  [x] POST /api/register           ← シナリオ 2,3,E1,E2
+  [x] POST /api/logout             ← シナリオ 4
+  [x] GET  /api/chores             ← シナリオ 70
+  [x] POST /api/chores             ← シナリオ 27,28,33,E3,E4
+  [x] PATCH /api/chores/[id]       ← シナリオ 29,32
+  [x] DELETE /api/chores/[id]      ← シナリオ 30,72
+  [x] POST /api/chores/[id]/record ← シナリオ 16,17,18,20,21,53
+  [x] GET  /api/records            ← シナリオ 44
+  [x] DELETE /api/records/[id]     ← シナリオ 19
+  [x] PUT  /api/records/[id]/reaction   ← シナリオ 45
+  [x] DELETE /api/records/[id]/reaction ← シナリオ 46
+  [x] POST /api/assignments        ← シナリオ 39,40
+  [x] POST /api/schedule-override  ← シナリオ 22,23,24,25
+  [x] DELETE /api/schedule-override/[id] ← リスケ解除系シナリオ
+  [x] GET  /api/schedule-overrides ← シナリオ 26,71
+  [x] GET  /api/custom-icons       ← シナリオ 34,37
+  [x] POST /api/custom-icons       ← シナリオ 35
+  [x] DELETE /api/custom-icons/[id]← シナリオ 36
+  [x] GET  /api/calendar-month-summary ← シナリオ 49,50,51,54
+  [x] GET  /api/stats              ← シナリオ 55,56
+  [x] GET  /api/household-report   ← シナリオ 57,58
+  [x] GET  /api/my-stats           ← シナリオ 59,68
+  [x] GET/PATCH /api/notification-settings ← シナリオ 63,64,65
+  [x] POST /api/subscriptions      ← シナリオ 62
+  [x] PATCH /api/user              ← シナリオ 66
+  [x] GET  /api/sync               ← シナリオ 12,14,67
+  [x] GET  /api/cron/reminders     ← Phase1b（統合テスト）
+
+画面（15画面すべてカバー）:
+  [x] 登録画面                      ← シナリオ 1,2,3,E1,E2
+  [x] オンボーディング              ← シナリオ 33
+  [x] ホームタブ（今日/明日セクション）← シナリオ 6,7,8,11,12,13,14
+  [x] 記録タブ                      ← シナリオ 44,45,46,47,48
+  [x] 一覧タブ                      ← シナリオ 31,32
+  [x] 統計タブ                      ← シナリオ 55,56,57,58,59,60
+  [x] 設定メニュー                  ← シナリオ 61,62,63,64,65,66,67,68,69
+  [x] アサインシート（日常/大掃除） ← シナリオ 38,39,40,41,42,43
+  [x] 家事エディタ                  ← シナリオ 27,28,29,E3,E4
+  [x] カスタムアイコンピッカー      ← シナリオ 34,35,36
+  [x] 記録シート（メモ/スキップ）   ← シナリオ 15,18
+  [x] リスケジュールシート          ← シナリオ 22,23,24
+  [x] マイレポート・マイ記録        ← シナリオ 59,68
+  [x] 管理画面（家事詳細）          ← シナリオ 70,71,72,73
+  [x] カレンダー（週/月）           ← シナリオ 49,50,51,52,53,54
+
+ユーザー操作カテゴリ:
+  [x] タップ・クリック操作          ← 全シナリオ
+  [x] スワイプ操作（タブ切替）      ← シナリオ 9
+  [x] エッジスワイプ（戻る）        ← シナリオ 43
+  [x] プルリフレッシュ              ← シナリオ 8
+  [x] ドラッグ&ドロップ             ← シナリオ 25,13
+  [x] 長押し                        ← シナリオ 36
+  [x] フォーム入力・バリデーション  ← E1〜E4
+  [x] エラー状態・エラーメッセージ  ← E1〜E4
+
+非機能要件:
+  [x] リアルタイム同期（ポーリング）← シナリオ 12,14
+  [x] ミッション完了バナー          ← シナリオ 11
+  [x] localStorage永続化            ← シナリオ 13
+  [x] バックグラウンド/フォアグラウンド切替 ← シナリオ 14
+  [x] cronリマインダー通知          ← Phase1b（統合テスト）
+```
+
+---
+
+## 実施順序
+
+1. **Phase 1**: ユニットテスト追加（4ファイル、約20件）
+2. **Phase 1b**: 統合テスト拡充（cronリマインダー）
+3. **Phase 3**: ビルド検証（`npm run build`）
+4. **Phase 2**: Playwright設定 → E2Eテスト実装（12ファイル、73シナリオ）
+
+## Playwright実行コマンド
+
+```bash
+# Playwrightのインストール（初回のみ）
+cd kaji-app
+npx playwright install
+
+# devサーバーを起動（別ターミナル）
+npm run dev
+
+# E2Eテスト全件実行
+npx playwright test
+
+# 特定ファイルのみ実行
+npx playwright test test/e2e/record-chore.spec.ts
+
+# UIモードで実行（デバッグ用）
+npx playwright test --ui
+```

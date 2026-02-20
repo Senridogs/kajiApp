@@ -111,6 +111,7 @@ export async function POST(request: Request, { params }: RouteParams) {
           choreId: chore.id,
           userId: user.id,
           memo,
+          scheduledDate: sourceDate || null,
           performedAt,
           isSkipped: skipped,
         },
@@ -128,7 +129,8 @@ export async function POST(request: Request, { params }: RouteParams) {
           return created;
         }
 
-        const shouldApplySchedulePolicy = isFuturePerformedAt || currentOverrides.length > 0;
+        const shouldApplySchedulePolicy =
+          sourceDate !== targetDateKey || isFuturePerformedAt || currentOverrides.length > 0;
         if (!shouldApplySchedulePolicy) {
           await consumeOneOverrideOnDate(tx, chore.id, targetDateKey);
           return created;

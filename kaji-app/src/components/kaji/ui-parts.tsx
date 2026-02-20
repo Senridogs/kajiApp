@@ -88,7 +88,7 @@ export function HomeTaskRow({
   const actorLabel = done ? (skipped ? null : "実施者") : "担当者";
   const actorColor = done ? (skipped ? "#BDC1C6" : (performerColor ?? "#1A9BE8")) : (assigneeColor ?? "#BDC1C6");
 
-  // Determine styles based on state
+  // Compact chip styles tuned for two-column home layout.
   let containerStyle: React.CSSProperties = { backgroundColor: "#FFFFFF", borderColor: "#E5EAF0" };
   let titleColor = chore.isOverdue ? "#D93025" : "#202124";
   let checkboxStyle: React.CSSProperties = {
@@ -99,15 +99,13 @@ export function HomeTaskRow({
 
   if (done) {
     if (skipped) {
-      // Skipped: Gray theme
       containerStyle = { backgroundColor: "#F1F3F4", borderColor: "#DADCE0" };
       titleColor = "#5F6368";
       checkboxStyle = { backgroundColor: "#BDC1C6", borderColor: "#BDC1C6", borderWidth: 2 };
     } else {
-      // Done: Actor color theme (light background)
       containerStyle = {
-        backgroundColor: `${actorColor}14`, // ~8% opacity
-        borderColor: `${actorColor}4D`, // ~30% opacity
+        backgroundColor: `${actorColor}14`,
+        borderColor: `${actorColor}4D`,
       };
       titleColor = darkenColor(actorColor, 20);
       checkboxStyle = { backgroundColor: actorColor, borderColor: actorColor, borderWidth: 2 };
@@ -118,39 +116,39 @@ export function HomeTaskRow({
 
   return (
     <div
-      className="flex w-full items-center gap-[15px] rounded-xl border px-[10px] py-[8px] text-left"
+      className="flex w-full items-center gap-2 rounded-[12px] border px-[8px] py-[7px] text-left"
       style={containerStyle}
     >
-      <IconBadge icon={chore.icon} iconColor={chore.iconColor} bgColor={chore.bgColor} size={42} iconSize={21} />
-      <div className="min-w-0 flex-1 space-y-[2px]">
+      <IconBadge icon={chore.icon} iconColor={chore.iconColor} bgColor={chore.bgColor} size={24} iconSize={13} />
+      <div className="min-w-0 flex-1 space-y-[1px]">
         <div className="flex items-center gap-1">
           <p
-            className="truncate text-[15.2px] font-bold leading-tight"
+            className="truncate text-[12px] font-bold leading-tight"
             style={{ color: titleColor }}
           >
             {title}
           </p>
           {chore.isOverdue && !done && (
-            <Flame size={14} className="fill-[#D93025] text-[#D93025]" />
+            <Flame size={10} className="fill-[#D93025] text-[#D93025]" />
           )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           {actorLabel && (
-            <p className={`truncate text-[11px] font-semibold ${actorName ? "" : "text-[#BDC1C6]"}`} style={actorName ? { color: actorColor } : {}}>
+            <p className={`truncate text-[9px] font-semibold ${actorName ? "" : "text-[#BDC1C6]"}`} style={actorName ? { color: actorColor } : {}}>
               {actorLabel}:
             </p>
           )}
           {actorName ? (
             <div className="flex items-center gap-0.5" style={{ color: actorColor }}>
-              <span className="truncate text-[11px] font-bold">
+              <span className="truncate text-[9px] font-bold">
                 {actorName}
               </span>
             </div>
           ) : (
-            <span className="text-[11px] font-semibold text-[#BDC1C6]">未設定</span>
+            <span className="text-[9px] font-semibold text-[#BDC1C6]">未設定</span>
           )}
         </div>
-        {meta ? <p className="truncate text-[10.4px] font-medium text-[#5F6368]">{meta}</p> : null}
+        {meta ? <p className="truncate text-[9px] font-medium text-[#5F6368]">{meta}</p> : null}
       </div>
       <button
         type="button"
@@ -168,13 +166,13 @@ export function HomeTaskRow({
           isUpdating
             ? `${chore.title}を更新中`
             : done
-              ? `${chore.title}の完了を取り消す`
+              ? `${chore.title}の記録を取り消す`
               : disableRecordAction
                 ? `${chore.title}は明日チェックできません`
                 : `${chore.title}を完了にする`
         }
         aria-pressed={done}
-        className={`flex h-12 w-12 items-center justify-center rounded-[14px] border transition-all active:scale-105 motion-safe:active:animate-[checkBounce_260ms_ease-out] ${isUpdating
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-all active:scale-105 motion-safe:active:animate-[checkBounce_260ms_ease-out] ${isUpdating
           ? "border-[#DADCE0] bg-[#F1F3F4]"
           : done
             ? "text-white"
@@ -185,7 +183,7 @@ export function HomeTaskRow({
         style={isUpdating ? undefined : checkboxStyle}
       >
         {isUpdating ? (
-          <Loader2 size={16} className="animate-spin text-[#5F6368]" />
+          <Loader2 size={12} className="animate-spin text-[#5F6368]" />
         ) : (
           <span
             className={`flex items-center justify-center transition-opacity ${done
@@ -194,10 +192,10 @@ export function HomeTaskRow({
               }`}
           >
             {skipped ? (
-              <Minus size={18} strokeWidth={4} className="text-white" />
+              <Minus size={12} strokeWidth={4} className="text-white" />
             ) : (
               <Check
-                size={18}
+                size={12}
                 strokeWidth={3}
                 className={done ? "text-white" : "text-[#BCC3CA]"}
               />
@@ -610,3 +608,4 @@ export function UndoToast({
     </div>
   );
 }
+

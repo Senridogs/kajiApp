@@ -62,6 +62,32 @@ async function request(pathname: string, init: RequestInit = {}) {
   return response;
 }
 
+async function listOverrides() {
+  const res = await request("/api/schedule-overrides");
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  return body.overrides as Array<{ choreId: string; date: string }>;
+}
+
+async function countOverridesOnDate(choreId: string, dateKey: string) {
+  const overrides = await listOverrides();
+  return overrides.filter((item) => item.choreId === choreId && item.date === dateKey).length;
+}
+
+async function readBootstrapChore(choreId: string) {
+  const res = await request("/api/bootstrap");
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  const chore = (body.chores as Array<{ id: string }>).find((item) => item.id === choreId);
+  assert.ok(chore);
+  return chore as {
+    id: string;
+    doneToday: boolean;
+    lastRecordSkipped: boolean;
+    lastRecordId: string | null;
+  };
+}
+
 async function main() {
   const bootstrapAsGuest = await request("/api/bootstrap");
   assert.equal(bootstrapAsGuest.status, 200);
@@ -193,7 +219,7 @@ async function main() {
   const nextIfNoRecalc = toJstDateKey(addDays(todayStart, 3));
   const nextIfRecalc = toJstDateKey(addDays(todayStart, 2));
   const lastPerformedForSource = addDays(todayStart, -1).toISOString();
-  const futurePerformedAt = new Date(`${sourceDateKey}T09:00:00+09:00`).toISOString();
+  const futurePerformedAt = new Date(`${toJstDateKey(todayStart)}T09:00:00+09:00`).toISOString();
 
   const createFutureNoRecalcChoreRes = await request("/api/chores", {
     method: "POST",
@@ -224,7 +250,7 @@ async function main() {
   const futureNoRecalcRecordBody = await futureNoRecalcRecordRes.json();
   assert.equal(
     toJstDateKey(new Date(futureNoRecalcRecordBody.record.performedAt)),
-    sourceDateKey,
+    toJstDateKey(todayStart),
   );
 
   const noRecalcOverridesRes = await request("/api/schedule-overrides");
@@ -265,7 +291,7 @@ async function main() {
   const futureRecalcRecordBody = await futureRecalcRecordRes.json();
   assert.equal(
     toJstDateKey(new Date(futureRecalcRecordBody.record.performedAt)),
-    sourceDateKey,
+    toJstDateKey(todayStart),
   );
 
   const recalcOverridesRes = await request("/api/schedule-overrides");
@@ -276,6 +302,195 @@ async function main() {
     .map((item: { date: string }) => item.date);
   assert.equal(recalcDates.includes(nextIfRecalc), true);
   assert.equal(recalcDates.includes(nextIfNoRecalc), false);
+
+  const addModeBaseDate = startOfJstDay(new Date());
+  const addModeTodayKey = toJstDateKey(addModeBaseDate);
+  const addModeUnsheduledDateKey = toJstDateKey(addDays(addModeBaseDate, 1));
+  const addModeLastPerformedAt = addDays(addModeBaseDate, -1).toISOString();
+
+  const createAddModeChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "add-mode-duplicate-guard",
+      intervalDays: 3,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: addModeLastPerformedAt,
+    }),
+  });
+  assert.equal(createAddModeChoreRes.status, 200);
+  const createAddModeChoreBody = await createAddModeChoreRes.json();
+  const addModeChoreId: string = createAddModeChoreBody.chore.id;
+
+  const addModeFirstAddRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: addModeChoreId,
+      date: addModeUnsheduledDateKey,
+      mode: "add",
+      allowDuplicate: false,
+    }),
+  });
+  assert.equal(addModeFirstAddRes.status, 200);
+  assert.equal(await countOverridesOnDate(addModeChoreId, addModeUnsheduledDateKey), 1);
+
+  const addModeDuplicateBlockedRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: addModeChoreId,
+      date: addModeUnsheduledDateKey,
+      mode: "add",
+      allowDuplicate: false,
+    }),
+  });
+  assert.equal(addModeDuplicateBlockedRes.status, 409);
+
+  const addModeDuplicateAllowedRes = await request("/api/schedule-override", {
+    method: "POST",
+    body: JSON.stringify({
+      choreId: addModeChoreId,
+      date: addModeUnsheduledDateKey,
+      mode: "add",
+      allowDuplicate: true,
+    }),
+  });
+  assert.equal(addModeDuplicateAllowedRes.status, 200);
+  assert.equal(await countOverridesOnDate(addModeChoreId, addModeUnsheduledDateKey), 2);
+
+  const duplicateSequenceCases: Array<{
+    name: string;
+    steps: Array<"complete" | "skip" | "undo">;
+    expectedOverrides: number;
+    expectedDoneToday: boolean;
+    expectedSkipped: boolean;
+  }> = [
+      {
+        name: "complete-only",
+        steps: ["complete"],
+        expectedOverrides: 1,
+        expectedDoneToday: true,
+        expectedSkipped: false,
+      },
+      {
+        name: "skip-only",
+        steps: ["skip"],
+        expectedOverrides: 1,
+        expectedDoneToday: true,
+        expectedSkipped: true,
+      },
+      {
+        name: "complete-undo",
+        steps: ["complete", "undo"],
+        expectedOverrides: 2,
+        expectedDoneToday: false,
+        expectedSkipped: false,
+      },
+      {
+        name: "skip-undo",
+        steps: ["skip", "undo"],
+        expectedOverrides: 2,
+        expectedDoneToday: false,
+        expectedSkipped: false,
+      },
+      {
+        name: "complete-skip",
+        steps: ["complete", "skip"],
+        expectedOverrides: 0,
+        expectedDoneToday: true,
+        expectedSkipped: true,
+      },
+      {
+        name: "skip-complete",
+        steps: ["skip", "complete"],
+        expectedOverrides: 0,
+        expectedDoneToday: true,
+        expectedSkipped: false,
+      },
+      {
+        name: "complete-undo-skip",
+        steps: ["complete", "undo", "skip"],
+        expectedOverrides: 1,
+        expectedDoneToday: true,
+        expectedSkipped: true,
+      },
+      {
+        name: "skip-undo-complete",
+        steps: ["skip", "undo", "complete"],
+        expectedOverrides: 1,
+        expectedDoneToday: true,
+        expectedSkipped: false,
+      },
+    ];
+
+  for (const sequenceCase of duplicateSequenceCases) {
+    const createSequenceChoreRes = await request("/api/chores", {
+      method: "POST",
+      body: JSON.stringify({
+        title: `sequence-${sequenceCase.name}`,
+        intervalDays: 1,
+        isBigTask: false,
+        icon: "sparkles",
+        iconColor: "#202124",
+        bgColor: "#EAF5FF",
+        lastPerformedAt: addModeLastPerformedAt,
+      }),
+    });
+    assert.equal(createSequenceChoreRes.status, 200);
+    const createSequenceChoreBody = await createSequenceChoreRes.json();
+    const sequenceChoreId: string = createSequenceChoreBody.chore.id;
+
+    const seedDuplicateRes = await request("/api/schedule-override", {
+      method: "POST",
+      body: JSON.stringify({
+        choreId: sequenceChoreId,
+        date: addModeTodayKey,
+        mode: "add",
+        allowDuplicate: true,
+      }),
+    });
+    assert.equal(seedDuplicateRes.status, 200);
+    assert.equal(await countOverridesOnDate(sequenceChoreId, addModeTodayKey), 2);
+
+    let latestRecordId: string | null = null;
+    for (const [stepIndex, step] of sequenceCase.steps.entries()) {
+      if (step === "undo") {
+        assert.ok(latestRecordId, `missing undo source record for ${sequenceCase.name}`);
+        const undoRes = await request(`/api/records/${latestRecordId}`, {
+          method: "DELETE",
+        });
+        assert.equal(undoRes.status, 200);
+        latestRecordId = null;
+        continue;
+      }
+
+      const recordRes = await request(`/api/chores/${sequenceChoreId}/record`, {
+        method: "POST",
+        body: JSON.stringify({
+          memo: `sequence-${sequenceCase.name}-${step}`,
+          skipped: step === "skip",
+          performedAt: new Date(
+            `${addModeTodayKey}T09:${String(stepIndex).padStart(2, "0")}:00+09:00`,
+          ).toISOString(),
+          sourceDate: addModeTodayKey,
+          recalculateFuture: false,
+          mergeIfDuplicate: false,
+        }),
+      });
+      assert.equal(recordRes.status, 200);
+      const recordBody = await recordRes.json();
+      latestRecordId = recordBody.record.id;
+    }
+
+    assert.equal(
+      await countOverridesOnDate(sequenceChoreId, addModeTodayKey),
+      sequenceCase.expectedOverrides,
+    );
+    const latestChore = await readBootstrapChore(sequenceChoreId);
+    assert.equal(latestChore.doneToday, sequenceCase.expectedDoneToday);
+    assert.equal(latestChore.lastRecordSkipped, sequenceCase.expectedSkipped);
+  }
 
   const duplicateBaseDate = startOfJstDay(new Date());
   const duplicateTargetDateKey = toJstDateKey(duplicateBaseDate);
@@ -644,6 +859,20 @@ async function main() {
     }),
   });
   assert.equal(mismatchRecordMoveRes.status, 404);
+
+  console.log("Checking cron reminders...");
+  const cronRes = await request("/api/cron/reminders");
+  if (cronRes.status === 200) {
+    const cronBody = await cronRes.json();
+    assert.equal(cronBody.ok, true);
+    if (cronBody.skipped) {
+      assert.equal(cronBody.skipped, "push-not-configured");
+    } else {
+      assert.equal(typeof cronBody.sent, "number");
+    }
+  } else {
+    assert.equal(cronRes.status, 401);
+  }
 }
 
 await main();

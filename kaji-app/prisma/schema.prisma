@@ -38,36 +38,36 @@ model CustomIcon {
 }
 
 model User {
-  id                 String             @id @default(cuid())
-  householdId        String
-  name               String             @unique
-  passwordHash       String?
-  color              String?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  household          Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  records            ChoreRecord[]
-  subscriptions      PushSubscription[]
-  defaultForChores   Chore[]            @relation("DefaultAssignee")
-  choreAssignments   ChoreAssignment[]
-  reactions          ChoreRecordReaction[]
+  id               String                @id @default(cuid())
+  householdId      String
+  name             String                @unique
+  passwordHash     String?
+  color            String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  household        Household             @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  records          ChoreRecord[]
+  subscriptions    PushSubscription[]
+  defaultForChores Chore[]               @relation("DefaultAssignee")
+  choreAssignments ChoreAssignment[]
+  reactions        ChoreRecordReaction[]
 }
 
 model Chore {
-  id                String            @id @default(cuid())
+  id                String                  @id @default(cuid())
   householdId       String
   title             String
-  icon              String            @default("sparkles")
-  iconColor         String            @default("#202124")
-  bgColor           String            @default("#EAF5FF")
+  icon              String                  @default("sparkles")
+  iconColor         String                  @default("#202124")
+  bgColor           String                  @default("#EAF5FF")
   intervalDays      Int
-  isBigTask         Boolean           @default(false)
+  isBigTask         Boolean                 @default(false)
   defaultAssigneeId String?
-  archived          Boolean           @default(false)
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  household         Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  defaultAssignee   User?             @relation("DefaultAssignee", fields: [defaultAssigneeId], references: [id], onDelete: SetNull)
+  archived          Boolean                 @default(false)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  household         Household               @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  defaultAssignee   User?                   @relation("DefaultAssignee", fields: [defaultAssigneeId], references: [id], onDelete: SetNull)
   records           ChoreRecord[]
   assignments       ChoreAssignment[]
   scheduleOverrides ChoreScheduleOverride[]
@@ -88,19 +88,20 @@ model ChoreAssignment {
 }
 
 model ChoreRecord {
-  id          String    @id @default(cuid())
-  householdId String
-  choreId     String
-  userId      String
-  memo        String?
-  isInitial   Boolean   @default(false)
-  isSkipped   Boolean   @default(false)
-  performedAt DateTime  @default(now())
-  createdAt   DateTime  @default(now())
-  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  chore       Chore     @relation(fields: [choreId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reactions   ChoreRecordReaction[]
+  id            String                @id @default(cuid())
+  householdId   String
+  choreId       String
+  userId        String
+  memo          String?
+  scheduledDate String?
+  isInitial     Boolean               @default(false)
+  isSkipped     Boolean               @default(false)
+  performedAt   DateTime              @default(now())
+  createdAt     DateTime              @default(now())
+  household     Household             @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  chore         Chore                 @relation(fields: [choreId], references: [id], onDelete: Cascade)
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions     ChoreRecordReaction[]
 
   @@index([householdId, performedAt])
   @@index([choreId, performedAt])
@@ -108,11 +109,11 @@ model ChoreRecord {
 }
 
 model ChoreRecordReaction {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   recordId  String
   userId    String
   emoji     String
-  createdAt DateTime @default(now())
+  createdAt DateTime    @default(now())
   record    ChoreRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 

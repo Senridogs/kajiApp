@@ -75,6 +75,10 @@ import {
   type HomeOrderByDate,
   type DropPosition,
 } from "@/lib/home-order";
+import {
+  buildHomeOccurrencesByDate,
+  countDoneHomeOccurrences,
+} from "@/lib/home-occurrence";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const JA_COLLATOR = new Intl.Collator("ja");
@@ -406,6 +410,15 @@ function sortHomeSectionChores(
   return [...chores].sort((a, b) => {
     const aIsSkipped = !!a.lastRecordSkipped && a.doneToday;
     const bIsSkipped = !!b.lastRecordSkipped && b.doneToday;
+    if (a.id === b.id) {
+      const doneFirstRank = (done: boolean, skipped: boolean) => {
+        if (!done) return 2;
+        return skipped ? 1 : 0;
+      };
+      const sameIdRankDiff =
+        doneFirstRank(a.doneToday, aIsSkipped) - doneFirstRank(b.doneToday, bIsSkipped);
+      if (sameIdRankDiff !== 0) return sameIdRankDiff;
+    }
 
     // doneState: 0=not done, 1=done, 2=skipped
     const getDoneState = (done: boolean, skipped: boolean) => {
@@ -1035,7 +1048,7 @@ export function KajiApp() {
     const mapDays = (filtered: typeof chores, mergeOverdueToToday: boolean) =>
       days
         .map(({ date, key: dateKey }) => {
-          const scheduled = filtered.filter((c) => isScheduledOnDate(c, date));
+          const scheduled = filtered.filter((c) => countScheduledOccurrencesOnDate(c.id, dateKey) > 0);
           // 今日の日付なら期限超過タスクもまとめて含める
           if (mergeOverdueToToday && dateKey === todayKey) {
             const overdueChores = filtered.filter((c) => c.isOverdue && !scheduled.some((s) => s.id === c.id));
@@ -1157,6 +1170,7 @@ export function KajiApp() {
 
     chores.forEach((chore) => {
       // Show the latest completed day on calendar as completed (initial seed records are excluded).
+      let completedDateKey: string | null = null;
       if (chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial) {
         const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
         if (
@@ -1164,6 +1178,7 @@ export function KajiApp() {
           performedDateKey <= toJstDateKey(calendarWindowEnd)
         ) {
           addToMap(performedDateKey, chore);
+          completedDateKey = performedDateKey;
         }
       }
 
@@ -1174,13 +1189,21 @@ export function KajiApp() {
       });
 
       if (overrideList.length > 0) {
-        overrideList.forEach((override) => addToMap(override.date, chore));
+        const overrideDateCounts = new Map<string, number>();
+        overrideList.forEach((ov) => {
+          overrideDateCounts.set(ov.date, (overrideDateCounts.get(ov.date) ?? 0) + 1);
+        });
+        overrideDateCounts.forEach((count, dKey) => {
+          for (let i = 0; i < count; i += 1) addToMap(dKey, chore);
+        });
         return;
       }
 
       for (let day = calendarWindowStart; day <= calendarWindowEnd; day = addDays(day, 1)) {
+        const dKey = toJstDateKey(day);
+        if (dKey === completedDateKey) continue;
         if (!isScheduledOnDate(chore, day)) continue;
-        addToMap(toJstDateKey(day), chore);
+        addToMap(dKey, chore);
       }
     });
 
@@ -3847,48 +3870,24 @@ export function KajiApp() {
     return null;
   };
 
-  const resolveHomeChoresByDate = (dateKey: string) => {
-    const mapped = calendarScheduleMap.get(dateKey);
-    if (mapped) return mapped;
-
-    const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-    if (Number.isNaN(targetDate.getTime())) return [];
-
-    const results: ChoreWithComputed[] = [];
-
-    chores.forEach((chore) => {
-      if (chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial) {
-        const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
-        if (performedDateKey === dateKey) {
-          results.push(chore);
-        }
-      }
-
-      const overrideList = scheduleOverridesByChore.get(chore.id) ?? [];
-      if (overrideList.length > 0) {
-        const occurrences = overrideList.filter((override) => override.date === dateKey).length;
-        for (let index = 0; index < occurrences; index += 1) {
-          results.push(chore);
-        }
-        return;
-      }
-
-      if (isScheduledOnDate(chore, targetDate)) {
-        results.push(chore);
-      }
-    });
-
-    results.sort((a, b) => {
-      const titleDiff = JA_COLLATOR.compare(a.title, b.title);
-      if (titleDiff !== 0) return titleDiff;
-      return JA_COLLATOR.compare(a.id, b.id);
-    });
-    return results;
-  };
-
-  const yesterdayChoresForHome = resolveHomeChoresByDate(yesterdayKey);
-  const todayChoresForHome = resolveHomeChoresByDate(todayKey);
-  const tomorrowChoresForHome = resolveHomeChoresByDate(tomorrowKey);
+  const yesterdayOccurrencesForHome = buildHomeOccurrencesByDate({
+    chores,
+    dateKey: yesterdayKey,
+    scheduleOverridesByChore,
+  });
+  const todayOccurrencesForHome = buildHomeOccurrencesByDate({
+    chores,
+    dateKey: todayKey,
+    scheduleOverridesByChore,
+  });
+  const tomorrowOccurrencesForHome = buildHomeOccurrencesByDate({
+    chores,
+    dateKey: tomorrowKey,
+    scheduleOverridesByChore,
+  });
+  const yesterdayChoresForHome = yesterdayOccurrencesForHome.map((item) => item.chore);
+  const todayChoresForHome = todayOccurrencesForHome.map((item) => item.chore);
+  const tomorrowChoresForHome = tomorrowOccurrencesForHome.map((item) => item.chore);
   const yesterdaySortedChores = sortHomeSectionChores(
     "yesterday",
     yesterdayChoresForHome,
@@ -3937,16 +3936,19 @@ export function KajiApp() {
       key: "yesterday" as const,
       title: "きのうのにんむ",
       chores: applyStoredOrderToSection(yesterdayKey, yesterdaySortedChores),
+      doneCount: countDoneHomeOccurrences(yesterdayOccurrencesForHome),
     },
     {
       key: "today" as const,
       title: "きょうのにんむ",
       chores: applyStoredOrderToSection(todayKey, todaySortedChores),
+      doneCount: countDoneHomeOccurrences(todayOccurrencesForHome),
     },
     {
       key: "tomorrow" as const,
       title: "あしたのにんむ",
       chores: applyStoredOrderToSection(tomorrowKey, tomorrowSortedChores),
+      doneCount: countDoneHomeOccurrences(tomorrowOccurrencesForHome),
     },
   ];
   homeSectionChoreIdsRef.current = Object.fromEntries(
@@ -4119,20 +4121,20 @@ export function KajiApp() {
     if (tab === "home") {
       const topDate = topDateWithWeekday();
       return (
-        <div ref={homeHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+        <div ref={homeHeaderRef} className="border-b border-[#D7DCE2] bg-[#F8F9FA]/95 px-4 pb-3 pt-3 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
           <div className="flex items-center justify-between">
             <button
               type="button"
               onClick={toggleSettingsFromHeader}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white"
               aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
             >
-              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
+              <span className="material-symbols-rounded text-[26px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
                 account_circle
               </span>
             </button>
-            <p className="text-[32px] font-bold leading-none text-[#5F6368]">{topDate}</p>
-            <div className="h-9 w-9" />
+            <p className="text-[44px] font-bold leading-none text-[#5F6368]">{topDate}</p>
+            <div className="h-8 w-8" />
           </div>
         </div>
       );
@@ -4427,12 +4429,12 @@ export function KajiApp() {
                         className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
                         style={{ top: 0 }}
                       >
-                        <HomeSectionTitle title={`${section.title}（${section.chores.length}）`} />
+                        <HomeSectionTitle title={`${section.title}（${section.doneCount}/${section.chores.length}）`} />
                         {section.key === "tomorrow" ? (
                           <p className="mt-0.5 text-[12px] font-medium text-[#5F6368]">今日やっちゃってもOK！</p>
                         ) : null}
                       </div>
-                      <div className="flex flex-col items-stretch gap-2">
+                      <div className="grid grid-cols-2 items-stretch gap-2">
                         {section.chores.length === 0 ? (
                           <p className="py-2 text-center text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
                         ) : section.chores.map((chore, choreIndex) => {
@@ -4447,19 +4449,7 @@ export function KajiApp() {
                           const disableTomorrowDailyCheck = false;
                           const performerUser = chore.lastPerformerId ? boot.users.find((u) => u.id === chore.lastPerformerId) : null;
                           const performerColor = performerUser?.color ?? null;
-                          const doneYesterday =
-                            !chore.doneToday &&
-                            !!chore.lastPerformedAt &&
-                            !!chore.lastRecordId &&
-                            !chore.lastRecordIsInitial &&
-                            !chore.lastRecordSkipped &&
-                            toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt))) === yesterdayKey;
-                          const displayChore =
-                            section.key === "yesterday" && doneYesterday
-                              ? { ...chore, doneToday: true }
-                              : section.key === "tomorrow" && chore.doneToday
-                                ? { ...chore, doneToday: false }
-                                : chore;
+                          const displayChore = chore;
                           const isHomeDropTarget =
                             homeDropTarget?.targetDateKey === sectionDateKey &&
                             homeDropTarget.targetChoreId === chore.id;
@@ -5894,7 +5884,7 @@ export function KajiApp() {
                     size="lg"
                     fullWidth
                   >
-                    実績を記録する
+                    実績/予定を記録する
                   </ActionButton>
                 </div>
               ) : (

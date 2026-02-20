@@ -78,6 +78,18 @@ test("Section-level swipe defers to calendar and pull-to-refresh gestures", () =
   assert.match(app, /data-calendar-swipe-surface="true"/);
 });
 
+test("Home drag and drop wiring keeps required attributes and handlers", () => {
+  const app = read("src/components/kaji/kaji-app.tsx");
+  assert.match(app, /draggable/);
+  assert.match(app, /data-home-drop-date=\{sectionDateKey\}/);
+  assert.match(app, /data-home-drop-chore-id=\{chore.id\}/);
+  assert.match(app, /onDragStart=\{\(event\) => \{/);
+  assert.match(app, /onDragOver=\{\(event\) => \{/);
+  assert.match(app, /onDrop=\{\(event\) => \{/);
+  assert.match(app, /onDragEnd=\{clearDragState\}/);
+  assert.match(app, /onPointerDown=\{\(event\) => handleChorePointerDown\(displayChore, sectionDateKey, event\)\}/);
+});
+
 test("Optimistic completion marks initial flag false to avoid temporary disappearance", () => {
   const app = read("src/components/kaji/kaji-app.tsx");
   assert.match(app, /submitMemoAction[\s\S]*lastRecordIsInitial:\s*false/);
