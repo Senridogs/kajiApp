@@ -1,6 +1,6 @@
 import { icons } from "lucide-react";
 
-export const PRIMARY_COLOR = "#1A9BE8";
+export const PRIMARY_COLOR = "#F97316";
 
 export const ICON_COLOR_PALETTE = [
   "#FFFFFF",
@@ -11,7 +11,7 @@ export const ICON_COLOR_PALETTE = [
   "#EA4335",
   "#FBBC05",
   "#34A853",
-  "#1A9BE8",
+  "#F97316",
   "#5C6BC0",
   "#8E24AA",
 ];
@@ -23,7 +23,7 @@ export const BG_COLOR_PALETTE = [
   "#9AA0A6",
   "#5F6368",
   "#202124",
-  "#EAF5FF",
+  "#FFF1E8",
   "#E8F3EC",
   "#FFF4E5",
   "#FDECEE",

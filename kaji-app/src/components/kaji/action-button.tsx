@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { type ButtonHTMLAttributes } from "react";
 import { Loader2 } from "lucide-react";
@@ -9,11 +9,13 @@ export type ActionButtonVariant = "primary" | "secondary" | "destructive" | "suc
 export type ActionButtonSize = "sm" | "md" | "lg";
 
 const VARIANT_CLASS: Record<ActionButtonVariant, string> = {
-  primary: "border border-[#1A9BE8] bg-[#1A9BE8] text-white shadow-[0_4px_12px_rgba(26,155,232,0.3)]",
-  secondary: "border border-[#DADCE0] bg-white text-[#5F6368]",
-  destructive: "border border-[#D45858] bg-[#D45858] text-white",
-  success: "border border-[#4CAF50] bg-[#4CAF50] text-white",
-  ghost: "border border-transparent bg-transparent text-[#5F6368]",
+  primary:
+    "border border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)] shadow-[0_4px_12px_rgba(0,0,0,0.18)]",
+  secondary: "border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]",
+  destructive: "border border-[var(--destructive)] bg-[var(--destructive)] text-white",
+  success:
+    "border border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)] shadow-[0_4px_12px_rgba(0,0,0,0.18)]",
+  ghost: "border border-transparent bg-transparent text-[var(--muted-foreground)]",
 };
 
 const SIZE_CLASS: Record<ActionButtonSize, string> = {
@@ -61,3 +63,4 @@ export function ActionButton({
     </button>
   );
 }
+

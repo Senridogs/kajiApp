@@ -3,12 +3,13 @@ import { NextResponse } from "next/server";
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { buildCompletionPayload, canSendPush, sendWebPush } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
-import { isDateKey } from "@/lib/schedule-policy";
+import { isDateKey, resolveScheduleWindow } from "@/lib/schedule-policy";
 import { touchHousehold } from "@/lib/sync";
 import {
   OCCURRENCE_SOURCE_OVERRIDE,
   consumePendingOccurrences,
   ensureOccurrenceBackfill,
+  loadCurrentScheduledDateKeys,
 } from "@/lib/chore-occurrence";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
@@ -17,6 +18,7 @@ type Body = {
   performedAt?: string;
   skipped?: boolean;
   skipCount?: number;
+  completeCount?: number;
   sourceDate?: string;
   scheduledDate?: string;
   recalculateFuture?: boolean;
@@ -29,6 +31,9 @@ const SOURCE_DATE_NOT_SCHEDULED = "Source date is not part of the current schedu
 const SKIP_COUNT_REQUIRES_SOURCE_DATE = "skipCount requires sourceDate.";
 const SKIP_COUNT_ONLY_FOR_SKIP = "skipCount can be used only when skipped=true.";
 const SKIP_COUNT_INVALID = "skipCount must be an integer greater than or equal to 1.";
+const COMPLETE_COUNT_REQUIRES_SOURCE_DATE = "completeCount requires sourceDate.";
+const COMPLETE_COUNT_ONLY_FOR_COMPLETE = "completeCount can be used only when skipped=false.";
+const COMPLETE_COUNT_INVALID = "completeCount must be an integer greater than or equal to 1.";
 const SKIP_COUNT_OUT_OF_RANGE = "skipCount exceeds pending occurrences on sourceDate.";
 const SOURCE_DATE_REQUIRES_SCHEDULED_DATE = "scheduledDate is required when sourceDate is provided.";
 
@@ -91,19 +96,31 @@ export async function POST(request: Request, { params }: RouteParams) {
   const skipped = body.skipped ?? false;
   const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
   const requestedSkipCount = body?.skipCount === undefined ? 1 : Number(body.skipCount);
+  const requestedCompleteCount = body?.completeCount === undefined ? 1 : Number(body.completeCount);
   if (body?.skipCount !== undefined && !skipped) {
     return badRequest(SKIP_COUNT_ONLY_FOR_SKIP);
+  }
+  if (body?.completeCount !== undefined && skipped) {
+    return badRequest(COMPLETE_COUNT_ONLY_FOR_COMPLETE);
   }
   if (body?.skipCount !== undefined) {
     if (!Number.isInteger(requestedSkipCount) || requestedSkipCount < 1) {
       return badRequest(SKIP_COUNT_INVALID);
     }
   }
+  if (body?.completeCount !== undefined) {
+    if (!Number.isInteger(requestedCompleteCount) || requestedCompleteCount < 1) {
+      return badRequest(COMPLETE_COUNT_INVALID);
+    }
+  }
   if (!sourceDate && skipped && requestedSkipCount !== 1) {
     return badRequest(SKIP_COUNT_REQUIRES_SOURCE_DATE);
   }
+  if (!sourceDate && !skipped && requestedCompleteCount !== 1) {
+    return badRequest(COMPLETE_COUNT_REQUIRES_SOURCE_DATE);
+  }
 
-  const consumeCount = skipped ? requestedSkipCount : 1;
+  const consumeCount = skipped ? requestedSkipCount : requestedCompleteCount;
   const performedAt = requestedPerformedAt;
   const targetDateKey = scheduledDate ?? toJstDateKey(startOfJstDay(performedAt));
 
@@ -112,9 +129,43 @@ export async function POST(request: Request, { params }: RouteParams) {
     record = await prisma.$transaction(async (tx) => {
       if (sourceDate) {
         await ensureOccurrenceBackfill(tx, chore.id);
-        const sourcePendingCount = await tx.choreOccurrence.count({
+        let sourcePendingCount = await tx.choreOccurrence.count({
           where: { choreId: chore.id, dateKey: sourceDate, status: "pending" },
         });
+        if (sourcePendingCount === 0) {
+          // Some legacy chores can still be in recurrence-only mode with no pending occurrence rows.
+          // Backfill source-date occurrences lazily so completion/skip can proceed consistently.
+          const latestPastOrTodayRecord = await tx.choreRecord.findFirst({
+            where: {
+              householdId: session.householdId,
+              choreId: chore.id,
+              performedAt: { lt: tomorrowStart },
+            },
+            orderBy: { performedAt: "desc" },
+            select: { performedAt: true },
+          });
+          const dueBase = latestPastOrTodayRecord?.performedAt ?? chore.createdAt;
+          const dueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
+          const scheduledDateKeys = await loadCurrentScheduledDateKeys(tx, {
+            choreId: chore.id,
+            dueDateKey,
+            intervalDays: chore.intervalDays,
+            dailyTargetCount: chore.dailyTargetCount,
+            window: resolveScheduleWindow(sourceDate, sourceDate),
+          });
+          const sourceScheduledCount = scheduledDateKeys.filter((dateKey) => dateKey === sourceDate).length;
+          if (sourceScheduledCount > 0) {
+            await tx.choreOccurrence.createMany({
+              data: Array.from({ length: sourceScheduledCount }).map(() => ({
+                choreId: chore.id,
+                dateKey: sourceDate,
+                status: "pending",
+                sourceType: OCCURRENCE_SOURCE_OVERRIDE,
+              })),
+            });
+            sourcePendingCount = sourceScheduledCount;
+          }
+        }
         if (sourcePendingCount === 0) {
           throw new Error(SOURCE_DATE_NOT_SCHEDULED);
         }

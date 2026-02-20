@@ -5,7 +5,6 @@ import type { ChoreWithComputed, StatsPeriodKey } from "@/lib/types";
 
 type ChoreWithLatest = Chore & {
   records: (ChoreRecord & { user: Pick<User, "id" | "name"> })[];
-  defaultAssignee?: Pick<User, "id" | "name"> | null;
 };
 
 type ChoreRecordWithOptionalSkip = ChoreRecord & {
@@ -46,8 +45,8 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
     intervalDays: chore.intervalDays,
     dailyTargetCount: chore.dailyTargetCount,
     archived: chore.archived,
-    defaultAssigneeId: chore.defaultAssigneeId ?? null,
-    defaultAssigneeName: chore.defaultAssignee?.name ?? null,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
     lastPerformedAt: lastPerformedAt ? lastPerformedAt.toISOString() : null,
     lastPerformerName: isSkipped ? "スキップ" : (latest?.user.name ?? null),
     lastPerformerId: latest?.user.id ?? null,

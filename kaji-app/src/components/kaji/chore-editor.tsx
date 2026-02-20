@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Minus, Plus, Trash2 } from "lucide-react";
@@ -23,7 +23,7 @@ export type ChoreForm = {
   iconColor: string;
   bgColor: string;
   lastPerformedAt?: string | null;
-  defaultAssigneeId?: string | null;
+  scheduleAnchorDateKey?: string;
 };
 
 export type CustomIconOption = {
@@ -71,7 +71,6 @@ export function ChoreEditor({
   mode,
   value,
   customIcons,
-  users,
   isSaving = false,
   isDeleting = false,
   onChange,
@@ -83,7 +82,6 @@ export function ChoreEditor({
   mode: "create" | "edit";
   value: ChoreForm;
   customIcons: CustomIconOption[];
-  users: Array<{ id: string; name: string; color: string | null }>;
   isSaving?: boolean;
   isDeleting?: boolean;
   onChange: (next: ChoreForm) => void;
@@ -210,32 +208,32 @@ export function ChoreEditor({
   return (
     <div className="space-y-[10px] pb-0">
       <div>
-        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">家事名</p>
+        <p className="mb-1.5 text-[14.4px] font-bold text-[var(--muted-foreground)]">家事名</p>
         <input
           value={value.title}
           onChange={(e) => onChange({ ...value, title: e.target.value })}
-          placeholder={mode === "create" ? "例: 玄関掃除" : ""}
-          className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-[14px] py-3 text-[16.8px] font-semibold text-[#202124] outline-none"
+          placeholder={mode === "create" ? "例） トイレ掃除" : ""}
+          className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-[14px] py-3 text-[16.8px] font-semibold text-[var(--foreground)] outline-none"
         />
       </div>
 
       <div>
-        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">リマインド間隔</p>
-        <div className="flex items-center justify-between rounded-[14px] border border-[#DADCE0] bg-white px-3 py-2.5">
+        <p className="mb-1.5 text-[14.4px] font-bold text-[var(--muted-foreground)]">くり返し間隔</p>
+        <div className="flex items-center justify-between rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => updateIntervalDays(-7)}
-              className="rounded-full bg-[#F1F3F4] px-3 py-[5px] text-[12px] font-bold text-[#5F6368]"
+              className="rounded-full bg-[var(--secondary)] px-3 py-[5px] text-[12px] font-bold text-[var(--muted-foreground)]"
             >
               -7
             </button>
             <button
               type="button"
               onClick={() => updateIntervalDays(-1)}
-              className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#F1F3F4]"
+              className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[var(--secondary)]"
             >
-              <Minus size={16} className="text-[#6F5A4B]" />
+              <Minus size={16} className="text-[var(--muted-foreground)]" />
             </button>
           </div>
           <div className="flex items-center gap-1">
@@ -244,23 +242,23 @@ export function ChoreEditor({
               value={String(value.intervalDays)}
               inputMode="numeric"
               onChange={(e) => setIntervalDays(e.target.value)}
-              className="w-[58px] rounded-lg border border-[#DADCE0] bg-white px-2 py-1.5 text-center text-[16.8px] font-bold text-[#202124] outline-none"
+              className="w-[58px] rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-center text-[16.8px] font-bold text-[var(--foreground)] outline-none"
               aria-label="interval-days"
             />
-            <span className="text-[15px] font-bold text-[#202124]">日ごと</span>
+            <span className="text-[15px] font-bold text-[var(--foreground)]">日ごと</span>
           </div>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => updateIntervalDays(1)}
-              className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#1A9BE8]"
+              className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[var(--primary)]"
             >
               <Plus size={16} className="text-white" />
             </button>
             <button
               type="button"
               onClick={() => updateIntervalDays(7)}
-              className="rounded-full bg-[#1A9BE8] px-3 py-[5px] text-[12px] font-bold text-white"
+              className="rounded-full bg-[var(--primary)] px-3 py-[5px] text-[12px] font-bold text-white"
             >
               +7
             </button>
@@ -269,14 +267,14 @@ export function ChoreEditor({
       </div>
 
       <div>
-        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">1日回数</p>
-        <div className="flex items-center justify-between rounded-[14px] border border-[#DADCE0] bg-white px-3 py-2.5">
+        <p className="mb-1.5 text-[14.4px] font-bold text-[var(--muted-foreground)]">1日の回数</p>
+        <div className="flex items-center justify-between rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
           <button
             type="button"
             onClick={() => updateDailyTargetCount(-1)}
-            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#F1F3F4]"
+            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[var(--secondary)]"
           >
-            <Minus size={16} className="text-[#6F5A4B]" />
+            <Minus size={16} className="text-[var(--muted-foreground)]" />
           </button>
           <div className="flex items-center gap-1">
             <input
@@ -284,22 +282,22 @@ export function ChoreEditor({
               value={String(value.dailyTargetCount)}
               inputMode="numeric"
               onChange={(e) => setDailyTargetCount(e.target.value)}
-              className="w-[58px] rounded-lg border border-[#DADCE0] bg-white px-2 py-1.5 text-center text-[16.8px] font-bold text-[#202124] outline-none"
+              className="w-[58px] rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-center text-[16.8px] font-bold text-[var(--foreground)] outline-none"
               aria-label="daily-target-count"
             />
-            <span className="text-[15px] font-bold text-[#202124]">回 / 日</span>
+            <span className="text-[15px] font-bold text-[var(--foreground)]">回 / 日</span>
           </div>
           <button
             type="button"
             onClick={() => updateDailyTargetCount(1)}
-            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#1A9BE8]"
+            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[var(--primary)]"
           >
             <Plus size={16} className="text-white" />
           </button>
         </div>
       </div>
       <div>
-        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">開始日 *</p>
+        <p className="mb-1.5 text-[14.4px] font-bold text-[var(--muted-foreground)]">開始日 *</p>
         <input
           type="date"
           value={lastPerformedDate}
@@ -313,17 +311,17 @@ export function ChoreEditor({
           disabled={mode === "edit"}
           required
           aria-label="start-date"
-          className={`w-full rounded-[14px] border border-[#DADCE0] py-3 pl-3 pr-3 text-[16.8px] font-semibold text-[#202124] outline-none ${mode === "edit" ? "bg-[#F1F3F4] text-[#5F6368]" : "bg-white"}`}
+          className={`w-full rounded-[14px] border border-[var(--border)] py-3 pl-3 pr-3 text-[16.8px] font-semibold text-[var(--foreground)] outline-none ${mode === "edit" ? "bg-[var(--secondary)] text-[var(--muted-foreground)]" : "bg-[var(--card)]"}`}
         />
         {mode === "create" && value.lastPerformedAt && new Date(value.lastPerformedAt) > new Date() ? (
-          <p className="mt-1 text-[11px] font-medium text-[#1A9BE8]">
+          <p className="mt-1 text-[11px] font-medium text-[var(--primary)]">
             未来日を選択中です。次回予定はその日を基準に計算されます。
           </p>
         ) : null}
       </div>
 
       <div>
-        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">アイコン</p>
+        <p className="mb-1.5 text-[14.4px] font-bold text-[var(--muted-foreground)]">アイコン</p>
         <div className="space-y-2">
           <div
             ref={iconViewportRef}
@@ -380,8 +378,8 @@ export function ChoreEditor({
                             type="button"
                             onClick={(event) => handleSelectIcon(option, event.timeStamp)}
                             className={`flex w-full items-center justify-center gap-1.5 rounded-xl border px-[10px] py-[9px] ${selected
-                              ? "border-[#BFD6FF] bg-[#EEF3FF]"
-                              : "border-[#DADCE0] bg-[#F8F9FA]"
+                              ? "border-[var(--primary)] bg-[var(--app-surface-soft)]"
+                              : "border-[var(--border)] bg-[var(--secondary)]"
                               }`}
                           >
                             <Icon size={14} color={displayColor} />
@@ -399,9 +397,9 @@ export function ChoreEditor({
                                 setDeleteArmedCustomIconId(null);
                                 onDeleteCustomIcon(option.id);
                               }}
-                              className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/62 backdrop-blur-[1px]"
+                              className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-black/35 backdrop-blur-[1px]"
                             >
-                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#D45858] text-white shadow-[0_2px_6px_rgba(0,0,0,0.24)]">
+                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--destructive)] text-white shadow-[0_2px_6px_rgba(0,0,0,0.24)]">
                                 <Trash2 size={14} />
                               </span>
                             </button>
@@ -422,7 +420,7 @@ export function ChoreEditor({
               {iconPages.map((_, idx) => (
                 <div
                   key={`icon-page-dot-${idx}`}
-                  className={`h-1.5 w-1.5 rounded-full ${idx === displayActiveIconPage ? "bg-[#1A9BE8]" : "bg-[#DADCE0]"}`}
+                  className={`h-1.5 w-1.5 rounded-full ${idx === displayActiveIconPage ? "bg-[var(--primary)]" : "bg-[var(--border)]"}`}
                 />
               ))}
             </div>
@@ -432,57 +430,14 @@ export function ChoreEditor({
             type="button"
             onClick={onOpenCustomIcon}
             className={`w-full rounded-xl border px-3 py-[10px] text-[13.2px] font-bold ${isCustomIconSelected
-              ? "border-[#BFD6FF] bg-[#EEF3FF] text-[#1A9BE8]"
-              : "border-[#DADCE0] bg-white text-[#5F6368]"
+              ? "border-[var(--primary)] bg-[var(--app-surface-soft)] text-[var(--primary)]"
+              : "border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]"
               }`}
           >
-            ＋ カスタムアイコン
+            + カスタムアイコン
           </button>
         </div>
       </div>
-
-      {users.length > 0 ? (
-        <div>
-          <p className="mb-1.5 text-[14px] font-bold text-[#202124]">デフォルト担当者</p>
-          <div className="flex gap-2">
-            {users.map((u) => {
-              const isSelected = value.defaultAssigneeId === u.id;
-              const userColor = u.color ?? "#1A9BE8";
-              return (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() =>
-                    onChange({
-                      ...value,
-                      defaultAssigneeId: isSelected ? null : u.id,
-                    })
-                  }
-                  className={`rounded-2xl px-4 py-2 text-[13px] font-bold transition-colors ${isSelected ? "text-white" : "border text-[#5F6368]"
-                    }`}
-                  style={
-                    isSelected
-                      ? { backgroundColor: userColor, borderColor: userColor }
-                      : { backgroundColor: "white", borderColor: "#DADCE0" }
-                  }
-                >
-                  {u.name}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => onChange({ ...value, defaultAssigneeId: null })}
-              className={`rounded-2xl px-4 py-2 text-[13px] font-bold ${!value.defaultAssigneeId
-                ? "bg-[#F1F3F4] text-[#202124]"
-                : "border border-[#DADCE0] bg-white text-[#5F6368]"
-                }`}
-            >
-              なし
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className={mode === "edit" ? "grid grid-cols-2 gap-2" : ""}>
         <ActionButton
@@ -494,7 +449,7 @@ export function ChoreEditor({
           fullWidth
           loading={isSaving}
           loadingLabel="\u4FDD\u5B58\u4E2D..."
-          className={!canSave ? "border-[#B6C8D6] bg-[#B6C8D6] shadow-none" : undefined}
+          className={!canSave ? "border-[var(--app-text-tertiary)] bg-[var(--app-text-tertiary)] shadow-none" : undefined}
         >
           {mode === "create" ? "\u5BB6\u4E8B\u3092\u8FFD\u52A0" : "\u5909\u66F4\u3092\u4FDD\u5B58"}
         </ActionButton>
@@ -506,7 +461,7 @@ export function ChoreEditor({
             variant="secondary"
             size="lg"
             fullWidth
-            className="border-[#F2C9C9] text-[#D45858]"
+            className="border-[var(--destructive)] text-[var(--destructive)]"
           >
             {"\u5BB6\u4E8B\u3092\u524A\u9664"}
           </ActionButton>
@@ -548,8 +503,8 @@ export function CustomIconPicker({
         <input
           value={customName}
           onChange={(e) => setCustomName(e.target.value)}
-          placeholder="例: デスクまわり"
-          className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-[14px] py-3 text-[15.6px] font-medium text-[#202124] outline-none"
+          placeholder="例） デスクまわり"
+          className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-[14px] py-3 text-[15.6px] font-medium text-[var(--foreground)] outline-none"
         />
       </div>
 
@@ -596,10 +551,10 @@ export function CustomIconPicker({
                         key={iconName}
                         type="button"
                         onClick={() => onChange({ ...value, icon: iconName })}
-                        className={`flex aspect-square w-full items-center justify-center rounded-[8px] border ${selected ? "border-[#1A9BE8] bg-[#EEF3FF]" : "border-[#DADCE0] bg-white"
+                        className={`flex aspect-square w-full items-center justify-center rounded-[8px] border ${selected ? "border-[var(--primary)] bg-[var(--app-surface-soft)]" : "border-[var(--border)] bg-[var(--card)]"
                           }`}
                       >
-                        <Icon size={24} color="#202124" />
+                        <Icon size={24} color="var(--foreground)" />
                       </button>
                     );
                   })}
@@ -612,7 +567,7 @@ export function CustomIconPicker({
           {iconPages.map((_, idx) => (
             <div
               key={idx}
-              className={`h-1.5 w-1.5 rounded-full ${idx === activePage ? "bg-[#1A9BE8]" : "bg-[#DADCE0]"}`}
+              className={`h-1.5 w-1.5 rounded-full ${idx === activePage ? "bg-[var(--primary)]" : "bg-[var(--border)]"}`}
             />
           ))}
         </div>
@@ -620,7 +575,7 @@ export function CustomIconPicker({
 
       <div className="space-y-1.5">
         <div>
-          <p className="mb-1 text-xs font-bold text-[#5F6368]">アイコン色</p>
+          <p className="mb-1 text-xs font-bold text-[var(--muted-foreground)]">アイコン色</p>
           <div className="flex flex-wrap gap-1.5">
             {ICON_COLOR_PALETTE.map((color) => (
               <ColorDot
@@ -630,7 +585,7 @@ export function CustomIconPicker({
                 onClick={() => onChange({ ...value, iconColor: color })}
               />
             ))}
-            <label className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-full border border-[#DADCE0] text-[#5F6368]">
+            <label className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted-foreground)]">
               <Plus size={14} />
               <input
                 type="color"
@@ -643,7 +598,7 @@ export function CustomIconPicker({
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-bold text-[#5F6368]">背景色</p>
+          <p className="mb-1 text-xs font-bold text-[var(--muted-foreground)]">背景色</p>
           <div className="flex flex-wrap gap-1.5">
             {BG_COLOR_PALETTE.map((color) => (
               <ColorDot
@@ -653,7 +608,7 @@ export function CustomIconPicker({
                 onClick={() => onChange({ ...value, bgColor: color })}
               />
             ))}
-            <label className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-full border border-[#DADCE0] text-[#5F6368]">
+            <label className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-full border border-[var(--border)] text-[var(--muted-foreground)]">
               <Plus size={14} />
               <input
                 type="color"
@@ -666,7 +621,7 @@ export function CustomIconPicker({
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[#DADCE0] bg-white p-[8px]">
+      <div className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-[8px]">
         <div className="flex justify-center">
           <IconBadge icon={value.icon} iconColor={value.iconColor} bgColor={value.bgColor} size={56} iconSize={28} />
         </div>
@@ -682,12 +637,15 @@ export function CustomIconPicker({
             bgColor: value.bgColor,
           })
         }
-        className="w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[15.6px] font-bold text-white"
+        className="w-full rounded-[14px] bg-[var(--primary)] px-4 py-3 text-[15.6px] font-bold text-white"
       >
-        このアイコンを保存
+        このアイコンを追加
       </button>
     </div>
   );
 }
+
+
+
 
 

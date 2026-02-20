@@ -55,7 +55,7 @@ export async function GET() {
       return NextResponse.json(emptyBootstrapPayload());
     }
 
-    const [chores, assignments, customIcons, scheduleOverrides] = await Promise.all([
+    const [chores, customIcons, scheduleOverrides] = await Promise.all([
       prisma.chore.findMany({
         where: {
           householdId: household.id,
@@ -70,13 +70,6 @@ export async function GET() {
             include: { user: { select: { id: true, name: true } } },
           },
         },
-      }),
-      prisma.choreAssignment.findMany({
-        where: {
-          chore: { householdId: household.id, archived: false },
-        },
-        include: { user: { select: { id: true, name: true } } },
-        orderBy: { date: "asc" },
       }),
       prisma.customIcon.findMany({
         where: { householdId: household.id },
@@ -191,12 +184,7 @@ export async function GET() {
       chores: computed,
       todayChores: homeSplit.todayChores,
       tomorrowChores: homeSplit.tomorrowChores,
-      assignments: assignments.map((a) => ({
-        choreId: a.choreId,
-        userId: a.userId,
-        userName: a.user.name,
-        date: a.date,
-      })),
+      assignments: [],
       householdInviteCode: household.inviteCode,
       notificationSettings: {
         reminderTimes: household.reminderTimes,

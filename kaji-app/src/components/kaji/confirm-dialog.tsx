@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { type CSSProperties, type ReactNode, useEffect } from "react";
 
@@ -81,15 +81,15 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-label={ariaLabel ?? title}
         className={cn(
-          "w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl",
+          "w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-[var(--card)] p-6 shadow-xl",
           panelClassName,
         )}
         onClick={(event) => event.stopPropagation()}
       >
         {icon ? <div className="mx-auto mb-2 flex justify-center">{icon}</div> : null}
-        <p className="text-center text-[17px] font-bold text-[#202124]">{title}</p>
-        {description ? <p className="mt-2 text-center text-[13px] font-medium text-[#5F6368]">{description}</p> : null}
-        {detail ? <p className="mt-1 text-center text-[12.5px] font-medium text-[#5F6368]">{detail}</p> : null}
+        <p className="text-center text-[17px] font-bold text-[var(--foreground)]">{title}</p>
+        {description ? <p className="mt-2 text-center text-[13px] font-medium text-[var(--muted-foreground)]">{description}</p> : null}
+        {detail ? <p className="mt-1 text-center text-[12.5px] font-medium text-[var(--muted-foreground)]">{detail}</p> : null}
         <div className={cn("mt-5", cancelLabel ? "grid grid-cols-2 gap-2" : "")}>
           {cancelLabel && onCancel ? (
             <ActionButton
@@ -119,3 +119,4 @@ export function ConfirmDialog({
     </div>
   );
 }
+

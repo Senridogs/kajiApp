@@ -16,7 +16,6 @@ type CreateChoreBody = {
   bgColor?: string;
   startDate?: string;
   lastPerformedAt?: string;
-  defaultAssigneeId?: string | null;
 };
 
 const DB_SCHEMA_MISSING_CODE = "DB_SCHEMA_MISSING";
@@ -121,9 +120,9 @@ export async function POST(request: Request) {
           intervalDays,
           dailyTargetCount,
           icon: body.icon || "sparkles",
-          iconColor: body.iconColor || "#202124",
-          bgColor: body.bgColor || "#EAF5FF",
-          defaultAssigneeId: body.defaultAssigneeId || null,
+          iconColor: body.iconColor || "#C2410C",
+          bgColor: body.bgColor || "#FFF1E8",
+          defaultAssigneeId: null,
         },
       });
 

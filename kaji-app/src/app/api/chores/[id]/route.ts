@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
+import { OCCURRENCE_SOURCE_GENERATOR } from "@/lib/chore-occurrence";
 import { computeChore } from "@/lib/dashboard";
 import { buildHomeProgressByDate } from "@/lib/home-occurrence";
 import { prisma } from "@/lib/prisma";
+import { buildRecurrenceDateKeys } from "@/lib/schedule-policy";
 import { touchHousehold } from "@/lib/sync";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
@@ -15,7 +17,7 @@ type UpdateChoreBody = {
   icon?: string;
   iconColor?: string;
   bgColor?: string;
-  defaultAssigneeId?: string | null;
+  scheduleAnchorDate?: string;
 };
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -140,6 +142,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const { id } = await params;
   const body = await readJsonBody<UpdateChoreBody>(request);
   if (!body) return badRequest("Request body is invalid.");
+  const scheduleAnchorDate = body.scheduleAnchorDate?.trim();
+  if (scheduleAnchorDate && !isDateKey(scheduleAnchorDate)) {
+    return badRequest("scheduleAnchorDate must be in YYYY-MM-DD format.");
+  }
 
   const data: Record<string, unknown> = {};
   if (typeof body.title === "string") {
@@ -162,28 +168,101 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (typeof body.icon === "string") data.icon = body.icon;
   if (typeof body.iconColor === "string") data.iconColor = body.iconColor;
   if (typeof body.bgColor === "string") data.bgColor = body.bgColor;
-  if (body.defaultAssigneeId !== undefined) data.defaultAssigneeId = body.defaultAssigneeId || null;
   if (!Object.keys(data).length) return badRequest("No fields to update.");
 
   let updated;
   try {
-    const chore = await prisma.chore.findFirst({
-      where: { id, householdId: session.householdId, archived: false },
-    });
-    if (!chore) return badRequest("Chore not found.", 404);
-
-    updated = await prisma.chore.update({
-      where: { id },
-      data,
-      include: {
-        defaultAssignee: { select: { id: true, name: true } },
-        records: {
-          take: 1,
-          orderBy: { performedAt: "desc" },
-          include: { user: { select: { id: true, name: true } } },
+    updated = await prisma.$transaction(async (tx) => {
+      const chore = await tx.chore.findFirst({
+        where: { id, householdId: session.householdId, archived: false },
+        select: {
+          id: true,
+          createdAt: true,
+          intervalDays: true,
+          dailyTargetCount: true,
         },
-      },
+      });
+      if (!chore) {
+        return null;
+      }
+
+      const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+      const latestRecord = await tx.choreRecord.findFirst({
+        where: {
+          householdId: session.householdId,
+          choreId: id,
+          performedAt: { lt: addDays(startOfJstDay(new Date()), 1) },
+        },
+        orderBy: { performedAt: "desc" },
+        select: { performedAt: true },
+      });
+      const dueBase = latestRecord?.performedAt ?? chore.createdAt;
+      const nextDueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
+      const nextPending = await tx.choreOccurrence.findFirst({
+        where: {
+          choreId: id,
+          status: "pending",
+          dateKey: { gte: todayDateKey },
+        },
+        orderBy: [{ dateKey: "asc" }, { createdAt: "asc" }],
+        select: { dateKey: true },
+      });
+      const fallbackAnchorDateKey = nextPending?.dateKey ?? nextDueDateKey;
+      const anchorDateKey = scheduleAnchorDate || fallbackAnchorDateKey;
+
+      const intervalDaysAfter = typeof body.intervalDays === "number" ? body.intervalDays : chore.intervalDays;
+      const dailyTargetCountAfter =
+        typeof body.dailyTargetCount === "number" ? body.dailyTargetCount : chore.dailyTargetCount;
+      const shouldRebuildFromAnchor =
+        typeof body.intervalDays === "number" || typeof body.dailyTargetCount === "number";
+
+      const updatedChore = await tx.chore.update({
+        where: { id },
+        data,
+        include: {
+          defaultAssignee: { select: { id: true, name: true } },
+          records: {
+            take: 1,
+            orderBy: { performedAt: "desc" },
+            include: { user: { select: { id: true, name: true } } },
+          },
+        },
+      });
+
+      if (shouldRebuildFromAnchor) {
+        await tx.choreOccurrence.updateMany({
+          where: {
+            choreId: id,
+            status: "pending",
+            dateKey: { gte: anchorDateKey },
+          },
+          data: { status: "consumed" },
+        });
+
+        const toDateKey = toJstDateKey(addDays(startOfJstDay(new Date(`${anchorDateKey}T00:00:00+09:00`)), 730));
+        const generated = buildRecurrenceDateKeys({
+          dueDateKey: anchorDateKey,
+          intervalDays: intervalDaysAfter,
+          dailyTargetCount: dailyTargetCountAfter,
+          fromDateKey: anchorDateKey,
+          toDateKey,
+        });
+
+        if (generated.length > 0) {
+          await tx.choreOccurrence.createMany({
+            data: generated.map((dateKey) => ({
+              choreId: id,
+              dateKey,
+              status: "pending",
+              sourceType: OCCURRENCE_SOURCE_GENERATOR,
+            })),
+          });
+        }
+      }
+
+      return updatedChore;
     });
+    if (!updated) return badRequest("Chore not found.", 404);
   } catch (error: unknown) {
     if (isChoreSchemaError(error) || error instanceof Prisma.PrismaClientInitializationError) {
       return choreSchemaErrorResponse();

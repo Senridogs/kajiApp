@@ -176,16 +176,17 @@ export async function POST(request: Request) {
         },
       });
     } else {
-      const sourceOccurrence = await tx.choreOccurrence.findFirst({
+      const sourceOccurrences = await tx.choreOccurrence.findMany({
         where: { choreId, dateKey: sourceDate, status: OCCURRENCE_STATUS_PENDING },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: { id: true },
       });
-      if (!sourceOccurrence) {
+      if (sourceOccurrences.length === 0) {
         return [];
       }
-      await tx.choreOccurrence.update({
-        where: { id: sourceOccurrence.id },
+      const movedCount = sourceOccurrences.length;
+      await tx.choreOccurrence.updateMany({
+        where: { id: { in: sourceOccurrences.map((occurrence) => occurrence.id) } },
         data: { status: OCCURRENCE_STATUS_CONSUMED },
       });
 
@@ -217,20 +218,14 @@ export async function POST(request: Request) {
           });
         }
       } else {
-        const hasPendingOnTarget = await tx.choreOccurrence.findFirst({
-          where: { choreId, dateKey: date, status: OCCURRENCE_STATUS_PENDING },
-          select: { id: true },
+        await tx.choreOccurrence.createMany({
+          data: Array.from({ length: movedCount }).map(() => ({
+            choreId,
+            dateKey: date,
+            status: OCCURRENCE_STATUS_PENDING,
+            sourceType: OCCURRENCE_SOURCE_OVERRIDE,
+          })),
         });
-        if (!mergeIfDuplicate || !hasPendingOnTarget) {
-          await tx.choreOccurrence.create({
-            data: {
-              choreId,
-              dateKey: date,
-              status: OCCURRENCE_STATUS_PENDING,
-              sourceType: OCCURRENCE_SOURCE_OVERRIDE,
-            },
-          });
-        }
       }
     }
 

@@ -26,7 +26,6 @@ import { PRIMARY_COLOR, QUICK_ICON_PRESETS, USER_COLOR_PALETTE } from "@/compone
 import {
   deleteChoreDialogCopy,
   infoDialogCopy,
-  mergeDuplicateDialogCopy,
   recordDateChoiceDialogCopy,
   rescheduleConfirmDialogCopy,
   undoRecordDialogCopy,
@@ -81,6 +80,7 @@ import {
 } from "@/lib/home-occurrence";
 import { addDateKeyDays, addDays, buildHomeDateKeys, compareDateKey, formatDateKey, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
 import { countScheduledOccurrencesOnDate as countScheduledOccurrencesOnDateByReadModel } from "@/lib/occurrence-read-model";
+import { normalizeThemeMode, resolveTheme, THEME_MODE_STORAGE_KEY, type ThemeMode } from "@/lib/theme-mode";
 
 const JA_COLLATOR = new Intl.Collator("ja");
 type ListSortKey = "kana" | "due" | "icon";
@@ -100,13 +100,14 @@ const PULL_REFRESH_HOLD_PX = 28;
 const PULL_START_DIRECTION_RATIO = 1.05;
 const PULL_START_MIN_MOVEMENT_PX = 5;
 const PULL_HORIZONTAL_CANCEL_RATIO = 1.1;
+const PULL_SCROLL_TOP_EPSILON = 1;
 const REMINDER_HOUR_CHOICES = Array.from({ length: 18 }, (_, idx) => `${String(6 + idx).padStart(2, "0")}:00`);
 const REACTION_CHOICES = ["👏", "❤️", "✨", "🎉"] as const;
 const REACTION_ICON_MAP: Record<(typeof REACTION_CHOICES)[number], { icon: string; color: string }> = {
-  "👏": { icon: "thumb_up", color: "#1A9BE8" },
-  "❤️": { icon: "favorite", color: "#E53935" },
-  "✨": { icon: "celebration", color: "#FF9800" },
-  "🎉": { icon: "star", color: "#9C27B0" },
+  "👏": { icon: "thumb_up", color: PRIMARY_COLOR },
+  "❤️": { icon: "favorite", color: PRIMARY_COLOR },
+  "✨": { icon: "celebration", color: PRIMARY_COLOR },
+  "🎉": { icon: "star", color: PRIMARY_COLOR },
 };
 const WEEKDAY_SHORT = ["日", "月", "火", "水", "木", "金", "土"] as const;
 const REPORT_MONTH_OFFSETS = [2, 1, 0] as const;
@@ -159,15 +160,6 @@ type PendingRescheduleConfirm = {
   sourceRecordId?: string;
   homeDropInsert?: HomeDropInsert;
 };
-type PendingMergeDuplicateConfirm = {
-  origin: RescheduleConfirmOrigin;
-  choreId: string;
-  choreTitle: string;
-  sourceDateKey: string;
-  targetDateKey: string;
-  sourceRecordId?: string;
-  homeDropInsert?: HomeDropInsert;
-};
 type PendingRecordDateChoice = {
   choreId: string;
   choreTitle: string;
@@ -184,11 +176,25 @@ type TimelineRecordGroup = {
   label: string;
   items: ChoreRecordItem[];
 };
+type CalendarScheduleItem = {
+  chore: ChoreWithComputed;
+  scheduled: number;
+  completed: number;
+  skipped: number;
+  pending: number;
+};
 const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
 const APP_UPDATE_TARGET_TAB_STORAGE_KEY = "kaji_app_update_target_tab";
 const ONBOARDING_PENDING_STORAGE_KEY = "kaji_onboarding_pending";
 const HOME_ORDER_STORAGE_KEY_PREFIX = "kaji_home_order_v1";
 const HOME_ORDER_RETENTION_DAYS = 7;
+const THEME_COLOR_LIGHT = "#f7f7f8";
+const THEME_COLOR_DARK = "#0f0f10";
+const THEME_MODE_ITEMS: Array<{ key: ThemeMode; label: string }> = [
+  { key: "system", label: "システム" },
+  { key: "light", label: "ライト" },
+  { key: "dark", label: "ダーク" },
+];
 const ONBOARDING_PRESET_CHORES = [
   { title: "食器洗い", icon: "cooking-pot", iconColor: "#33C28A", bgColor: "#EAF7EF", intervalDays: 1 },
   { title: "洗濯", icon: "shirt", iconColor: "#7A6FF0", bgColor: "#EFEAFE", intervalDays: 2 },
@@ -275,6 +281,10 @@ function onboardingPresetStartDate(now = new Date()) {
 
 function applyPullResistance(distance: number) {
   return Math.min(PULL_REFRESH_MAX_PX, Math.max(0, distance) * 0.5);
+}
+
+function isAtPullTop(scrollTop: number) {
+  return scrollTop <= PULL_SCROLL_TOP_EPSILON;
 }
 
 function resolveDateKeyTimestamp(dateKey: string, now = new Date()) {
@@ -373,18 +383,9 @@ function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
   return { todayChores, tomorrowChores };
 }
 
-/** Assignee priority: self=0 > partner=1 > none=2 */
-function assigneePriority(assigneeId: string | null, sessionUserId: string | null): number {
-  if (!assigneeId) return 2;
-  if (sessionUserId && assigneeId === sessionUserId) return 0;
-  return 1;
-}
-
 function sortHomeSectionChores(
   sectionKey: "today" | "yesterday" | "tomorrow" | "big",
   chores: ChoreWithComputed[],
-  sessionUserId: string | null,
-  resolveAssigneeId: (choreId: string) => string | null,
   resolveHomeState: (choreId: string) => HomeRowUiState,
   customIcons: CustomIconOption[],
 ) {
@@ -402,14 +403,7 @@ function sortHomeSectionChores(
     // 1. Sort by done state (Not Done -> Done -> Skipped)
     if (aStateRank !== bStateRank) return aStateRank - bStateRank;
 
-    // 2. assignee priority: self > partner > none
-    const aAssignee = resolveAssigneeId(a.id);
-    const bAssignee = resolveAssigneeId(b.id);
-    const aPri = assigneePriority(aAssignee, sessionUserId);
-    const bPri = assigneePriority(bAssignee, sessionUserId);
-    if (aPri !== bPri) return aPri - bPri;
-
-    // 3. icon label order
+    // 2. icon label order
     const getLabel = (c: ChoreWithComputed) => {
       const custom = customIcons.find(
         (ci) =>
@@ -428,11 +422,11 @@ function sortHomeSectionChores(
     const labelDiff = JA_COLLATOR.compare(labelA, labelB);
     if (labelDiff !== 0) return labelDiff;
 
-    // 4. kama order (50-on)
+    // 3. kama order (50-on)
     const titleDiff = a.title.localeCompare(b.title, "ja");
     if (titleDiff !== 0) return titleDiff;
 
-    // 5. ID fallback for stability
+    // 4. ID fallback for stability
     return a.id.localeCompare(b.id);
   });
 }
@@ -529,6 +523,9 @@ export function KajiApp() {
     }
     return "home";
   });
+  const [themeMode, setThemeMode] = useState<ThemeMode>("system");
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+  const themeModeRef = useRef<ThemeMode>("system");
 
   const [records, setRecords] = useState<ChoreRecordItem[]>([]);
   const [householdReport, setHouseholdReport] = useState<HouseholdReportResponse | null>(null);
@@ -556,6 +553,7 @@ export function KajiApp() {
     toJstDateKey(startOfJstDay(new Date())),
   );
   const [rescheduleTarget, setRescheduleTarget] = useState<ChoreWithComputed | null>(null);
+  const [rescheduleTargetCompleted, setRescheduleTargetCompleted] = useState(false);
   const [rescheduleChoice, setRescheduleChoice] = useState<RescheduleChoice>("tomorrow");
   const [rescheduleBaseDateKey, setRescheduleBaseDateKey] = useState<string>(() =>
     toJstDateKey(startOfJstDay(new Date())),
@@ -565,8 +563,6 @@ export function KajiApp() {
   );
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [pendingRescheduleConfirm, setPendingRescheduleConfirm] = useState<PendingRescheduleConfirm | null>(null);
-  const [pendingMergeDuplicateConfirm, setPendingMergeDuplicateConfirm] =
-    useState<PendingMergeDuplicateConfirm | null>(null);
   const [rescheduleConfirmLoading, setRescheduleConfirmLoading] = useState(false);
   const [draggingChore, setDraggingChore] = useState<ChoreWithComputed | null>(null);
   const [dragSourceDateKey, setDragSourceDateKey] = useState<string | null>(null);
@@ -631,6 +627,11 @@ export function KajiApp() {
   const [skipCountDialogOpen, setSkipCountDialogOpen] = useState(false);
   const [skipCountValue, setSkipCountValue] = useState(1);
   const [skipCountMax, setSkipCountMax] = useState(1);
+  const [completeCountDialogOpen, setCompleteCountDialogOpen] = useState(false);
+  const [completeCountValue, setCompleteCountValue] = useState(1);
+  const [completeCountMax, setCompleteCountMax] = useState(1);
+  const [pendingCompletePerformedAtMode, setPendingCompletePerformedAtMode] =
+    useState<PerformedAtMode>("today");
   const [calendarBlankActionOpen, setCalendarBlankActionOpen] = useState(false);
   const [calendarBlankActionDateKey, setCalendarBlankActionDateKey] = useState<string | null>(null);
   const [calendarBlankActionMode, setCalendarBlankActionMode] = useState<CalendarBlankActionMode>("choice");
@@ -658,6 +659,50 @@ export function KajiApp() {
   const startupUpdateCheckedRef = useRef(false);
   const missionBannerReadyRef = useRef(false);
   const previousTodayMissionCompletedRef = useRef(false);
+  const applyResolvedTheme = useCallback((nextResolved: "light" | "dark") => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.classList.toggle("dark", nextResolved === "dark");
+    root.style.colorScheme = nextResolved;
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta instanceof HTMLMetaElement) {
+      themeColorMeta.content = nextResolved === "dark" ? THEME_COLOR_DARK : THEME_COLOR_LIGHT;
+    }
+  }, []);
+  const applyThemeMode = useCallback((mode: ThemeMode) => {
+    if (typeof window === "undefined") return;
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const nextResolved = resolveTheme(mode, prefersDark);
+    themeModeRef.current = mode;
+    setThemeMode(mode);
+    setResolvedTheme(nextResolved);
+    applyResolvedTheme(nextResolved);
+  }, [applyResolvedTheme]);
+  const handleThemeModeChange = useCallback((nextMode: ThemeMode) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(THEME_MODE_STORAGE_KEY, nextMode);
+    applyThemeMode(nextMode);
+  }, [applyThemeMode]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const initialMode = normalizeThemeMode(window.localStorage.getItem(THEME_MODE_STORAGE_KEY));
+    applyThemeMode(initialMode);
+
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleSystemThemeChange = (event: MediaQueryListEvent) => {
+      if (themeModeRef.current !== "system") return;
+      const nextResolved = resolveTheme("system", event.matches);
+      setResolvedTheme(nextResolved);
+      applyResolvedTheme(nextResolved);
+    };
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", handleSystemThemeChange);
+      return () => media.removeEventListener("change", handleSystemThemeChange);
+    }
+    media.addListener(handleSystemThemeChange);
+    return () => media.removeListener(handleSystemThemeChange);
+  }, [applyResolvedTheme, applyThemeMode]);
 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [assignmentMounted, setAssignmentMounted] = useState(false);
@@ -819,16 +864,15 @@ export function KajiApp() {
   const chores = boot?.chores ?? [];
 
   const getTabHeaderHeight = useCallback((tab: TabKey) => {
+    if (tab === "home") return homeHeaderHeight;
     const measuredHeight =
-      tab === "home"
-        ? homeHeaderHeight
-        : tab === "list"
-          ? listHeaderHeight
-          : tab === "records"
-            ? recordsHeaderHeight
-            : tab === "stats"
-              ? statsHeaderHeight
-              : settingsHeaderHeight;
+      tab === "list"
+        ? listHeaderHeight
+        : tab === "records"
+          ? recordsHeaderHeight
+          : tab === "stats"
+            ? statsHeaderHeight
+            : settingsHeaderHeight;
     return Math.max(measuredHeight, TAB_HEADER_MIN_HEIGHT_BY_TAB[tab]);
   }, [homeHeaderHeight, listHeaderHeight, recordsHeaderHeight, settingsHeaderHeight, statsHeaderHeight]);
 
@@ -1087,15 +1131,6 @@ export function KajiApp() {
     customDateRangeRef.current = customDateRange;
   }, [customDateRange]);
 
-  const hasDuplicateScheduleCollision = useCallback((
-    choreId: string,
-    sourceDateKey: string,
-    targetDateKey: string,
-  ) => {
-    if (sourceDateKey === targetDateKey) return false;
-    return countScheduledOccurrencesOnDate(choreId, targetDateKey) > 0;
-  }, [countScheduledOccurrencesOnDate]);
-
   const manageDetailTarget = useMemo(() => {
     if (!manageDetailChoreId) return null;
     return chores.find((chore) => chore.id === manageDetailChoreId) ?? null;
@@ -1141,23 +1176,27 @@ export function KajiApp() {
     [calendarMonthCursor],
   );
   const calendarScheduleMap = useMemo(() => {
-    const map = new Map<string, ChoreWithComputed[]>();
+    const map = new Map<string, CalendarScheduleItem[]>();
     const choreById = new Map(chores.map((chore) => [chore.id, chore]));
     const occurrenceByDate = calendarMonthSummary?.occurrenceByDate ?? {};
 
     Object.entries(occurrenceByDate).forEach(([dateKey, byChore]) => {
-      const items: ChoreWithComputed[] = [];
+      const items: CalendarScheduleItem[] = [];
       Object.entries(byChore).forEach(([choreId, entry]) => {
         const chore = choreById.get(choreId);
         if (!chore) return;
-        for (let i = 0; i < entry.scheduled; i += 1) {
-          items.push(chore);
-        }
+        items.push({
+          chore,
+          scheduled: entry.scheduled,
+          completed: entry.completed,
+          skipped: entry.skipped,
+          pending: entry.pending,
+        });
       });
       items.sort((a, b) => {
-        const titleDiff = JA_COLLATOR.compare(a.title, b.title);
+        const titleDiff = JA_COLLATOR.compare(a.chore.title, b.chore.title);
         if (titleDiff !== 0) return titleDiff;
-        return JA_COLLATOR.compare(a.id, b.id);
+        return JA_COLLATOR.compare(a.chore.id, b.chore.id);
       });
       if (items.length > 0) {
         map.set(dateKey, items);
@@ -1676,7 +1715,7 @@ export function KajiApp() {
       const dy = touch.clientY - pullStartYRef.current;
       const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * PULL_START_DIRECTION_RATIO;
       const canRefreshBySwipe =
-        pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
+        isAtPullTop(pullStartScrollTopRef.current) && isAtPullTop(scroller.scrollTop);
 
       if (dy > 0 && isMostlyVertical && canRefreshBySwipe) {
         event.preventDefault();
@@ -1880,8 +1919,8 @@ export function KajiApp() {
       intervalDays: 7,
       dailyTargetCount: 1,
       icon: "sparkles",
-      iconColor: "#1A9BE8",
-      bgColor: "#EAF5FF",
+      iconColor: PRIMARY_COLOR,
+      bgColor: "#FFF1E8",
       lastPerformedAt: defaultLastPerformedAt(),
     });
     setChoreEditorOpen(true);
@@ -1899,8 +1938,8 @@ export function KajiApp() {
       intervalDays: 7,
       dailyTargetCount: 1,
       icon: "sparkles",
-      iconColor: "#1A9BE8",
-      bgColor: "#EAF5FF",
+      iconColor: PRIMARY_COLOR,
+      bgColor: "#FFF1E8",
       lastPerformedAt: initialPerformedAt,
     });
     setChoreEditorOpen(true);
@@ -1920,7 +1959,7 @@ export function KajiApp() {
     setCalendarBlankActionOpen(true);
   };
 
-  const openEditChore = (chore: ChoreWithComputed) => {
+  const openEditChore = (chore: ChoreWithComputed, scheduleAnchorDateKey?: string) => {
     setEditingChore({
       id: chore.id,
       title: chore.title,
@@ -1930,7 +1969,7 @@ export function KajiApp() {
       iconColor: chore.iconColor,
       bgColor: chore.bgColor,
       lastPerformedAt: chore.lastPerformedAt,
-      defaultAssigneeId: chore.defaultAssigneeId,
+      scheduleAnchorDateKey,
     });
     setChoreEditorOpen(true);
   };
@@ -1955,7 +1994,6 @@ export function KajiApp() {
       icon: editingChore.icon,
       iconColor: editingChore.iconColor,
       bgColor: editingChore.bgColor,
-      defaultAssigneeId: editingChore.defaultAssigneeId ?? undefined,
     };
     try {
       setSaveChoreLoading(true);
@@ -1963,6 +2001,7 @@ export function KajiApp() {
         const updatePayload = {
           ...commonPayload,
           lastPerformedAt: editingChore.lastPerformedAt ?? undefined,
+          scheduleAnchorDate: editingChore.scheduleAnchorDateKey ?? undefined,
         };
         await apiFetch(`/api/chores/${editingChore.id}`, { method: "PATCH", body: JSON.stringify(updatePayload) });
       } else {
@@ -2073,6 +2112,10 @@ export function KajiApp() {
     setSkipCountDialogOpen(false);
     setSkipCountValue(1);
     setSkipCountMax(1);
+    setCompleteCountDialogOpen(false);
+    setCompleteCountValue(1);
+    setCompleteCountMax(1);
+    setPendingCompletePerformedAtMode("today");
     setMemo("");
     setMemoOpen(true);
   };
@@ -2086,6 +2129,10 @@ export function KajiApp() {
     setSkipCountDialogOpen(false);
     setSkipCountValue(1);
     setSkipCountMax(1);
+    setCompleteCountDialogOpen(false);
+    setCompleteCountValue(1);
+    setCompleteCountMax(1);
+    setPendingCompletePerformedAtMode("today");
     setMemo("");
     setMemoOpen(true);
   }, []);
@@ -2109,14 +2156,14 @@ export function KajiApp() {
     return shifted;
   }, []);
 
-  const openReschedule = (chore: ChoreWithComputed, baseDateKey?: string) => {
+  const openReschedule = (chore: ChoreWithComputed, baseDateKey?: string, isCompleted = false) => {
     const baseKey = baseDateKey ?? toJstDateKey(startOfJstDay(new Date()));
     setRescheduleTarget(chore);
+    setRescheduleTargetCompleted(isCompleted);
     setRescheduleBaseDateKey(baseKey);
     setRescheduleChoice("tomorrow");
     setRescheduleCustomDate(shiftDateKey(baseKey, 1));
     setPendingRescheduleConfirm(null);
-    setPendingMergeDuplicateConfirm(null);
     setRescheduleOpen(true);
   };
 
@@ -2125,7 +2172,8 @@ export function KajiApp() {
     const target = rescheduleTarget;
     setRescheduleOpen(false);
     setRescheduleTarget(null);
-    openEditChore(target);
+    setRescheduleTargetCompleted(false);
+    openEditChore(target, rescheduleBaseDateKey);
   };
 
   const resolveRescheduleDateKey = useCallback((choice: RescheduleChoice, customDate: string, baseDateKey: string) => {
@@ -2151,13 +2199,9 @@ export function KajiApp() {
 
   const openRescheduleConfirmWithCollisionCheck = useCallback(
     (payload: Omit<PendingRescheduleConfirm, "mergeIfDuplicate">) => {
-      if (hasDuplicateScheduleCollision(payload.choreId, payload.sourceDateKey, payload.targetDateKey)) {
-        setPendingMergeDuplicateConfirm(payload);
-        return;
-      }
       setPendingRescheduleConfirm({ ...payload, mergeIfDuplicate: true });
     },
-    [hasDuplicateScheduleCollision],
+    [],
   );
 
   const rescheduleChoreToDate = useCallback(
@@ -2235,20 +2279,6 @@ export function KajiApp() {
     if (rescheduleConfirmLoading) return;
     setPendingRescheduleConfirm(null);
   }, [rescheduleConfirmLoading]);
-
-  const closePendingMergeDuplicateConfirm = useCallback(() => {
-    if (rescheduleConfirmLoading) return;
-    setPendingMergeDuplicateConfirm(null);
-  }, [rescheduleConfirmLoading]);
-
-  const resolvePendingMergeDuplicateConfirm = useCallback((mergeIfDuplicate: boolean) => {
-    if (!pendingMergeDuplicateConfirm || rescheduleConfirmLoading) return;
-    setPendingMergeDuplicateConfirm(null);
-    setPendingRescheduleConfirm({
-      ...pendingMergeDuplicateConfirm,
-      mergeIfDuplicate,
-    });
-  }, [pendingMergeDuplicateConfirm, rescheduleConfirmLoading]);
 
   const clearDragState = useCallback(() => {
     setDraggingChore(null);
@@ -2863,6 +2893,7 @@ export function KajiApp() {
   const submitMemoAction = useCallback(async ({
     skipped,
     skipCount,
+    completeCount,
     recalculateFuture,
     bypassFutureConfirm = false,
     mergeIfDuplicate = true,
@@ -2870,6 +2901,7 @@ export function KajiApp() {
   }: {
     skipped: boolean;
     skipCount?: number;
+    completeCount?: number;
     recalculateFuture?: boolean;
     bypassFutureConfirm?: boolean;
     mergeIfDuplicate?: boolean;
@@ -2947,7 +2979,9 @@ export function KajiApp() {
       const baseTotal = currentProgress?.total ?? scheduledCount;
       const baseCompleted = currentProgress?.completed ?? 0;
       const baseSkipped = currentProgress?.skipped ?? 0;
-      const consume = skipped ? Math.max(1, Math.min(skipCount ?? 1, skipCountMax)) : 1;
+      const consume = skipped
+        ? Math.max(1, Math.min(skipCount ?? 1, skipCountMax))
+        : Math.max(1, Math.min(completeCount ?? 1, completeCountMax));
       const nextCompleted = skipped ? baseCompleted : Math.min(baseTotal, baseCompleted + consume);
       const nextSkipped = skipped ? Math.min(baseTotal, baseSkipped + consume) : baseSkipped;
       const nextPending = Math.max(0, baseTotal - nextCompleted - nextSkipped);
@@ -2974,6 +3008,9 @@ export function KajiApp() {
       };
       if (skipped && typeof skipCount === "number") {
         body.skipCount = skipCount;
+      }
+      if (!skipped && typeof completeCount === "number") {
+        body.completeCount = completeCount;
       }
       if (shouldSendSourceDate && sourceDateKey) {
         const targetMatchesSource = sourceDateKey === performedAtDateKey;
@@ -3031,12 +3068,17 @@ export function KajiApp() {
       setSkipCountDialogOpen(false);
       setSkipCountValue(1);
       setSkipCountMax(1);
+      setCompleteCountDialogOpen(false);
+      setCompleteCountValue(1);
+      setCompleteCountMax(1);
+      setPendingCompletePerformedAtMode("today");
     }
   }, [
     beginRecordMutation,
     boot?.homeProgressByDate,
     buildRecordMutationKey,
     chores,
+    completeCountMax,
     countScheduledOccurrencesOnDate,
     isLatestRecordMutation,
     loadBootstrap,
@@ -3058,6 +3100,19 @@ export function KajiApp() {
     updateBootChoreOptimistically,
   ]);
 
+  const submitRecordWithCountChoice = useCallback((performedAtMode: PerformedAtMode) => {
+    const canChooseCount = Boolean(memoBaseDateKey) && memoPendingCount > 1;
+    if (!canChooseCount) {
+      void submitMemoAction({ skipped: false, performedAtMode });
+      return;
+    }
+    setPendingRecordDateChoice(null);
+    setPendingCompletePerformedAtMode(performedAtMode);
+    setCompleteCountMax(memoPendingCount);
+    setCompleteCountValue(memoPendingCount);
+    setCompleteCountDialogOpen(true);
+  }, [memoBaseDateKey, memoPendingCount, submitMemoAction]);
+
   const submitRecord = useCallback(() => {
     if (memoFlowMode === "calendar-quick" && memoTarget && memoQuickDateKey) {
       void submitCalendarQuickCompletion({
@@ -3077,25 +3132,45 @@ export function KajiApp() {
       return;
     }
     setPendingRecordDateChoice(null);
-    void submitMemoAction({ skipped: false, performedAtMode: "today" });
+    submitRecordWithCountChoice("today");
   }, [
     memo,
     memoBaseDateKey,
     memoFlowMode,
     memoQuickDateKey,
     memoTarget,
+    submitRecordWithCountChoice,
     submitCalendarQuickCompletion,
-    submitMemoAction,
   ]);
 
   const submitSkip = useCallback(() => {
     if (!memoTarget) return;
     const defaultCount = Math.max(1, memoPendingCount);
     setPendingRecordDateChoice(null);
+    if (defaultCount <= 1) {
+      void submitMemoAction({ skipped: true, skipCount: 1 });
+      return;
+    }
     setSkipCountMax(defaultCount);
     setSkipCountValue(defaultCount);
     setSkipCountDialogOpen(true);
-  }, [memoPendingCount, memoTarget]);
+  }, [memoPendingCount, memoTarget, submitMemoAction]);
+
+  const confirmCompleteWithCount = useCallback(() => {
+    const completeCount = Math.max(1, Math.min(completeCountValue, completeCountMax));
+    setPendingRecordDateChoice(null);
+    setCompleteCountDialogOpen(false);
+    void submitMemoAction({
+      skipped: false,
+      completeCount,
+      performedAtMode: pendingCompletePerformedAtMode,
+    });
+  }, [
+    completeCountMax,
+    completeCountValue,
+    pendingCompletePerformedAtMode,
+    submitMemoAction,
+  ]);
 
   const confirmSkipWithCount = useCallback(() => {
     const skipCount = Math.max(1, Math.min(skipCountValue, skipCountMax));
@@ -3142,6 +3217,7 @@ export function KajiApp() {
       if (pendingRescheduleConfirm.origin === "sheet") {
         setRescheduleOpen(false);
         setRescheduleTarget(null);
+        setRescheduleTargetCompleted(false);
       }
       setPendingRescheduleConfirm(null);
     } catch (err: unknown) {
@@ -3205,8 +3281,15 @@ export function KajiApp() {
     }
   };
 
+  const canUndoChoreRecord = useCallback((chore: ChoreWithComputed) => {
+    return Boolean(chore.lastRecordId) && !chore.lastRecordSkipped && !chore.lastRecordIsInitial;
+  }, []);
+
   const requestUndoRecord = (chore: ChoreWithComputed) => {
-    if (!chore.lastRecordId) return;
+    if (!canUndoChoreRecord(chore)) {
+      setError("この完了は未完了に戻せません。");
+      return;
+    }
     if (recordUpdatingIds.includes(buildRecordMutationKey(chore.id, toJstDateKey(startOfJstDay(new Date()))))) return;
     setUndoConfirmTarget(chore);
   };
@@ -3431,7 +3514,7 @@ export function KajiApp() {
       if (!touch || !scroller) return;
       tapPriorityZoneActiveRef.current = isTapPriorityTarget(event.target);
       pullStartScrollTopRef.current = scroller.scrollTop;
-      if (tapPriorityZoneActiveRef.current || scroller.scrollTop > 0) {
+      if (tapPriorityZoneActiveRef.current || !isAtPullTop(scroller.scrollTop)) {
         pullEligibleRef.current = false;
         pullDraggingRef.current = false;
         setPullDragging(false);
@@ -3459,7 +3542,7 @@ export function KajiApp() {
         return;
       }
 
-      if (scroller.scrollTop > 0) {
+      if (!isAtPullTop(scroller.scrollTop)) {
         logPullGuard("touchmove", "lost_top_position", { scrollTop: scroller.scrollTop });
         pullEligibleRef.current = false;
         pullDraggingRef.current = false;
@@ -3471,7 +3554,8 @@ export function KajiApp() {
       const dx = touch.clientX - pullStartXRef.current;
       const dy = touch.clientY - pullStartYRef.current;
       const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * PULL_START_DIRECTION_RATIO;
-      const canRefreshBySwipe = pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
+      const canRefreshBySwipe =
+        isAtPullTop(pullStartScrollTopRef.current) && isAtPullTop(scroller.scrollTop);
 
       if (dy > 0 && isMostlyVertical && canRefreshBySwipe) {
         event.preventDefault();
@@ -3608,16 +3692,16 @@ export function KajiApp() {
   );
 
   const orderCalendarItemsByHomePreference = useCallback(
-    (items: ChoreWithComputed[], dateKey: string) => {
-      const baseIds = items.map((item) => item.id);
+    (items: CalendarScheduleItem[], dateKey: string) => {
+      const baseIds = items.map((item) => item.chore.id);
       if (new Set(baseIds).size !== baseIds.length) {
         return items;
       }
       const orderedIds = applyHomeStoredOrder(baseIds, homeOrderByDate[dateKey] ?? []);
-      const itemById = new Map(items.map((item) => [item.id, item]));
+      const itemById = new Map(items.map((item) => [item.chore.id, item]));
       return orderedIds
         .map((id) => itemById.get(id))
-        .filter((item): item is ChoreWithComputed => Boolean(item));
+        .filter((item): item is CalendarScheduleItem => Boolean(item));
     },
     [homeOrderByDate],
   );
@@ -3656,7 +3740,7 @@ export function KajiApp() {
           {Array.from({ length: count }).map((_, index) => (
             <span
               key={`${dateKey}-dot-${index}`}
-              className="h-1 w-1 rounded-full bg-[#1A9BE8]"
+              className="h-1 w-1 rounded-full bg-[var(--primary)]"
             />
           ))}
         </span>
@@ -3678,14 +3762,14 @@ export function KajiApp() {
           token === "plus" ? (
             <span
               key={`${dateKey}-dot-plus-${index}`}
-              className="inline-flex h-1 w-1 items-center justify-center text-[5px] font-bold leading-none text-[#1A9BE8]"
+              className="inline-flex h-1 w-1 items-center justify-center text-[5px] font-bold leading-none text-[var(--primary)]"
             >
               +
             </span>
           ) : (
             <span
               key={`${dateKey}-${token}`}
-              className="h-1 w-1 rounded-full bg-[#1A9BE8]"
+              className="h-1 w-1 rounded-full bg-[var(--primary)]"
             />
           )
         ))}
@@ -3707,7 +3791,7 @@ export function KajiApp() {
         scrollable={true}
       >
         <div className="space-y-[14px] px-5 pb-1">
-          <p className="text-center text-[24px] font-bold text-[#202124]">
+          <p className="text-center text-[24px] font-bold text-[var(--foreground)]">
             {editingChore?.id ? "編集" : "登録"}
           </p>
           {editingChore ? (
@@ -3715,7 +3799,6 @@ export function KajiApp() {
               mode={editingChore.id ? "edit" : "create"}
               value={editingChore}
               customIcons={customIcons}
-              users={boot?.users ?? []}
               isSaving={saveChoreLoading}
               isDeleting={deleteChoreLoading}
               onChange={setEditingChore}
@@ -3757,86 +3840,86 @@ export function KajiApp() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#F8F9FA]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#5F6368]" />
+      <main className="flex min-h-screen items-center justify-center bg-[var(--app-canvas)]">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--muted-foreground)]" />
       </main>
     );
   }
 
   if (postRegisterRoutingPending || !boot || boot.needsRegistration || !sessionUser) {
     return (
-      <main className="min-h-screen overflow-y-auto bg-gradient-to-b from-[#F8F9FA] to-[#EEF3FD]">
+      <main className="min-h-screen overflow-y-auto bg-gradient-to-b from-[var(--background)] to-[var(--app-surface-soft)]">
         <form
           onSubmit={registerUser}
           className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col items-center justify-center gap-4 px-5 py-8"
         >
-          <div className="rounded-[20px] bg-[#E8F0FE] p-5">
-            <span className="material-symbols-rounded text-[44px] text-[#1A9BE8]">auto_awesome</span>
+          <div className="rounded-[20px] bg-[var(--app-surface-soft)] p-5">
+            <span className="material-symbols-rounded text-[44px] text-[var(--primary)]">auto_awesome</span>
           </div>
-          <p className="text-[42px] font-bold leading-none text-[#202124]">さあ、始めましょう</p>
+          <p className="text-[42px] font-bold leading-none text-[var(--foreground)]">さあ、始めましょう</p>
 
           <div className="flex items-center justify-center gap-2">
-            <span className="rounded-full bg-[#1A9BE8] px-4 py-2 text-[13px] font-bold text-white">はじめての方</span>
-            <span className="rounded-full border border-[#DADCE0] bg-white px-4 py-2 text-[13px] font-semibold text-[#5F6368]">招待された方</span>
+            <span className="rounded-full bg-[var(--primary)] px-4 py-2 text-[13px] font-bold text-white">はじめての方</span>
+            <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-[13px] font-semibold text-[var(--muted-foreground)]">招待された方</span>
           </div>
 
-          <div className="w-full space-y-3 rounded-[20px] border border-[#DADCE0] bg-white px-[18px] py-4">
+          <div className="w-full space-y-3 rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-[18px] py-4">
             <div className="flex items-center gap-2">
-              <User size={22} className="text-[#1A9BE8]" aria-hidden="true" />
-              <p className="text-[24px] font-bold text-[#202124]">ログイン / 新規登録</p>
+              <User size={22} className="text-[var(--primary)]" aria-hidden="true" />
+              <p className="text-[24px] font-bold text-[var(--foreground)]">ログイン / 新規登録</p>
             </div>
             <div className="space-y-1">
-              <p className="text-[13px] font-semibold text-[#5F6368]">ユーザーネーム</p>
+              <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">ユーザーネーム</p>
               <input
                 value={registerName}
                 onChange={(e) => setRegisterName(e.target.value)}
                 placeholder="あなたの名前"
                 autoComplete="username"
-                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[#9AA0A6]"
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[16.8px] font-semibold text-[var(--foreground)] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[var(--app-text-tertiary)]"
               />
             </div>
             <div className="space-y-1">
-              <p className="text-[13px] font-semibold text-[#5F6368]">パスワード</p>
+              <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">パスワード</p>
               <input
                 type="password"
                 value={registerPassword}
                 onChange={(e) => setRegisterPassword(e.target.value)}
                 placeholder="8文字以上"
                 autoComplete="current-password"
-                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[#9AA0A6]"
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[16.8px] font-semibold text-[var(--foreground)] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[var(--app-text-tertiary)]"
               />
             </div>
             <div className="space-y-2 pt-1">
               <div className="flex items-center gap-1.5">
-                <span className="material-symbols-rounded text-[16px] text-[#5F6368]">sell</span>
-                <p className="text-[15px] font-bold text-[#202124]">家族コード</p>
-                <p className="text-[13px] font-medium text-[#9AA0A6]">（任意）</p>
+                <span className="material-symbols-rounded text-[16px] text-[var(--muted-foreground)]">sell</span>
+                <p className="text-[15px] font-bold text-[var(--foreground)]">家族コード</p>
+                <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">（任意）</p>
               </div>
               <input
                 value={registerInviteCode}
                 onChange={(e) => setRegisterInviteCode(e.target.value)}
                 placeholder="パートナーから届いたコード"
-                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16px] font-semibold text-[#202124] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[#9AA0A6]"
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[16px] font-semibold text-[var(--foreground)] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[var(--app-text-tertiary)]"
               />
-              <p className="text-[11px] font-medium text-[#9AA0A6]">パートナーが先に登録済みの場合のみ入力</p>
+              <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">パートナーが先に登録済みの場合のみ入力</p>
             </div>
           </div>
 
           <div className="w-full space-y-2 px-1">
             <div className="flex items-center gap-1.5">
-              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#1A9BE8] text-[11px] font-bold text-white">1</span>
-              <p className="text-[12px] font-medium text-[#5F6368]">はじめての方：ユーザーネームとパスワードを決めて登録</p>
+              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[var(--primary)] text-[11px] font-bold text-white">1</span>
+              <p className="text-[12px] font-medium text-[var(--muted-foreground)]">はじめての方：ユーザーネームとパスワードを決めて登録</p>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#33C28A] text-[11px] font-bold text-white">2</span>
-              <p className="text-[12px] font-medium text-[#5F6368]">すでに登録済みの方：同じユーザーネームとパスワードでログイン</p>
+              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[var(--primary)] text-[11px] font-bold text-white">2</span>
+              <p className="text-[12px] font-medium text-[var(--muted-foreground)]">すでに登録済みの方：同じユーザーネームとパスワードでログイン</p>
             </div>
           </div>
 
           <button
             type="submit"
             disabled={registerLoading}
-            className="flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#1A9BE8] px-4 py-3 text-[16.8px] font-bold text-white shadow-lg shadow-[#2A1E1730] disabled:cursor-not-allowed disabled:opacity-70"
+            className="flex w-full items-center justify-center gap-2 rounded-[16px] bg-[var(--primary)] px-4 py-3 text-[16.8px] font-bold text-white shadow-lg shadow-black/20 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {registerLoading ? <Loader2 size={18} className="animate-spin" /> : <span className="material-symbols-rounded text-[18px] leading-none">arrow_forward</span>}
             {registerLoading ? "読み込み中..." : "はじめる"}
@@ -3847,13 +3930,13 @@ export function KajiApp() {
                 key={c}
                 type="button"
                 onClick={() => setRegisterColor(c)}
-                className={`h-6 w-6 rounded-full ${registerColor === c ? "ring-2 ring-[#202124] ring-offset-2" : ""}`}
+                className={`h-6 w-6 rounded-full ${registerColor === c ? "ring-2 ring-[var(--foreground)] ring-offset-2" : ""}`}
                 style={{ backgroundColor: c }}
                 aria-label={c}
               />
             ))}
           </div>
-          {error ? <p className="mt-2 text-center text-sm text-[#C5221F]">{error}</p> : null}
+          {error ? <p className="mt-2 text-center text-sm text-[var(--destructive)]">{error}</p> : null}
         </form>
       </main>
     );
@@ -3870,18 +3953,18 @@ export function KajiApp() {
 
     return (
       <>
-        <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-y-auto overscroll-y-contain bg-[#F8F9FA] px-5 py-8">
+        <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-y-auto overscroll-y-contain bg-[var(--app-canvas)] px-5 py-8">
           <div className="mt-8 space-y-5">
             <div className="text-center">
-              <span className="material-symbols-rounded text-[42px] text-[#1A9BE8]">home</span>
-              <p className="mt-1.5 text-[42px] font-bold leading-none text-[#202124]">いえたすくへようこそ！</p>
+              <span className="material-symbols-rounded text-[42px] text-[var(--primary)]">home</span>
+              <p className="mt-1.5 text-[42px] font-bold leading-none text-[var(--foreground)]">いえたすくへようこそ！</p>
             </div>
 
             <div className="space-y-2">
-              <p className="text-[16px] font-bold text-[#202124]">まずはパートナーを招待</p>
-              <p className="text-[13px] font-medium text-[#5F6368]">一緒に使う家族やパートナーにこのリンクを送ってね！</p>
-              <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-3">
-                <p className="truncate rounded-[10px] bg-[#F1F3F4] px-3 py-2 text-[12px] font-medium text-[#5F6368]">{inviteLink}</p>
+              <p className="text-[16px] font-bold text-[var(--foreground)]">まずはパートナーを招待</p>
+              <p className="text-[13px] font-medium text-[var(--muted-foreground)]">一緒に使う家族やパートナーにこのリンクを送ってね！</p>
+              <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+                <p className="truncate rounded-[10px] bg-[var(--secondary)] px-3 py-2 text-[12px] font-medium text-[var(--muted-foreground)]">{inviteLink}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -3893,7 +3976,7 @@ export function KajiApp() {
                         setError("リンクのコピーに失敗しました。");
                       }
                     }}
-                    className="inline-flex items-center justify-center gap-1 rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#1A73E8]"
+                    className="inline-flex items-center justify-center gap-1 rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] font-bold text-[var(--primary)]"
                   >
                     <Copy size={14} />
                     コピー
@@ -3916,24 +3999,24 @@ export function KajiApp() {
                         setError("リンクの共有に失敗しました。");
                       }
                     }}
-                    className="inline-flex items-center justify-center gap-1 rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white"
+                    className="inline-flex items-center justify-center gap-1 rounded-[10px] bg-[var(--primary)] px-3 py-2 text-[13px] font-bold text-white"
                   >
                     <Share2 size={14} />
                     送る
                   </button>
                 </div>
               </div>
-              <p className="text-[12px] font-medium text-[#9AA0A6]">LINEやメッセージに貼り付けするだけで参加できるよ！</p>
+              <p className="text-[12px] font-medium text-[var(--app-text-tertiary)]">LINEやメッセージに貼り付けするだけで参加できるよ！</p>
             </div>
 
             <div className="space-y-2">
-              <p className="text-[16px] font-bold text-[#202124]">家事を登録しよう</p>
+              <p className="text-[16px] font-bold text-[var(--foreground)]">家事を登録しよう</p>
               <button
                 type="button"
                 onClick={() => {
                   openAddChore();
                 }}
-                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-bold text-[#1A9BE8]"
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[15px] font-bold text-[var(--primary)]"
               >
                 ＋ タスクを追加
               </button>
@@ -3943,13 +4026,13 @@ export function KajiApp() {
                   setOnboardingBulkSelectOpen(true);
                 }}
                 disabled={onboardingSubmitting || onboardingBulkSelectOpen}
-                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15px] font-semibold text-[#202124] disabled:opacity-60"
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[15px] font-semibold text-[var(--foreground)] disabled:opacity-60"
               >
                 よくある家事をまとめて追加
               </button>
               {onboardingBulkSelectOpen ? (
-                <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-3">
-                  <p className="text-[14px] font-bold text-[#202124]">家事まとめて追加</p>
+                <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+                  <p className="text-[14px] font-bold text-[var(--foreground)]">家事まとめて追加</p>
                   <div className="space-y-1.5">
                     {ONBOARDING_PRESET_CHORES.map((preset) => {
                       const checked = onboardingPresetSelections.includes(preset.title);
@@ -3964,10 +4047,10 @@ export function KajiApp() {
                                 : [...prev, preset.title],
                             );
                           }}
-                          className={`flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left ${checked ? "bg-[#E8F2FF]" : "bg-[#F8F9FA]"}`}
+                          className={`flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left ${checked ? "bg-[var(--app-surface-soft)]" : "bg-[var(--app-canvas)]"}`}
                         >
-                          <span className="text-[13px] font-semibold text-[#202124]">{preset.title}</span>
-                          <span className="material-symbols-rounded text-[18px] text-[#1A9BE8]">
+                          <span className="text-[13px] font-semibold text-[var(--foreground)]">{preset.title}</span>
+                          <span className="material-symbols-rounded text-[18px] text-[var(--primary)]">
                             {checked ? "check_circle" : "radio_button_unchecked"}
                           </span>
                         </button>
@@ -3979,7 +4062,7 @@ export function KajiApp() {
                       type="button"
                       onClick={() => setOnboardingBulkSelectOpen(false)}
                       disabled={onboardingSubmitting}
-                      className="rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#5F6368] disabled:opacity-60"
+                      className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] font-bold text-[var(--muted-foreground)] disabled:opacity-60"
                     >
                       戻る
                     </button>
@@ -3989,7 +4072,7 @@ export function KajiApp() {
                         void handleOnboardingAddPreset();
                       }}
                       disabled={onboardingSubmitting}
-                      className="rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                      className="rounded-[10px] bg-[var(--primary)] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
                     >
                       {onboardingSubmitting ? "追加中..." : "追加する"}
                     </button>
@@ -3997,15 +4080,15 @@ export function KajiApp() {
                 </div>
               ) : null}
               {hasChores ? (
-                <div className="rounded-[14px] border border-[#DADCE0] bg-white p-3">
-                  <p className="text-[13px] font-bold text-[#5F6368]">追加したタスク（{boot.chores.length}件）</p>
+                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+                  <p className="text-[13px] font-bold text-[var(--muted-foreground)]">追加したタスク（{boot.chores.length}件）</p>
                   <div className="mt-2 space-y-1">
                     {boot.chores.map((chore) => {
                       const ChoreIcon = iconByName(chore.icon || "sparkles");
                       return (
-                        <div key={`onboarding-chore-${chore.id}`} className="flex items-center gap-2 rounded-[8px] bg-[#F8F9FA] px-3 py-1.5">
-                          <ChoreIcon size={16} style={{ color: chore.iconColor || "#5F6368" }} />
-                          <span className="text-[13px] font-medium text-[#202124]">{chore.title}</span>
+                        <div key={`onboarding-chore-${chore.id}`} className="flex items-center gap-2 rounded-[8px] bg-[var(--app-canvas)] px-3 py-1.5">
+                          <ChoreIcon size={16} style={{ color: chore.iconColor || "var(--muted-foreground)" }} />
+                          <span className="text-[13px] font-medium text-[var(--foreground)]">{chore.title}</span>
                         </div>
                       );
                     })}
@@ -4019,13 +4102,13 @@ export function KajiApp() {
               disabled={onboardingSubmitting}
               className={
                 hasChores
-                  ? "w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[16px] font-bold text-white disabled:opacity-60"
-                  : "w-full rounded-[14px] bg-[#F1F3F4] px-4 py-3 text-[14px] font-semibold text-[#5F6368] disabled:opacity-60"
+                  ? "w-full rounded-[14px] bg-[var(--primary)] px-4 py-3 text-[16px] font-bold text-white disabled:opacity-60"
+                  : "w-full rounded-[14px] bg-[var(--secondary)] px-4 py-3 text-[14px] font-semibold text-[var(--muted-foreground)] disabled:opacity-60"
               }
             >
               {hasChores ? "完了してホームへ" : "あとで設定する"}
             </button>
-            {error ? <p className="text-center text-sm text-[#C5221F]">{error}</p> : null}
+            {error ? <p className="text-center text-sm text-[var(--destructive)]">{error}</p> : null}
           </div>
         </main>
         {renderChoreEditorSheets()}
@@ -4040,24 +4123,6 @@ export function KajiApp() {
     if (sectionKey === "yesterday") return yesterdayKey;
     if (sectionKey === "tomorrow") return tomorrowKey;
     return todayKey;
-  };
-
-  const resolveAssigneeForSort = (
-    choreId: string,
-    sectionKey: "today" | "yesterday" | "tomorrow" | "big",
-    choreRef?: ChoreWithComputed,
-  ) => {
-    const sectionDateKey =
-      sectionKey === "big" && choreRef?.dueAt
-        ? toJstDateKey(startOfJstDay(new Date(choreRef.dueAt)))
-        : getHomeSectionDateKey(sectionKey === "big" ? "today" : sectionKey);
-    const entry = assignments.find((x) => x.choreId === choreId && x.date === sectionDateKey);
-    const clearKey = `${choreId}:${sectionDateKey}`;
-    const isDefaultCleared = clearedDefaults.has(clearKey);
-    const chore = choreRef ?? boot.chores.find((c) => c.id === choreId);
-    if (entry) return entry.userId;
-    if (!isDefaultCleared && chore?.defaultAssigneeId) return chore.defaultAssigneeId;
-    return null;
   };
 
   const homeProgressByDate = boot.homeProgressByDate ?? {};
@@ -4089,11 +4154,6 @@ export function KajiApp() {
     const sortedChores = sortHomeSectionChores(
       sectionKey,
       sectionRows.map((row) => row.chore),
-      sessionUser?.id ?? null,
-      (choreId) => {
-        const found = rowById.get(choreId)?.chore;
-        return resolveAssigneeForSort(choreId, sectionKey, found);
-      },
       (choreId) => rowById.get(choreId)?.state ?? "pending",
       customIcons,
     );
@@ -4159,7 +4219,7 @@ export function KajiApp() {
     if (!showPullRefreshHint || tab !== activeTab) return null;
     return (
       <div className="py-2 text-center">
-        <p className="text-[12px] font-bold text-[#5F6368]">{pullRefreshMessage}</p>
+        <p className="text-[12px] font-bold text-[var(--muted-foreground)]">{pullRefreshMessage}</p>
       </div>
     );
   };
@@ -4184,10 +4244,10 @@ export function KajiApp() {
       <div className="space-y-3">
         {days.slice(0, visibleAssignDays).map(({ date, dateKey, dayChores }) => (
           <div key={`${tab}-${dateKey}`} className="space-y-1">
-            <p className="text-[13px] font-bold text-[#5F6368]">
+            <p className="text-[13px] font-bold text-[var(--muted-foreground)]">
               {formatMonthDay(date.toISOString())}
             </p>
-            <div className="rounded-[14px] bg-white">
+            <div className="rounded-[14px] bg-[var(--card)]">
               {dayChores.map((chore, idx) => {
                 const entry = assignments.find(
                   (x) => x.choreId === chore.id && x.date === dateKey,
@@ -4196,13 +4256,12 @@ export function KajiApp() {
                 const isCleared = clearedDefaults.has(clearKey);
                 const isDefaultOnly = !entry && !!chore.defaultAssigneeId && !isCleared;
                 const effectiveUserId = entry?.userId ?? (isDefaultOnly ? chore.defaultAssigneeId : null);
-                const effectiveUserName = entry?.userName ?? (isDefaultOnly ? chore.defaultAssigneeName : null);
                 const isAssigned = assignmentUser
                   ? effectiveUserId === assignmentUser
                   : false;
                 const effectiveUser = effectiveUserId ? boot.users.find((u) => u.id === effectiveUserId) : null;
-                const effectiveColor = effectiveUser?.color || "#202124";
-                const checkboxColor = effectiveUserId ? (effectiveUser?.color || "#1A9BE8") : "#DADCE0";
+                const effectiveColor = effectiveUser?.color || "var(--foreground)";
+                const checkboxColor = effectiveUserId ? (effectiveUser?.color || PRIMARY_COLOR) : "var(--border)";
 
                 return (
                   <button
@@ -4243,7 +4302,7 @@ export function KajiApp() {
                         body: JSON.stringify({ choreId: chore.id, userId: newUserId, date: dateKey }),
                       }).catch(() => setError("担当の保存に失敗しました。"));
                     }}
-                    className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[#F1F3F4]" : ""}`}
+                    className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[var(--secondary)]" : ""}`}
                     style={{
                       backgroundColor: effectiveUserId
                         ? lightenColor(effectiveColor, 0.95)
@@ -4257,12 +4316,12 @@ export function KajiApp() {
                       {effectiveUserId ? "check_box" : "check_box_outline_blank"}
                     </span>
                     <span
-                      className="flex-1 flex items-center gap-1 text-[13.5px] font-medium min-w-0 text-[#202124]"
+                      className="flex-1 flex items-center gap-1 text-[13.5px] font-medium min-w-0 text-[var(--foreground)]"
                     >
                       <span className="truncate">{chore.title}</span>
                     </span>
                     {!effectiveUserId && (
-                      <span className="shrink-0 rounded-full bg-[#BDC1C6] px-2 py-[2px] text-[10px] font-bold text-white">
+                      <span className="shrink-0 rounded-full bg-[var(--app-text-tertiary)] px-2 py-[2px] text-[10px] font-bold text-white">
                         未設定
                       </span>
                     )}
@@ -4280,7 +4339,7 @@ export function KajiApp() {
             <button
               type="button"
               onClick={() => setVisibleAssignDays((prev) => Math.min(prev + 30, days.length))}
-              className="rounded-xl bg-white px-4 py-2 text-[13px] font-bold text-[#5F6368] shadow-sm"
+              className="rounded-xl bg-[var(--card)] px-4 py-2 text-[13px] font-bold text-[var(--muted-foreground)] shadow-sm"
             >
               もっと見る
             </button>
@@ -4293,19 +4352,21 @@ export function KajiApp() {
   const renderTabHeader = (tab: TabKey) => {
     if (tab === "home") {
       return (
-        <div ref={homeHeaderRef} className="border-b border-[#D7DCE2] bg-[#F8F9FA]/95 px-4 pb-2.5 pt-2.5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+        <div ref={homeHeaderRef} className="pointer-events-none border-b border-[var(--border)] bg-[var(--app-header-bg)] px-4 pb-2.5 pt-2.5 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
           <div className="flex items-center justify-between">
             <button
               type="button"
               onClick={toggleSettingsFromHeader}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white"
+              className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)]"
               aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
             >
-              <span className="material-symbols-rounded text-[26px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
+              <span className="material-symbols-rounded text-[26px]" style={{ color: sessionUser?.color ?? PRIMARY_COLOR }}>
                 account_circle
               </span>
             </button>
-            <div className="h-8 w-8" />
+            <div className="flex h-8 w-8 items-center justify-center" aria-hidden>
+              <img src="/app-icon.svg" alt="いえたすく" className="h-8 w-8" />
+            </div>
             <div className="h-8 w-8" />
           </div>
         </div>
@@ -4318,31 +4379,31 @@ export function KajiApp() {
         month: "long",
       }).format(calendarMonthCursor);
       return (
-        <div ref={listHeaderRef} className="space-y-2 bg-[#F8F9FA]/95 px-5 pb-2 pt-4 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+        <div ref={listHeaderRef} className="space-y-2 bg-[var(--app-header-bg)] px-5 pb-2 pt-4 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={toggleSettingsFromHeader}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--card)]"
               aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
             >
-              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? PRIMARY_COLOR }}>
                 account_circle
               </span>
             </button>
             <div className="flex items-center justify-end gap-2">
-              <div className="flex items-center rounded-[8px] bg-[#F1F3F4] p-[3px]">
+              <div className="flex items-center rounded-[8px] bg-[var(--secondary)] p-[3px]">
                 <button
                   type="button"
                   onClick={() => setCalendarExpanded(false)}
-                  className={`rounded-[6px] px-[14px] py-[6px] text-[13px] ${calendarExpanded ? "text-[#9AA0A6]" : "bg-white font-bold text-[#202124]"}`}
+                  className={`rounded-[6px] px-[14px] py-[6px] text-[13px] ${calendarExpanded ? "text-[var(--app-text-tertiary)]" : "bg-[var(--card)] font-bold text-[var(--foreground)]"}`}
                 >
                   週
                 </button>
                 <button
                   type="button"
                   onClick={() => setCalendarExpanded(true)}
-                  className={`rounded-[6px] px-[14px] py-[6px] text-[13px] ${calendarExpanded ? "bg-white font-bold text-[#202124]" : "text-[#9AA0A6]"}`}
+                  className={`rounded-[6px] px-[14px] py-[6px] text-[13px] ${calendarExpanded ? "bg-[var(--card)] font-bold text-[var(--foreground)]" : "text-[var(--app-text-tertiary)]"}`}
                 >
                   月
                 </button>
@@ -4356,7 +4417,7 @@ export function KajiApp() {
                   }
                   shiftCalendarWeek(-1);
                 }}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#5F6368]"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--muted-foreground)]"
                 aria-label={calendarExpanded ? "前月へ" : "前週へ"}
               >
                 <ChevronLeft size={16} />
@@ -4364,7 +4425,7 @@ export function KajiApp() {
               <button
                 type="button"
                 onClick={() => setCalendarExpanded((prev) => !prev)}
-                className="inline-flex items-center gap-1 text-[14px] font-semibold text-[#5F6368]"
+                className="inline-flex items-center gap-1 text-[14px] font-semibold text-[var(--muted-foreground)]"
               >
                 {calendarMonthTitle}
                 <ChevronDown size={15} className={calendarExpanded ? "rotate-180" : ""} />
@@ -4378,7 +4439,7 @@ export function KajiApp() {
                   }
                   shiftCalendarWeek(1);
                 }}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#5F6368]"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--muted-foreground)]"
                 aria-label={calendarExpanded ? "次月へ" : "次週へ"}
               >
                 <ChevronRight size={16} />
@@ -4386,7 +4447,7 @@ export function KajiApp() {
               <button
                 type="button"
                 onClick={() => openStandaloneScreen("manage", "list")}
-                className="inline-flex h-9 items-center gap-1 rounded-full border border-[#E5EAF0] bg-white px-2 text-[11px] font-bold text-[#5F6368]"
+                className="inline-flex h-9 items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--card)] px-2 text-[11px] font-bold text-[var(--muted-foreground)]"
               >
                 <span className="material-symbols-rounded text-[15px]">checklist</span>
                 家事管理
@@ -4398,19 +4459,19 @@ export function KajiApp() {
     }
     if (tab === "records") {
       return (
-        <div ref={recordsHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+        <div ref={recordsHeaderRef} className="bg-[var(--app-header-bg)] px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
           <div className="flex items-center justify-between">
             <button
               type="button"
               onClick={toggleSettingsFromHeader}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--card)]"
               aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
             >
-              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? PRIMARY_COLOR }}>
                 account_circle
               </span>
             </button>
-            <p className="text-[28px] font-bold leading-none text-[#202124]">みんなのきろく</p>
+            <p className="text-[28px] font-bold leading-none text-[var(--foreground)]">みんなのきろく</p>
             <div className="h-9 w-9" />
           </div>
         </div>
@@ -4418,28 +4479,28 @@ export function KajiApp() {
     }
     if (tab === "stats") {
       return (
-        <div ref={statsHeaderRef} className="space-y-2 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+        <div ref={statsHeaderRef} className="space-y-2 bg-[var(--app-header-bg)] px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
           <div className="flex items-center justify-between">
             <button
               type="button"
               onClick={toggleSettingsFromHeader}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--card)]"
               aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
             >
-              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? "#1A9BE8" }}>
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? PRIMARY_COLOR }}>
                 account_circle
               </span>
             </button>
             <div className="w-9" />
             <div className="w-9" />
           </div>
-          <div className="flex gap-1 rounded-[12px] bg-[#E9EEF6] p-1">
+          <div className="flex gap-1 rounded-[12px] bg-[var(--secondary)] p-1">
             {REPORT_MONTH_OFFSETS.map((offset) => (
               <button
                 key={offset}
                 type="button"
                 onClick={() => setReportMonthOffset(offset)}
-                className={`flex-1 rounded-[10px] px-2 py-1.5 text-[12.5px] font-bold ${reportMonthOffset === offset ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
+                className={`flex-1 rounded-[10px] px-2 py-1.5 text-[12.5px] font-bold ${reportMonthOffset === offset ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
               >
                 {REPORT_MONTH_LABELS[offset]}
               </button>
@@ -4454,16 +4515,16 @@ export function KajiApp() {
   const renderTimelineRecords = (timelineGroups: TimelineRecordGroup[], emptyMessage: string) => {
     if (timelineGroups.length === 0) {
       return (
-        <div className="rounded-[20px] border border-dashed border-[#DADCE0] bg-white px-5 py-10 text-center">
-          <p className="text-[16px] font-bold text-[#202124]">まだ きろく がありません</p>
-          <p className="mt-2 text-[13px] font-medium text-[#5F6368]">{emptyMessage}</p>
+        <div className="rounded-[20px] border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-10 text-center">
+          <p className="text-[16px] font-bold text-[var(--foreground)]">まだ きろく がありません</p>
+          <p className="mt-2 text-[13px] font-medium text-[var(--muted-foreground)]">{emptyMessage}</p>
         </div>
       );
     }
 
     return timelineGroups.map((group) => (
       <div key={`record-group-${group.dateKey}`} className="space-y-2">
-        <p className="text-[16px] font-bold text-[#202124]">{group.label}</p>
+        <p className="text-[16px] font-bold text-[var(--foreground)]">{group.label}</p>
         <div className="space-y-2">
           {group.items.map((record) => {
             const choreForIcon = chores.find((ch) => ch.id === record.chore.id);
@@ -4476,13 +4537,13 @@ export function KajiApp() {
             const visibleReactions = REACTION_CHOICES.filter((emoji) => (reactionCounts[emoji] ?? 0) > 0);
             return (
               <div key={record.id} className="space-y-1">
-                <div className="rounded-[14px] border border-[#E5EAF0] bg-white px-3 py-3">
+                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-3 py-3">
                   <div className="flex items-center gap-2">
-                    <RecordIcon size={16} color={choreForIcon?.iconColor ?? "#5F6368"} />
-                    <p className="text-[15px] font-bold text-[#202124]">{record.chore.title}</p>
-                    <span className="text-[12px] text-[#BDC1C6]">──</span>
-                    <p className="text-[13px] font-semibold text-[#5F6368]">{record.user.name}</p>
-                    <p className="ml-auto text-[11px] font-medium text-[#9AA0A6]">
+                    <RecordIcon size={16} color={choreForIcon?.iconColor ?? "var(--muted-foreground)"} />
+                    <p className="text-[15px] font-bold text-[var(--foreground)]">{record.chore.title}</p>
+                    <span className="text-[12px] text-[var(--app-text-tertiary)]">──</span>
+                    <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">{record.user.name}</p>
+                    <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
                       {new Intl.DateTimeFormat("ja-JP", {
                         timeZone: "Asia/Tokyo",
                         hour: "2-digit",
@@ -4491,7 +4552,7 @@ export function KajiApp() {
                     </p>
                   </div>
                   {record.memo ? (
-                    <p className="mt-1 text-[12px] font-medium text-[#5F6368]">「{record.memo}」</p>
+                    <p className="mt-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{record.memo}」</p>
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 px-1">
@@ -4507,12 +4568,12 @@ export function KajiApp() {
                           void toggleReaction(record, emoji);
                         }}
                         disabled={reactionUpdatingId === record.id}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold ${selected ? "bg-[#E8F2FF]" : "bg-transparent"} disabled:opacity-50`}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold ${selected ? "bg-[var(--app-surface-soft)]" : "bg-transparent"} disabled:opacity-50`}
                       >
-                        <span className="material-symbols-rounded text-[18px]" style={{ color: mapped?.color ?? "#5F6368" }}>
+                        <span className="material-symbols-rounded text-[18px]" style={{ color: mapped?.color ?? "var(--muted-foreground)" }}>
                           {mapped?.icon ?? "add_reaction"}
                         </span>
-                        {count > 1 ? <span className="text-[11px] text-[#5F6368]">{count}</span> : null}
+                        {count > 1 ? <span className="text-[11px] text-[var(--muted-foreground)]">{count}</span> : null}
                       </button>
                     );
                   })}
@@ -4522,7 +4583,7 @@ export function KajiApp() {
                       setReactionPickerRecordId((prev) => (prev === record.id ? null : record.id));
                     }}
                     disabled={reactionUpdatingId === record.id}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[#BDBDBD] disabled:opacity-50"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[var(--app-text-tertiary)] disabled:opacity-50"
                   >
                     <span className="material-symbols-rounded text-[18px]">add_reaction</span>
                   </button>
@@ -4541,7 +4602,7 @@ export function KajiApp() {
                             setReactionPickerRecordId(null);
                           }}
                           disabled={reactionUpdatingId === record.id}
-                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${selected ? "bg-[#E8F2FF]" : "bg-white"} disabled:opacity-50`}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${selected ? "bg-[var(--app-surface-soft)]" : "bg-[var(--card)]"} disabled:opacity-50`}
                         >
                           <span className="material-symbols-rounded text-[18px]" style={{ color: mapped.color }}>
                             {mapped.icon}
@@ -4573,20 +4634,20 @@ export function KajiApp() {
                     <div
                       key={section.key}
                       data-drop-date={sectionDateKey}
-                      className={`space-y-2 rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[#EEF4FE] px-1 py-1" : ""}`}
+                      className={`space-y-2 rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[var(--app-surface-soft)] px-1 py-1" : ""}`}
                     >
                       <div
-                        className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
+                        className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]"
                         style={{ top: 0 }}
                       >
                         <HomeSectionTitle title={section.title} />
                         {section.key === "tomorrow" ? (
-                          <p className="mt-0.5 text-[12px] font-medium text-[#5F6368]">今日やっちゃってもOK！</p>
+                          <p className="mt-0.5 text-[12px] font-medium text-[var(--muted-foreground)]">今日やっちゃってもOK！</p>
                         ) : null}
                       </div>
                       <div className="grid grid-cols-2 items-stretch gap-2">
                         {section.rows.length === 0 ? (
-                          <p className="py-2 text-center text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
+                          <p className="py-2 text-center text-[12px] font-medium text-[var(--app-text-tertiary)]">予定なし</p>
                         ) : section.rows.map((row, choreIndex) => {
                           const chore = row.chore;
                           const disableTomorrowDailyCheck = false;
@@ -4606,7 +4667,7 @@ export function KajiApp() {
                               key={homeRowKey}
                               data-home-drop-date={sectionDateKey}
                               data-home-drop-chore-id={chore.id}
-                              className={`${showDropBefore ? "border-t-2 border-[#1A73E8] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[#1A73E8] pb-1" : ""}`}
+                              className={`${showDropBefore ? "border-t-2 border-[var(--primary)] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[var(--primary)] pb-1" : ""}`}
                               onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
                               style={{ touchAction: "pan-y" }}
                             >
@@ -4627,15 +4688,15 @@ export function KajiApp() {
                 })}
               </>
             ) : (
-              <div className="rounded-[24px] border border-dashed border-[#CFD8E3] bg-white px-5 py-8 text-center">
-                <p className="text-[16px] font-bold text-[#202124]">近日実施するべきタスクはありません</p>
-                <p className="mt-2 text-[13px] font-medium text-[#5F6368]">
+              <div className="rounded-[24px] border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-8 text-center">
+                <p className="text-[16px] font-bold text-[var(--foreground)]">近日実施するべきタスクはありません</p>
+                <p className="mt-2 text-[13px] font-medium text-[var(--muted-foreground)]">
                   必要な家事を追加すると、ここに表示されます。
                 </p>
                 <button
                   type="button"
                   onClick={openAddChore}
-                  className="mt-4 rounded-[12px] bg-[#1A9BE8] px-4 py-2 text-[14px] font-bold text-white"
+                  className="mt-4 rounded-[12px] bg-[var(--primary)] px-4 py-2 text-[14px] font-bold text-white"
                 >
                   家事を追加
                 </button>
@@ -4643,15 +4704,15 @@ export function KajiApp() {
             )}
             {latestRecordItem ? (
               <div className="space-y-2">
-                <div className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85" style={{ top: 0 }}>
+                <div className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]" style={{ top: 0 }}>
                   <HomeSectionTitle title="さいしんのきろく" />
                 </div>
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2 rounded-[12px] border border-[#E5EAF0] bg-white px-3 py-2.5">
-                    <span className="material-symbols-rounded text-[14px] text-[#33C28A]">check</span>
-                    <p className="text-[13.5px] font-bold text-[#202124]">{latestRecordItem.chore.title}</p>
-                    <p className="text-[12px] font-semibold text-[#5F6368]">{latestRecordItem.user.name}</p>
-                    <p className="ml-auto text-[11px] font-medium text-[#9AA0A6]">
+                  <div className="flex items-center gap-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
+                    <span className="material-symbols-rounded text-[14px] text-[var(--primary)]">check</span>
+                    <p className="text-[13.5px] font-bold text-[var(--foreground)]">{latestRecordItem.chore.title}</p>
+                    <p className="text-[12px] font-semibold text-[var(--muted-foreground)]">{latestRecordItem.user.name}</p>
+                    <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
                       {new Intl.DateTimeFormat("ja-JP", {
                         timeZone: "Asia/Tokyo",
                         hour: "2-digit",
@@ -4660,7 +4721,7 @@ export function KajiApp() {
                     </p>
                   </div>
                   {latestRecordItem.memo ? (
-                    <p className="px-1 text-[12px] font-medium text-[#5F6368]">「{latestRecordItem.memo}」</p>
+                    <p className="px-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{latestRecordItem.memo}」</p>
                   ) : null}
                 </div>
               </div>
@@ -4684,21 +4745,18 @@ export function KajiApp() {
       const previousWeekTarget = shiftTargetDateByWeek(-1);
       const nextWeekTarget = shiftTargetDateByWeek(1);
 
-      const renderCalendarChip = (chore: ChoreWithComputed, dateKey: string, chipIndex: number) => {
+      const renderCalendarChip = (item: CalendarScheduleItem, dateKey: string) => {
+        const chore = item.chore;
         const ChipIcon = iconByName(chore.icon);
         const performerUser = chore.lastPerformerId
           ? boot.users.find((user) => user.id === chore.lastPerformerId)
           : null;
-        const doneColor = performerUser?.color ?? "#33C28A";
-        const performedDateKey =
-          chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial
-            ? toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)))
-            : null;
-        const isDone = performedDateKey === dateKey && dateKey < todayKey;
-        const chipClass = isDone
+        const doneColor = performerUser?.color ?? PRIMARY_COLOR;
+        const isCompleted = item.pending === 0 && item.completed > 0;
+        const chipClass = isCompleted
           ? "border"
-          : "border border-[#E5EAF0] bg-white text-[#202124]";
-        const doneStyle: CSSProperties | undefined = isDone
+          : "border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]";
+        const doneStyle: CSSProperties | undefined = isCompleted
           ? {
             backgroundColor: `${doneColor}14`,
             borderColor: `${doneColor}66`,
@@ -4707,11 +4765,11 @@ export function KajiApp() {
           : undefined;
         return (
           <button
-            key={`${dateKey}-${chore.id}-${chipIndex}`}
+            key={`${dateKey}-${chore.id}`}
             type="button"
             onClick={() => {
               if (suppressChipClickRef.current) { suppressChipClickRef.current = false; return; }
-              openReschedule(chore, dateKey);
+              openReschedule(chore, dateKey, isCompleted);
             }}
             onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
             className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
@@ -4719,7 +4777,12 @@ export function KajiApp() {
           >
             <ChipIcon size={13} color={chore.iconColor} />
             <span>{chore.title}</span>
-            {isDone ? <span className="material-symbols-rounded text-[14px]">check</span> : null}
+            {item.scheduled > 1 ? (
+              <span className="rounded-full bg-[var(--secondary)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--muted-foreground)]">
+                x{item.scheduled}
+              </span>
+            ) : null}
+            {isCompleted ? <span className="material-symbols-rounded text-[14px]">check</span> : null}
           </button>
         );
       };
@@ -4731,7 +4794,7 @@ export function KajiApp() {
             {calendarExpanded ? (
               <div
                 data-calendar-swipe-surface="true"
-                className="space-y-1 rounded-[16px] border border-[#E5EAF0] bg-white px-2 py-3"
+                className="space-y-1 rounded-[16px] border border-[var(--border)] bg-[var(--card)] px-2 py-3"
                 onTouchStart={handleCalendarTouchStart}
                 onTouchEnd={handleCalendarTouchEnd}
               >
@@ -4739,16 +4802,16 @@ export function KajiApp() {
                   <button
                     type="button"
                     onClick={() => shiftCalendarMonth(-1)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#F8F9FA] text-[#5F6368]"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--app-canvas)] text-[var(--muted-foreground)]"
                     aria-label="前月へ"
                   >
                     <ChevronLeft size={14} />
                   </button>
-                  <p className="text-[13px] font-semibold text-[#5F6368]">{calendarMonthLabel}</p>
+                  <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">{calendarMonthLabel}</p>
                   <button
                     type="button"
                     onClick={() => shiftCalendarMonth(1)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#F8F9FA] text-[#5F6368]"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--app-canvas)] text-[var(--muted-foreground)]"
                     aria-label="次月へ"
                   >
                     <ChevronRight size={14} />
@@ -4756,7 +4819,7 @@ export function KajiApp() {
                 </div>
                 <div className="grid grid-cols-7 gap-y-1">
                   {WEEKDAY_SHORT.map((day, index) => (
-                    <div key={`dow-${day}`} className={`text-center text-[10px] font-medium ${index === 0 ? "text-[#EA4335]" : index === 6 ? "text-[#4285F4]" : "text-[#9AA0A6]"}`}>
+                    <div key={`dow-${day}`} className={`text-center text-[10px] font-medium ${index === 0 ? "text-[var(--app-text-tertiary)]" : index === 6 ? "text-[var(--primary)]" : "text-[var(--app-text-tertiary)]"}`}>
                       {day}
                     </div>
                   ))}
@@ -4769,7 +4832,7 @@ export function KajiApp() {
                     const isSelected = dateKey === calendarSelectedDateKey;
                     const dayOfWeek = new Date(date.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
                     const weekendClass =
-                      dayOfWeek === 0 ? "text-[#EA4335]" : dayOfWeek === 6 ? "text-[#4285F4]" : "text-[#202124]";
+                      dayOfWeek === 0 ? "text-[var(--app-text-tertiary)]" : dayOfWeek === 6 ? "text-[var(--primary)]" : "text-[var(--foreground)]";
                     return (
                       <button
                         key={`month-cell-${dateKey}`}
@@ -4782,10 +4845,10 @@ export function KajiApp() {
                       >
                         <span
                           className={`rounded-[8px] px-[6px] py-[1px] text-[13px] font-bold leading-none ${isSelected
-                            ? "bg-[#EEF4FE] text-[#202124]"
+                            ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]"
                             : inMonth
                               ? weekendClass
-                              : "text-[#BDC1C6]"
+                              : "text-[var(--app-text-tertiary)]"
                             }`}
                         >
                           {date.getDate()}
@@ -4798,7 +4861,7 @@ export function KajiApp() {
                 <button
                   type="button"
                   onClick={() => setCalendarExpanded(false)}
-                  className="mt-1 flex w-full items-center justify-center gap-1 rounded-[8px] py-1.5 text-[11px] font-semibold text-[#9AA0A6] hover:bg-[#F1F3F4] active:bg-[#E8EAED]"
+                  className="mt-1 flex w-full items-center justify-center gap-1 rounded-[8px] py-1.5 text-[11px] font-semibold text-[var(--app-text-tertiary)] hover:bg-[var(--secondary)] active:bg-[var(--secondary)]"
                   aria-label="週表示に縮小"
                 >
                   <ChevronDown size={14} className="rotate-180" />
@@ -4810,7 +4873,7 @@ export function KajiApp() {
             {!calendarExpanded ? (
               <div
                 data-calendar-swipe-surface="true"
-                className="rounded-[14px] border border-[#E5EAF0] bg-white px-2 py-2"
+                className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-2 py-2"
                 onTouchStart={handleCalendarTouchStart}
                 onTouchEnd={handleCalendarTouchEnd}
               >
@@ -4829,10 +4892,10 @@ export function KajiApp() {
                         onClick={() => setCalendarSelectedDateKey(entry.dateKey)}
                         className="flex min-w-[36px] flex-col items-center gap-[2px] py-1"
                       >
-                        <span className={`text-[10px] font-medium ${isSun ? "text-[#EA4335]" : isSat ? "text-[#4285F4]" : "text-[#9AA0A6]"}`}>
+                        <span className={`text-[10px] font-medium ${isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--app-text-tertiary)]"}`}>
                           {weekday}
                         </span>
-                        <span className={`rounded-[16px] px-2 py-[2px] text-[16px] font-bold leading-none ${isSelected ? "bg-[#EEF4FE] text-[#202124]" : isSun ? "text-[#EA4335]" : isSat ? "text-[#4285F4]" : "text-[#202124]"}`}>
+                        <span className={`rounded-[16px] px-2 py-[2px] text-[16px] font-bold leading-none ${isSelected ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]" : isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--foreground)]"}`}>
                           {dayNumber}
                         </span>
                         {renderDayDots(entry.dateKey)}
@@ -4843,7 +4906,7 @@ export function KajiApp() {
                 <button
                   type="button"
                   onClick={() => setCalendarExpanded(true)}
-                  className="mt-1 flex w-full items-center justify-center gap-1 rounded-[8px] py-1.5 text-[11px] font-semibold text-[#9AA0A6] hover:bg-[#F1F3F4] active:bg-[#E8EAED]"
+                  className="mt-1 flex w-full items-center justify-center gap-1 rounded-[8px] py-1.5 text-[11px] font-semibold text-[var(--app-text-tertiary)] hover:bg-[var(--secondary)] active:bg-[var(--secondary)]"
                   aria-label="カレンダー表示に拡大"
                 >
                   <ChevronDown size={14} />
@@ -4855,7 +4918,7 @@ export function KajiApp() {
             {draggingChore ? (
               <div
                 data-drag-navigate="prev-week"
-                className="rounded-[12px] border border-dashed border-[#F9AB00] bg-[#FFF8E8] px-3 py-2 text-center text-[12px] font-bold text-[#B06000]"
+                className="rounded-[12px] border border-dashed border-[var(--primary)] bg-[var(--app-surface-soft)] px-3 py-2 text-center text-[12px] font-bold text-[var(--primary)]"
               >
                 <span data-drag-navigate="prev-week">↑ ここに乗せると前の週に移動</span>
               </div>
@@ -4864,29 +4927,30 @@ export function KajiApp() {
             <div className="space-y-4">
               {calendarSelectedWeekEntries.map((entry) => {
                 const entryJst = new Date(entry.date.getTime() + 9 * 60 * 60 * 1000);
+                const dayTotalCount = entry.items.reduce((sum, item) => sum + item.scheduled, 0);
                 return (
                   <div
                     key={`week-group-${entry.dateKey}`}
                     data-drop-date={entry.dateKey}
-                    className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[#EEF4FE]" : entry.dateKey === calendarSelectedDateKey ? "bg-[#F5F9FF]" : ""}`}
+                    className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[var(--app-surface-soft)]" : entry.dateKey === calendarSelectedDateKey ? "bg-[var(--app-surface-soft)]" : ""}`}
                     onClick={(event) => {
                       handleCalendarSurfaceTap(event, entry.dateKey);
                     }}
                   >
                     <div className="flex items-center gap-2">
-                      <p className="text-[14px] font-bold text-[#202124]">
+                      <p className="text-[14px] font-bold text-[var(--foreground)]">
                         {WEEKDAY_SHORT[entryJst.getUTCDay()]} {entryJst.getUTCDate()}
                         {entry.dateKey === todayKey ? " 今日" : ""}
                       </p>
-                      <div className="h-px flex-1 bg-[#E5EAF0]" />
-                      <p className="text-[12px] font-medium text-[#9AA0A6]">{entry.items.length}件</p>
+                      <div className="h-px flex-1 bg-[var(--border)]" />
+                      <p className="text-[12px] font-medium text-[var(--app-text-tertiary)]">{dayTotalCount}件</p>
                     </div>
                     <div className="flex flex-wrap gap-[6px]">
                       {entry.items.length === 0 ? (
-                        <p className="text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
+                        <p className="text-[12px] font-medium text-[var(--app-text-tertiary)]">予定なし</p>
                       ) : (
-                        entry.items.map((chore, chipIndex) =>
-                          renderCalendarChip(chore, entry.dateKey, chipIndex),
+                        entry.items.map((item) =>
+                          renderCalendarChip(item, entry.dateKey),
                         )
                       )}
                     </div>
@@ -4898,7 +4962,7 @@ export function KajiApp() {
             {draggingChore ? (
               <div
                 data-drag-navigate="next-week"
-                className="rounded-[12px] border border-dashed border-[#34A853] bg-[#E8F5E9] px-3 py-2 text-center text-[12px] font-bold text-[#1E8E3E]"
+                className="rounded-[12px] border border-dashed border-[var(--primary)] bg-[var(--app-surface-soft)] px-3 py-2 text-center text-[12px] font-bold text-[var(--primary)]"
               >
                 <span data-drag-navigate="next-week">↓ ここに乗せると次の週に移動</span>
               </div>
@@ -4919,10 +4983,10 @@ export function KajiApp() {
                 onClick={() => {
                   openStandaloneScreen("my-records", "records");
                 }}
-                className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
+                className="flex w-full items-center justify-between rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 text-left"
               >
-                <span className="text-[14px] font-semibold text-[#202124]">わたしのきろくを見る</span>
-                <ChevronRight size={16} color="#9AA0A6" />
+                <span className="text-[14px] font-semibold text-[var(--foreground)]">わたしのきろくを見る</span>
+                <ChevronRight size={16} color="var(--app-text-tertiary)" />
               </button>
             </div>
             {renderTimelineRecords(groupedTimelineRecords, "家事を完了するとここにタイムライン表示されます。")}
@@ -4945,46 +5009,46 @@ export function KajiApp() {
               type="button"
               onClick={() => openStandaloneScreen("my-report", "stats")}
               data-gesture-priority="tap"
-              className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
+              className="flex w-full items-center justify-between rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 text-left"
             >
-              <span className="text-[14px] font-semibold text-[#202124]">私のレポートを見る</span>
-              <ChevronRight size={16} color="#9AA0A6" />
+              <span className="text-[14px] font-semibold text-[var(--foreground)]">私のレポートを見る</span>
+              <ChevronRight size={16} color="var(--app-text-tertiary)" />
             </button>
             <div className="space-y-3">
-              <div className="rounded-[16px] bg-white px-5 py-5">
-                <p className="text-[18px] font-bold text-[#202124]">今月のおうち</p>
+              <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+                <p className="text-[18px] font-bold text-[var(--foreground)]">今月のおうち</p>
                 {reportLoading && !householdReport ? (
-                  <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F6368]">
+                  <div className="mt-3 flex items-center gap-2 text-[13px] text-[var(--muted-foreground)]">
                     <Loader2 size={14} className="animate-spin" />
                     読み込み中...
                   </div>
                 ) : (
                   <>
                     <div className="mt-2.5 flex items-end gap-2">
-                      <p className="text-[48px] font-bold leading-none text-[#1A9BE8]">{householdReport?.currentMonthTotal ?? 0}</p>
-                      <p className="text-[18px] font-semibold text-[#5F6368]">回</p>
-                      <span className={`mb-1 inline-flex rounded-full px-2.5 py-1 text-[13px] font-bold ${householdReportDiff >= 0 ? "bg-[#E6F4EA] text-[#1E8E3E]" : "bg-[#FCE8E6] text-[#C5221F]"}`}>
+                      <p className="text-[48px] font-bold leading-none text-[var(--primary)]">{householdReport?.currentMonthTotal ?? 0}</p>
+                      <p className="text-[18px] font-semibold text-[var(--muted-foreground)]">回</p>
+                      <span className={`mb-1 inline-flex rounded-full px-2.5 py-1 text-[13px] font-bold ${householdReportDiff >= 0 ? "bg-[var(--app-surface-soft)] text-[var(--primary)]" : "bg-[var(--destructive)]/15 text-[var(--destructive)]"}`}>
                         {monthDiffLabel} 先月比
                       </span>
                     </div>
-                    <p className="mt-2 text-[13px] font-medium text-[#9AA0A6]">みんなでたくさんやったね！</p>
+                    <p className="mt-2 text-[13px] font-medium text-[var(--app-text-tertiary)]">みんなでたくさんやったね！</p>
                   </>
                 )}
               </div>
 
-              <div className="rounded-[16px] bg-white px-5 py-5">
-                <p className="text-[18px] font-bold text-[#202124]">よく回った家事 トップ3</p>
+              <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+                <p className="text-[18px] font-bold text-[var(--foreground)]">よく回った家事 トップ3</p>
                 <div className="mt-3 space-y-2">
                   {topChores.length === 0 ? (
-                    <p className="text-[13px] font-medium text-[#9AA0A6]">まだ記録がありません。</p>
+                    <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">まだ記録がありません。</p>
                   ) : (
                     topChores.map((item) => {
                       const ItemIcon = iconByName(item.icon);
                       return (
-                        <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                        <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2">
                           <ItemIcon size={14} color={item.iconColor} />
-                          <p className="flex-1 truncate text-[15px] font-bold text-[#202124]">{item.title}</p>
-                          <p className="text-[15px] font-bold text-[#1A9BE8]">{item.count}回</p>
+                          <p className="flex-1 truncate text-[15px] font-bold text-[var(--foreground)]">{item.title}</p>
+                          <p className="text-[15px] font-bold text-[var(--primary)]">{item.count}回</p>
                         </div>
                       );
                     })
@@ -4992,21 +5056,21 @@ export function KajiApp() {
                 </div>
               </div>
 
-              <div className="rounded-[16px] bg-white px-5 py-5">
-                <p className="text-[18px] font-bold text-[#202124]">久しぶりかも？</p>
+              <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+                <p className="text-[18px] font-bold text-[var(--foreground)]">久しぶりかも？</p>
                 <div className="mt-3 space-y-2">
                   {staleTasks.length === 0 ? (
-                    <p className="text-[13px] font-medium text-[#9AA0A6]">問題のある家事はありません。</p>
+                    <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">問題のある家事はありません。</p>
                   ) : (
                     staleTasks.map((item) => {
                       const ItemIcon = iconByName(item.icon);
                       const lastPerformed = new Date(item.lastPerformedAt);
                       const lastPerformedLabel = `${lastPerformed.getMonth() + 1}/${lastPerformed.getDate()}`;
                       return (
-                        <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                        <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2">
                           <ItemIcon size={14} color={item.iconColor} />
-                          <p className="flex-1 truncate text-[14px] font-bold text-[#202124]">{item.title}</p>
-                          <p className="text-[12px] font-medium text-[#5F6368]">最終: {lastPerformedLabel}</p>
+                          <p className="flex-1 truncate text-[14px] font-bold text-[var(--foreground)]">{item.title}</p>
+                          <p className="text-[12px] font-medium text-[var(--muted-foreground)]">最終: {lastPerformedLabel}</p>
                         </div>
                       );
                     })
@@ -5029,36 +5093,36 @@ export function KajiApp() {
       return (
         <div className="space-y-4 pb-4">
           <div className="flex items-center gap-2 pt-1">
-            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
               <ChevronLeft size={18} />
             </button>
-            <p className="text-[22px] font-bold text-[#202124]">プッシュ通知設定</p>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">プッシュ通知設定</p>
           </div>
           <SettingToggleRow title="プッシュ通知" subtitle="すべての通知をまとめてオン/オフ" checked={pushEnabled} disabled={pushLoading} onChange={(next) => { void handleTogglePush(next); }} />
           {pushEnabled && notificationSettings ? (
-            <div className="space-y-3 rounded-[14px] bg-white p-3">
-              <div className="space-y-2 rounded-[12px] border border-[#DADCE0] bg-[#F8F9FA] p-3">
-                <p className="text-[13px] font-bold text-[#202124]">通知時刻</p>
+            <div className="space-y-3 rounded-[14px] bg-[var(--card)] p-3">
+              <div className="space-y-2 rounded-[12px] border border-[var(--border)] bg-[var(--app-canvas)] p-3">
+                <p className="text-[13px] font-bold text-[var(--foreground)]">通知時刻</p>
                 <div className="flex flex-wrap gap-2">
                   {notificationSettings.reminderTimes.map((time) => (
-                    <button key={time} type="button" onClick={() => removeReminderTime(time)} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-[#1A73E8]">
+                    <button key={time} type="button" onClick={() => removeReminderTime(time)} className="inline-flex items-center gap-1 rounded-full bg-[var(--card)] px-3 py-1.5 text-[12px] font-bold text-[var(--primary)]">
                       {time}
-                      {notificationSettings.reminderTimes.length > 1 ? <span className="text-[#9AA0A6]">×</span> : null}
+                      {notificationSettings.reminderTimes.length > 1 ? <span className="text-[var(--app-text-tertiary)]">×</span> : null}
                     </button>
                   ))}
-                  <button type="button" onClick={() => setReminderTimePickerOpen((prev) => !prev)} className="inline-flex h-[30px] items-center justify-center rounded-full border border-[#DADCE0] bg-white px-3 text-[12px] font-bold text-[#5F6368]">+ 追加</button>
+                  <button type="button" onClick={() => setReminderTimePickerOpen((prev) => !prev)} className="inline-flex h-[30px] items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] px-3 text-[12px] font-bold text-[var(--muted-foreground)]">+ 追加</button>
                 </div>
                 {reminderTimePickerOpen ? (
                   <div className="grid grid-cols-4 gap-2 pt-1">
                     {REMINDER_HOUR_CHOICES.filter((time) => !notificationSettings.reminderTimes.includes(time)).map((time) => (
-                      <button key={time} type="button" onClick={() => addReminderTime(time)} className="rounded-[10px] border border-[#DADCE0] bg-white px-2 py-1.5 text-[12px] font-bold text-[#5F6368]">{time}</button>
+                      <button key={time} type="button" onClick={() => addReminderTime(time)} className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-[12px] font-bold text-[var(--muted-foreground)]">{time}</button>
                     ))}
                   </div>
                 ) : null}
               </div>
               <SettingToggleRow title="リマインド通知" checked={notificationSettings.notifyReminder} onChange={(next) => { void updateNotificationSettings({ ...notificationSettings, notifyReminder: next }); }} />
               <SettingToggleRow title="パートナーの完了通知" checked={notificationSettings.notifyCompletion} onChange={(next) => { void updateNotificationSettings({ ...notificationSettings, notifyCompletion: next }); }} />
-              <button type="button" onClick={handleTestNotification} disabled={pushLoading} className="w-full rounded-[10px] bg-[#C2A12F] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60">いま通知を送信</button>
+              <button type="button" onClick={handleTestNotification} disabled={pushLoading} className="w-full rounded-[10px] bg-[var(--primary)] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60">いま通知を送信</button>
             </div>
           ) : null}
           <button
@@ -5067,13 +5131,13 @@ export function KajiApp() {
               setPushGuidePlatform("android");
               setSettingsView("push-guide");
             }}
-            className="flex w-full items-center justify-between rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-left"
+            className="flex w-full items-center justify-between rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-left"
           >
             <div>
-              <p className="text-[14px] font-bold text-[#202124]">スマホ通知の設定方法</p>
-              <p className="text-[12px] font-medium text-[#5F6368]">Android・iPhone向けの手順を案内</p>
+              <p className="text-[14px] font-bold text-[var(--foreground)]">スマホ通知の設定方法</p>
+              <p className="text-[12px] font-medium text-[var(--muted-foreground)]">Android・iPhone向けの手順を案内</p>
             </div>
-            <ChevronRight size={16} color="#9AA0A6" />
+            <ChevronRight size={16} color="var(--app-text-tertiary)" />
           </button>
         </div>
       );
@@ -5085,50 +5149,50 @@ export function KajiApp() {
       return (
         <div className="space-y-4 pb-4">
           <div className="flex items-center gap-2 pt-1">
-            <button type="button" onClick={() => setSettingsView("push")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+            <button type="button" onClick={() => setSettingsView("push")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
               <ChevronLeft size={18} />
             </button>
-            <p className="text-[22px] font-bold text-[#202124]">通知の設定方法</p>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">通知の設定方法</p>
           </div>
 
-          <div className="flex gap-1 rounded-[12px] bg-[#E9EEF6] p-1">
+          <div className="flex gap-1 rounded-[12px] bg-[var(--secondary)] p-1">
             <button
               type="button"
               onClick={() => setPushGuidePlatform("android")}
-              className={`flex-1 rounded-[10px] px-2 py-2 text-[13px] font-bold ${pushGuidePlatform === "android" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
+              className={`flex-1 rounded-[10px] px-2 py-2 text-[13px] font-bold ${pushGuidePlatform === "android" ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
             >
               Android
             </button>
             <button
               type="button"
               onClick={() => setPushGuidePlatform("iphone")}
-              className={`flex-1 rounded-[10px] px-2 py-2 text-[13px] font-bold ${pushGuidePlatform === "iphone" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
+              className={`flex-1 rounded-[10px] px-2 py-2 text-[13px] font-bold ${pushGuidePlatform === "iphone" ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
             >
               iPhone
             </button>
           </div>
 
-          <div className="space-y-2 rounded-[14px] border border-[#DADCE0] bg-white p-4">
-            <p className="text-[15px] font-bold text-[#202124]">{guide.setupTitle}</p>
-            <div className="space-y-1.5 text-[12px] font-medium leading-relaxed text-[#5F6368]">
+          <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-4">
+            <p className="text-[15px] font-bold text-[var(--foreground)]">{guide.setupTitle}</p>
+            <div className="space-y-1.5 text-[12px] font-medium leading-relaxed text-[var(--muted-foreground)]">
               {guide.setupSteps.map((step) => (
                 <p key={step}>{step}</p>
               ))}
             </div>
           </div>
 
-          <div className="space-y-2 rounded-[14px] border border-[#D8E7FF] bg-[#F5F9FF] p-4">
-            <p className="text-[13px] font-bold text-[#1A9BE8]">確認（テスト）</p>
-            <div className="space-y-1 text-[11.5px] font-medium leading-relaxed text-[#5F6368]">
+          <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--app-surface-soft)] p-4">
+            <p className="text-[13px] font-bold text-[var(--primary)]">確認（テスト）</p>
+            <div className="space-y-1 text-[11.5px] font-medium leading-relaxed text-[var(--muted-foreground)]">
               {PUSH_GUIDE_CONFIRM_STEPS.map((step) => (
                 <p key={step}>{step}</p>
               ))}
             </div>
           </div>
 
-          <div className="space-y-2 rounded-[14px] border border-[#F2D39D] bg-[#FFF6E8] p-4">
-            <p className="text-[13px] font-bold text-[#C58500]">{guide.troubleTitle}</p>
-            <div className="space-y-1 text-[11px] font-medium leading-relaxed text-[#7A6A45]">
+          <div className="space-y-2 rounded-[14px] border border-[var(--primary)] bg-[var(--app-surface-soft)] p-4">
+            <p className="text-[13px] font-bold text-[var(--primary)]">{guide.troubleTitle}</p>
+            <div className="space-y-1 text-[11px] font-medium leading-relaxed text-[var(--muted-foreground)]">
               {guide.troubleSteps.map((step) => (
                 <p key={step}>{step}</p>
               ))}
@@ -5142,31 +5206,31 @@ export function KajiApp() {
       return (
         <div className="space-y-4 pb-4">
           <div className="flex items-center gap-2 pt-1">
-            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
               <ChevronLeft size={18} />
             </button>
-            <p className="text-[22px] font-bold text-[#202124]">家族招待・家族管理</p>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">家族招待・家族管理</p>
           </div>
-          <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-5">
-            <p className="text-[14px] font-bold text-[#5F6368]">家族コード</p>
-            <p className="text-[30px] font-extrabold tracking-[0.16em] text-[#1A9BE8]">{inviteCode || "----"}</p>
-            <p className="text-[11px] font-medium text-[#9AA0A6]">パートナーにこのコードを共有してください</p>
-            <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(inviteCode); setInfoMessage("家族コードをコピーしました。"); } catch { setError("家族コードのコピーに失敗しました。"); } }} className="rounded-[12px] bg-[#1A9BE8] px-3 py-2 text-[14px] font-bold text-white">コードをコピー</button>
+          <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-5">
+            <p className="text-[14px] font-bold text-[var(--muted-foreground)]">家族コード</p>
+            <p className="text-[30px] font-extrabold tracking-[0.16em] text-[var(--primary)]">{inviteCode || "----"}</p>
+            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">パートナーにこのコードを共有してください</p>
+            <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(inviteCode); setInfoMessage("家族コードをコピーしました。"); } catch { setError("家族コードのコピーに失敗しました。"); } }} className="rounded-[12px] bg-[var(--primary)] px-3 py-2 text-[14px] font-bold text-white">コードをコピー</button>
           </div>
-          <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-5">
-            <p className="text-[14px] font-bold text-[#5F6368]">招待リンク</p>
-            <p className="truncate rounded-[10px] bg-[#F1F3F4] px-3 py-2 text-[13px] font-medium text-[#5F6368]">{inviteLink}</p>
-            <button type="button" onClick={async () => { if (navigator.share) { try { await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink }); return; } catch { } } try { await navigator.clipboard.writeText(inviteLink); setInfoMessage("招待リンクをコピーしました。"); } catch { setError("招待リンクの共有に失敗しました。"); } }} className="rounded-[12px] border-2 border-[#1A9BE8] bg-white px-3 py-2 text-[14px] font-bold text-[#1A9BE8]">リンクを共有</button>
+          <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-5">
+            <p className="text-[14px] font-bold text-[var(--muted-foreground)]">招待リンク</p>
+            <p className="truncate rounded-[10px] bg-[var(--secondary)] px-3 py-2 text-[13px] font-medium text-[var(--muted-foreground)]">{inviteLink}</p>
+            <button type="button" onClick={async () => { if (navigator.share) { try { await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink }); return; } catch { } } try { await navigator.clipboard.writeText(inviteLink); setInfoMessage("招待リンクをコピーしました。"); } catch { setError("招待リンクの共有に失敗しました。"); } }} className="rounded-[12px] border-2 border-[var(--primary)] bg-[var(--card)] px-3 py-2 text-[14px] font-bold text-[var(--primary)]">リンクを共有</button>
           </div>
           <div className="space-y-2">
-            <p className="text-[22px] font-bold text-[#202124]">家族メンバー</p>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">家族メンバー</p>
             {boot.users.map((member) => (
-              <div key={member.id} className="flex items-center gap-3 rounded-[14px] border border-[#E5EAF0] bg-white px-4 py-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full text-white" style={{ backgroundColor: member.color ?? "#1A9BE8" }}>
+              <div key={member.id} className="flex items-center gap-3 rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full text-white" style={{ backgroundColor: member.color ?? PRIMARY_COLOR }}>
                   <span className="material-symbols-rounded text-[20px]">person</span>
                 </div>
-                <p className="flex-1 text-[15px] font-semibold text-[#202124]">{member.name}{member.id === sessionUser.id ? "（あなた）" : ""}</p>
-                <span className={`text-[11px] font-bold ${member.id === sessionUser.id ? "text-[#1A9BE8]" : "text-[#34A853]"}`}>{member.id === sessionUser.id ? "管理者" : "参加中"}</span>
+                <p className="flex-1 text-[15px] font-semibold text-[var(--foreground)]">{member.name}{member.id === sessionUser.id ? "（あなた）" : ""}</p>
+                <span className={`text-[11px] font-bold ${member.id === sessionUser.id ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}`}>{member.id === sessionUser.id ? "管理者" : "参加中"}</span>
               </div>
             ))}
           </div>
@@ -5183,44 +5247,44 @@ export function KajiApp() {
               <button
                 type="button"
                 onClick={() => setManageDetailChoreId(null)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]"
                 aria-label="家事一覧に戻る"
               >
                 <ChevronLeft size={18} />
               </button>
-              <p className="text-[22px] font-bold text-[#202124]">家事詳細</p>
+              <p className="text-[22px] font-bold text-[var(--foreground)]">家事詳細</p>
               <button
                 type="button"
                 onClick={() => openEditChore(manageDetailTarget)}
-                className="ml-auto inline-flex items-center gap-1 rounded-full border border-[#E5EAF0] bg-white px-3 py-1.5 text-[12px] font-bold text-[#1A9BE8]"
+                className="ml-auto inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-[12px] font-bold text-[var(--primary)]"
               >
                 <span className="material-symbols-rounded text-[16px]">edit</span>
                 編集
               </button>
             </div>
 
-            <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-4">
+            <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: manageDetailTarget.bgColor }}>
                   <DetailIcon size={18} color={manageDetailTarget.iconColor} />
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-[16px] font-bold text-[#202124]">{manageDetailTarget.title}</p>
-                  <p className="text-[12px] font-medium text-[#5F6368]">
-                    {manageDetailTarget.intervalDays}日ごと・担当: {manageDetailTarget.defaultAssigneeName ?? "なし"}
+                  <p className="truncate text-[16px] font-bold text-[var(--foreground)]">{manageDetailTarget.title}</p>
+                  <p className="text-[12px] font-medium text-[var(--muted-foreground)]">
+                    {manageDetailTarget.intervalDays}日ごと
                   </p>
                 </div>
               </div>
-              <p className="text-[12px] font-medium text-[#5F6368]">直近30日の実施回数: {historyCountLast30}回</p>
+              <p className="text-[12px] font-medium text-[var(--muted-foreground)]">直近30日の実施回数: {historyCountLast30}回</p>
             </div>
 
-            <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-4">
+            <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-4">
               <div className="flex items-end justify-between gap-2">
-                <p className="text-[16px] font-bold text-[#202124]">実施予定</p>
-                <span className="text-[11px] font-medium text-[#9AA0A6]">次の5件</span>
+                <p className="text-[16px] font-bold text-[var(--foreground)]">実施予定</p>
+                <span className="text-[11px] font-medium text-[var(--app-text-tertiary)]">次の5件</span>
               </div>
               {manageUpcomingDateKeys.length === 0 ? (
-                <p className="rounded-[10px] bg-[#F8F9FA] px-3 py-2 text-[13px] font-medium text-[#9AA0A6]">予定なし</p>
+                <p className="rounded-[10px] bg-[var(--app-canvas)] px-3 py-2 text-[13px] font-medium text-[var(--app-text-tertiary)]">予定なし</p>
               ) : (
                 <div className="space-y-2">
                   {manageUpcomingDateKeys.map((dateKey, index) => (
@@ -5228,31 +5292,28 @@ export function KajiApp() {
                       key={`${manageDetailTarget.id}-planned-${dateKey}-${index}`}
                       type="button"
                       onClick={() => openReschedule(manageDetailTarget, dateKey)}
-                      className="flex w-full items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2 text-left"
+                      className="flex w-full items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2 text-left"
                     >
-                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-[#5F6368]">{index + 1}</span>
-                      <p className="text-[14px] font-semibold text-[#202124]">{formatDateKeyMonthDayWeekday(dateKey)}</p>
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--card)] px-1 text-[10px] font-bold text-[var(--muted-foreground)]">{index + 1}</span>
+                      <p className="text-[14px] font-semibold text-[var(--foreground)]">{formatDateKeyMonthDayWeekday(dateKey)}</p>
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="space-y-2 rounded-[16px] border border-[#E5EAF0] bg-white p-4">
-              <p className="text-[16px] font-bold text-[#202124]">実施履歴</p>
+            <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-4">
+              <p className="text-[16px] font-bold text-[var(--foreground)]">実施履歴</p>
               <SegmentedFilter items={historyFilters} activeKey={historyFilter} onChange={setHistoryFilter} />
               {historyRecords.length === 0 ? (
-                <p className="rounded-[10px] bg-[#F8F9FA] px-3 py-4 text-center text-[13px] font-medium text-[#9AA0A6]">履歴がありません</p>
+                <p className="rounded-[10px] bg-[var(--app-canvas)] px-3 py-4 text-center text-[13px] font-medium text-[var(--app-text-tertiary)]">履歴がありません</p>
               ) : (
                 <AnimatedList delay={70} className="items-stretch gap-2">
-                  {historyRecords.map((record, index) => (
-                    <div key={record.id} className="flex items-start gap-3 rounded-[12px] bg-[#F8F9FA] p-3">
-                      <span
-                        className="mt-1 h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: index % 2 === 0 ? "#33C28A" : "#4285F4" }}
-                      />
+                  {historyRecords.map((record) => (
+                    <div key={record.id} className="flex items-start gap-3 rounded-[12px] bg-[var(--app-canvas)] p-3">
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[var(--primary)]" />
                       <div className="space-y-1">
-                        <p className="text-[14px] font-bold text-[#202124]">
+                        <p className="text-[14px] font-bold text-[var(--foreground)]">
                           {formatJpDate(record.performedAt)} {
                             record.isSkipped
                               ? "スキップ"
@@ -5262,7 +5323,7 @@ export function KajiApp() {
                           }
                         </p>
                         {record.memo ? (
-                          <p className="text-[12px] font-medium text-[#5F6368]">メモ: {record.memo}</p>
+                          <p className="text-[12px] font-medium text-[var(--muted-foreground)]">メモ: {record.memo}</p>
                         ) : null}
                       </div>
                     </div>
@@ -5277,30 +5338,30 @@ export function KajiApp() {
       return (
         <div className="space-y-3 pb-4">
           <div className="flex items-center gap-2 pt-1">
-            <button type="button" onClick={() => { if (standaloneScreen === "manage") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+            <button type="button" onClick={() => { if (standaloneScreen === "manage") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
               <ChevronLeft size={18} />
             </button>
-            <p className="text-[22px] font-bold text-[#202124]">家事を管理</p>
-            <span className="text-[14px] font-medium text-[#9AA0A6]">{chores.length}件</span>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">家事を管理</p>
+            <span className="text-[14px] font-medium text-[var(--app-text-tertiary)]">{chores.length}件</span>
           </div>
           {listChores.map((chore) => {
             const ChoreIcon = iconByName(chore.icon);
             return (
-              <button key={chore.id} type="button" onClick={() => openManageDetail(chore.id)} className="flex w-full items-center justify-between rounded-[14px] border border-[#E5EAF0] bg-white px-4 py-3 text-left">
+              <button key={chore.id} type="button" onClick={() => openManageDetail(chore.id)} className="flex w-full items-center justify-between rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-left">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: chore.bgColor }}>
                     <ChoreIcon size={15} color={chore.iconColor} />
                   </div>
                   <div>
-                    <p className="text-[14px] font-bold text-[#202124]">{chore.title}</p>
-                    <p className="text-[11.5px] font-medium text-[#9AA0A6]">{chore.intervalDays}日ごと・{chore.defaultAssigneeName ?? "なし"}</p>
+                    <p className="text-[14px] font-bold text-[var(--foreground)]">{chore.title}</p>
+                    <p className="text-[11.5px] font-medium text-[var(--app-text-tertiary)]">{chore.intervalDays}日ごと</p>
                   </div>
                 </div>
-                <ChevronRight size={16} color="#BDC1C6" />
+                <ChevronRight size={16} color="var(--app-text-tertiary)" />
               </button>
             );
           })}
-          <button type="button" onClick={openAddChore} className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-[#E5EAF0] bg-white px-4 py-3 text-[15px] font-bold text-[#1A9BE8]"><Plus size={16} />家事を追加</button>
+          <button type="button" onClick={openAddChore} className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[15px] font-bold text-[var(--primary)]"><Plus size={16} />家事を追加</button>
         </div>
       );
     }
@@ -5312,64 +5373,64 @@ export function KajiApp() {
       return (
         <div className="space-y-3 pb-4">
           <div className="flex items-center gap-2 pt-1">
-            <button type="button" onClick={() => { if (standaloneScreen === "my-report") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+            <button type="button" onClick={() => { if (standaloneScreen === "my-report") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
               <ChevronLeft size={18} />
             </button>
           </div>
-          <div className="rounded-[16px] bg-white px-5 py-5">
-            <p className="text-[18px] font-bold text-[#202124]">今月のわたし</p>
+          <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+            <p className="text-[18px] font-bold text-[var(--foreground)]">今月のわたし</p>
             {myReportLoading ? (
-              <div className="mt-3 flex items-center gap-2 text-[13px] text-[#5F6368]">
+              <div className="mt-3 flex items-center gap-2 text-[13px] text-[var(--muted-foreground)]">
                 <Loader2 size={14} className="animate-spin" />
                 読み込み中...
               </div>
             ) : (
               <>
                 <div className="mt-2.5 flex items-end gap-2">
-                  <p className="text-[48px] font-bold leading-none text-[#1A9BE8]">{myReport?.currentMonthTotal ?? 0}</p>
-                  <p className="text-[18px] font-semibold text-[#5F6368]">回</p>
-                  <span className={`mb-1 inline-flex rounded-full px-2.5 py-1 text-[13px] font-bold ${myDiff !== null && myDiff >= 0 ? "bg-[#E6F4EA] text-[#1E8E3E]" : "bg-[#FCE8E6] text-[#C5221F]"}`}>
+                  <p className="text-[48px] font-bold leading-none text-[var(--primary)]">{myReport?.currentMonthTotal ?? 0}</p>
+                  <p className="text-[18px] font-semibold text-[var(--muted-foreground)]">回</p>
+                  <span className={`mb-1 inline-flex rounded-full px-2.5 py-1 text-[13px] font-bold ${myDiff !== null && myDiff >= 0 ? "bg-[var(--app-surface-soft)] text-[var(--primary)]" : "bg-[var(--destructive)]/15 text-[var(--destructive)]"}`}>
                     {myDiff === null ? "-" : myDiff > 0 ? `+${myDiff}` : `${myDiff}`} 先月比
                   </span>
                 </div>
-                <p className="mt-2 text-[13px] font-medium text-[#9AA0A6]">わたしの家事傾向をみてみよう</p>
+                <p className="mt-2 text-[13px] font-medium text-[var(--app-text-tertiary)]">わたしの家事傾向をみてみよう</p>
               </>
             )}
           </div>
-          <div className="rounded-[16px] bg-white px-5 py-5">
-            <p className="text-[18px] font-bold text-[#202124]">よく回った家事 トップ3</p>
+          <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+            <p className="text-[18px] font-bold text-[var(--foreground)]">よく回った家事 トップ3</p>
             <div className="mt-3 space-y-2">
               {myTopChores.length === 0 ? (
-                <p className="text-[13px] font-medium text-[#9AA0A6]">まだ記録がありません。</p>
+                <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">まだ記録がありません。</p>
               ) : (
                 myTopChores.map((item) => {
                   const ItemIcon = iconByName(item.icon);
                   return (
-                    <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                    <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2">
                       <ItemIcon size={14} color={item.iconColor} />
-                      <p className="flex-1 truncate text-[15px] font-bold text-[#202124]">{item.title}</p>
-                      <p className="text-[15px] font-bold text-[#1A9BE8]">{item.count}回</p>
+                      <p className="flex-1 truncate text-[15px] font-bold text-[var(--foreground)]">{item.title}</p>
+                      <p className="text-[15px] font-bold text-[var(--primary)]">{item.count}回</p>
                     </div>
                   );
                 })
               )}
             </div>
           </div>
-          <div className="rounded-[16px] bg-white px-5 py-5">
-            <p className="text-[18px] font-bold text-[#202124]">久しぶりかも？</p>
+          <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+            <p className="text-[18px] font-bold text-[var(--foreground)]">久しぶりかも？</p>
             <div className="mt-3 space-y-2">
               {staleTasks.length === 0 ? (
-                <p className="text-[13px] font-medium text-[#9AA0A6]">問題のある家事はありません。</p>
+                <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">問題のある家事はありません。</p>
               ) : (
                 staleTasks.map((item) => {
                   const ItemIcon = iconByName(item.icon);
                   const lastPerformed = new Date(item.lastPerformedAt);
                   const lastPerformedLabel = `${lastPerformed.getMonth() + 1}/${lastPerformed.getDate()}`;
                   return (
-                    <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[#F8F9FA] px-3 py-2">
+                    <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2">
                       <ItemIcon size={14} color={item.iconColor} />
-                      <p className="flex-1 truncate text-[14px] font-bold text-[#202124]">{item.title}</p>
-                      <p className="text-[12px] font-medium text-[#5F6368]">最終: {lastPerformedLabel}</p>
+                      <p className="flex-1 truncate text-[14px] font-bold text-[var(--foreground)]">{item.title}</p>
+                      <p className="text-[12px] font-medium text-[var(--muted-foreground)]">最終: {lastPerformedLabel}</p>
                     </div>
                   );
                 })
@@ -5387,11 +5448,11 @@ export function KajiApp() {
             <button
               type="button"
               onClick={() => { if (standaloneScreen === "my-records") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]"
             >
               <ChevronLeft size={18} />
             </button>
-            <p className="text-[22px] font-bold text-[#202124]">わたしのきろく</p>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">わたしのきろく</p>
           </div>
           <div className="space-y-4">
             {renderTimelineRecords(myGroupedTimelineRecords, "あなたの記録がここに表示されます。")}
@@ -5404,15 +5465,15 @@ export function KajiApp() {
       return (
         <div className="space-y-4 pb-4">
           <div className="flex items-center gap-2 pt-1">
-            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#202124]">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
               <ChevronLeft size={18} />
             </button>
-            <p className="text-[22px] font-bold text-[#202124]">おやすみモード</p>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">おやすみモード</p>
           </div>
-          <p className="text-[13px] font-medium leading-relaxed text-[#5F6368]">
+          <p className="text-[13px] font-medium leading-relaxed text-[var(--muted-foreground)]">
             おやすみモード中はプッシュ通知が届きません。設定した時間帯は通知をミュートします。
           </p>
-          <div className="rounded-[14px] border border-[#E5EAF0] bg-white p-2">
+          <div className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-2">
             <SettingToggleRow
               title="おやすみモード"
               checked={sleepModeEnabled}
@@ -5420,13 +5481,13 @@ export function KajiApp() {
             />
           </div>
           <div className="space-y-2">
-            <p className="text-[14px] font-semibold text-[#5F6368]">おやすみ時間</p>
+            <p className="text-[14px] font-semibold text-[var(--muted-foreground)]">おやすみ時間</p>
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
               <select
                 value={sleepModeStart}
                 onChange={(event) => setSleepModeStart(event.target.value)}
                 disabled={!sleepModeEnabled}
-                className="h-12 rounded-[12px] border border-[#E5EAF0] bg-white px-3 text-center text-[30px] font-bold leading-none text-[#202124] disabled:opacity-50"
+                className="h-12 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 text-center text-[30px] font-bold leading-none text-[var(--foreground)] disabled:opacity-50"
               >
                 {REMINDER_HOUR_CHOICES.map((time) => (
                   <option key={`sleep-start-inline-${time}`} value={time}>
@@ -5434,12 +5495,12 @@ export function KajiApp() {
                   </option>
                 ))}
               </select>
-              <span className="text-[22px] font-semibold text-[#5F6368]">〜</span>
+              <span className="text-[22px] font-semibold text-[var(--muted-foreground)]">〜</span>
               <select
                 value={sleepModeEnd}
                 onChange={(event) => setSleepModeEnd(event.target.value)}
                 disabled={!sleepModeEnabled}
-                className="h-12 rounded-[12px] border border-[#E5EAF0] bg-white px-3 text-center text-[30px] font-bold leading-none text-[#202124] disabled:opacity-50"
+                className="h-12 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 text-center text-[30px] font-bold leading-none text-[var(--foreground)] disabled:opacity-50"
               >
                 {REMINDER_HOUR_CHOICES.map((time) => (
                   <option key={`sleep-end-inline-${time}`} value={time}>
@@ -5448,7 +5509,7 @@ export function KajiApp() {
                 ))}
               </select>
             </div>
-            <p className="text-[11px] font-medium text-[#9AA0A6]">この時間帯はリマインド通知が届きません</p>
+            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">この時間帯はリマインド通知が届きません</p>
           </div>
         </div>
       );
@@ -5462,30 +5523,55 @@ export function KajiApp() {
               type="button"
               onClick={closeSettings}
               className="flex h-10 w-10 items-center justify-center rounded-full text-white"
-              style={{ backgroundColor: sessionUser.color ?? "#1A9BE8" }}
+              style={{ backgroundColor: sessionUser.color ?? PRIMARY_COLOR }}
               aria-label="設定を閉じる"
             >
               <span className="material-symbols-rounded text-[20px]">person</span>
             </button>
-            <p className="text-[28px] font-bold leading-none text-[#202124]">{sessionUser.name}</p>
-            <p className="text-[13px] font-medium text-[#9AA0A6]">@{sessionUser.name.toLowerCase()} · いえたすく</p>
-            <p className="pt-1 text-[13px] font-semibold text-[#5F6368]">{myReport?.currentMonthTotal ?? 0} 今月の記録・ {chores.length} 連続日数</p>
+            <p className="text-[28px] font-bold leading-none text-[var(--foreground)]">{sessionUser.name}</p>
+            <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">@{sessionUser.name.toLowerCase()} · いえたすく</p>
+            <p className="pt-1 text-[13px] font-semibold text-[var(--muted-foreground)]">{myReport?.currentMonthTotal ?? 0} 今月の記録・ {chores.length} 連続日数</p>
           </div>
 
-          <div className="h-px bg-[#DADCE0]" />
+          <div className="h-px bg-[var(--border)]" />
+
+          <div className="space-y-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] p-3">
+            <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">表示テーマ</p>
+            <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-[var(--secondary)] p-1">
+              {THEME_MODE_ITEMS.map((item) => {
+                const selected = themeMode === item.key;
+                return (
+                  <button
+                    key={`theme-mode-${item.key}`}
+                    type="button"
+                    onClick={() => handleThemeModeChange(item.key)}
+                    className={`rounded-[8px] px-2 py-1.5 text-[12px] font-bold transition-colors ${selected
+                      ? "bg-[var(--card)] text-[var(--foreground)]"
+                      : "text-[var(--muted-foreground)]"
+                      }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">
+              現在の表示: {resolvedTheme === "dark" ? "ダーク" : "ライト"}
+            </p>
+          </div>
 
           <div className="space-y-1">
-            <button type="button" onClick={() => openStandaloneScreen("my-report")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">trending_up</span><span className="text-[18px] leading-none font-semibold text-[#202124]">私のレポート</span></button>
-            <button type="button" onClick={() => openStandaloneScreen("my-records")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">menu_book</span><span className="text-[18px] leading-none font-semibold text-[#202124]">わたしのきろく</span></button>
-            <button type="button" onClick={() => openSettingsView("push")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">notifications</span><span className="text-[18px] leading-none font-semibold text-[#202124]">プッシュ通知設定</span></button>
-            <button type="button" onClick={() => openSettingsView("family")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">group</span><span className="text-[18px] leading-none font-semibold text-[#202124]">家族招待・家族管理</span></button>
-            <button type="button" onClick={() => openStandaloneScreen("manage")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">checklist</span><span className="text-[18px] leading-none font-semibold text-[#202124]">家事を管理</span></button>
-            <button type="button" onClick={() => openSettingsView("sleep")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[#5F6368]">bedtime</span><span className="text-[18px] leading-none font-semibold text-[#202124]">おやすみモード</span></button>
+            <button type="button" onClick={() => openStandaloneScreen("my-report")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">trending_up</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">私のレポート</span></button>
+            <button type="button" onClick={() => openStandaloneScreen("my-records")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">menu_book</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">わたしのきろく</span></button>
+            <button type="button" onClick={() => openSettingsView("push")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">notifications</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">プッシュ通知設定</span></button>
+            <button type="button" onClick={() => openSettingsView("family")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">group</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">家族招待・家族管理</span></button>
+            <button type="button" onClick={() => openStandaloneScreen("manage")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">checklist</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">家事を管理</span></button>
+            <button type="button" onClick={() => openSettingsView("sleep")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">bedtime</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">おやすみモード</span></button>
           </div>
         </div>
 
         <div className="mt-auto pt-10">
-          <div className="h-px bg-[#DADCE0]" />
+          <div className="h-px bg-[var(--border)]" />
           <button
             type="button"
             onClick={() => {
@@ -5493,9 +5579,9 @@ export function KajiApp() {
             }}
             className="mt-2 flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"
           >
-            <span className="material-symbols-rounded text-[20px] text-[#5F6368]">settings</span>
-            <span className="text-[16px] font-medium text-[#202124]">設定とサポート</span>
-            <span className="material-symbols-rounded ml-auto text-[18px] text-[#5F6368]">expand_more</span>
+            <span className="material-symbols-rounded text-[20px] text-[var(--muted-foreground)]">settings</span>
+            <span className="text-[16px] font-medium text-[var(--foreground)]">設定とサポート</span>
+            <span className="material-symbols-rounded ml-auto text-[18px] text-[var(--muted-foreground)]">expand_more</span>
           </button>
           <button
             type="button"
@@ -5511,8 +5597,8 @@ export function KajiApp() {
             }}
             className="mt-2 flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"
           >
-            <span className="material-symbols-rounded text-[20px] text-[#D93025]">logout</span>
-            <span className="text-[16px] font-medium text-[#D93025]">ログアウト</span>
+            <span className="material-symbols-rounded text-[20px] text-[var(--destructive)]">logout</span>
+            <span className="text-[16px] font-medium text-[var(--destructive)]">ログアウト</span>
           </button>
         </div>
       </div>
@@ -5520,7 +5606,7 @@ export function KajiApp() {
   };
 
   return (
-    <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-hidden overscroll-y-none bg-[#F8F9FA]">
+    <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-hidden overscroll-y-none bg-[var(--app-canvas)]">
       <section
         className="relative flex-1 overflow-hidden overscroll-y-none"
         onTouchStart={(e) => {
@@ -5617,7 +5703,10 @@ export function KajiApp() {
               }}
             >
               {TAB_ORDER.map((tab) => (
-                <div key={tab} className="pointer-events-auto w-full shrink-0">
+                <div
+                  key={tab}
+                  className={`${tab === "home" ? "pointer-events-none" : "pointer-events-auto"} w-full shrink-0`}
+                >
                   {renderTabHeader(tab)}
                 </div>
               ))}
@@ -5633,7 +5722,7 @@ export function KajiApp() {
             onTouchEnd={handleMainScrollTouchEnd}
             onTouchCancel={handleMainScrollTouchCancel}
           >
-            {error ? <div className="mb-4 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
+            {error ? <div className="mb-4 rounded-xl bg-[var(--destructive)]/15 px-3 py-2 text-sm text-[var(--destructive)]">{error}</div> : null}
             <div className="relative min-h-full overflow-x-hidden">
               <div
                 className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
@@ -5653,38 +5742,38 @@ export function KajiApp() {
 
           {assignmentMounted ? (
             <div
-              className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-8 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
+              className={`absolute inset-0 z-40 overflow-auto bg-[var(--app-canvas)] px-5 pb-8 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
             >
-              {error ? <div className="mb-4 mt-5 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
+              {error ? <div className="mb-4 mt-5 rounded-xl bg-[var(--destructive)]/15 px-3 py-2 text-sm text-[var(--destructive)]">{error}</div> : null}
               <div className={`space-y-4 ${error ? "pt-2" : "pt-5"}`}>
-                <div className="sticky top-0 z-30 -mx-5 space-y-3 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+                <div className="sticky top-0 z-30 -mx-5 space-y-3 bg-[var(--app-header-bg)] px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
                   <div className="flex items-center justify-between">
                     <button
                       type="button"
                       onClick={closeAssignment}
-                      className="flex items-center gap-1 text-[14px] font-bold text-[#1A9BE8]"
+                      className="flex items-center gap-1 text-[14px] font-bold text-[var(--primary)]"
                     >
                       <ChevronLeft size={18} /> 戻る
                     </button>
-                    <p className="text-[18px] font-bold text-[#202124]">担当設定</p>
+                    <p className="text-[18px] font-bold text-[var(--foreground)]">担当設定</p>
                     <div className="w-[50px]" />
                   </div>
 
                   <div className="flex gap-2">
                     {(boot?.users ?? []).map((u) => {
                       const isSelected = assignmentUser === u.id;
-                      const userColor = u.color ?? "#1A9BE8";
+                      const userColor = u.color ?? PRIMARY_COLOR;
                       return (
                         <button
                           key={u.id}
                           type="button"
                           onClick={() => setAssignmentUser(isSelected ? null : u.id)}
-                          className={`rounded-2xl px-4 py-2 text-[13px] font-bold transition-colors ${isSelected ? "text-white" : "border text-[#5F6368]"
+                          className={`rounded-2xl px-4 py-2 text-[13px] font-bold transition-colors ${isSelected ? "text-white" : "border text-[var(--muted-foreground)]"
                             }`}
                           style={
                             isSelected
                               ? { backgroundColor: userColor, borderColor: userColor }
-                              : { backgroundColor: "white", borderColor: "#DADCE0" }
+                              : { backgroundColor: "white", borderColor: "var(--border)" }
                           }
                         >
                           {u.name}
@@ -5785,7 +5874,7 @@ export function KajiApp() {
             onClick={closeSettings}
             className="absolute inset-0 bg-black/30"
           />
-          <aside className={`absolute inset-y-0 left-0 w-[320px] max-w-[88%] ${settingsView === "menu" ? "bg-white" : "bg-[#F1F3F4]"} shadow-[12px_0_28px_rgba(0,0,0,0.2)]`}>
+          <aside className={`absolute inset-y-0 left-0 w-[320px] max-w-[88%] ${settingsView === "menu" ? "bg-[var(--card)]" : "bg-[var(--secondary)]"} shadow-[12px_0_28px_rgba(0,0,0,0.2)]`}>
             <div className="h-full overflow-y-auto px-4 pb-24 pt-6">
               {renderMainTabContent("settings")}
             </div>
@@ -5794,7 +5883,7 @@ export function KajiApp() {
       ) : null}
 
       {standaloneScreen ? (
-        <div className="fixed inset-0 z-[75] bg-[#F8F9FA]">
+        <div className="fixed inset-0 z-[75] bg-[var(--app-canvas)]">
           <div className="mx-auto h-full w-full max-w-[430px] overflow-y-auto px-5 pb-24 pt-5">
             {renderMainTabContent("settings")}
           </div>
@@ -5805,8 +5894,8 @@ export function KajiApp() {
         <div className="pointer-events-none fixed left-0 right-0 top-3 z-[90] mx-auto max-w-[430px] px-4">
           <div
             className={`rounded-[12px] border px-4 py-2.5 text-center text-[14px] font-bold shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${taskBanner.tone === "green"
-              ? "border-[#CDE7D3] bg-[#E8F5E9] text-[#1E6A3A]"
-              : "border-[#CFE0FF] bg-[#E8F2FF] text-[#1A5AD8]"
+              ? "border-[var(--primary)] bg-[var(--app-surface-soft)] text-[var(--primary)]"
+              : "border-[var(--primary)] bg-[var(--app-surface-soft)] text-[var(--primary)]"
               }`}
           >
             {taskBanner.message}
@@ -5846,10 +5935,10 @@ export function KajiApp() {
             paddingTop: "max(env(safe-area-inset-top), 16px)",
             paddingBottom: "max(env(safe-area-inset-bottom), 16px)",
           }}
-          panelClassName="max-w-[288px] rounded-[18px] border border-[#DADCE0] px-4 py-4 shadow-[0_18px_44px_rgba(0,0,0,0.26)]"
+          panelClassName="max-w-[288px] rounded-[18px] border border-[var(--border)] px-4 py-4 shadow-[0_18px_44px_rgba(0,0,0,0.26)]"
           icon={(
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F3FD]">
-              <span className="material-symbols-rounded text-[22px] text-[#1A9BE8]">check_circle</span>
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--app-surface-soft)]">
+              <span className="material-symbols-rounded text-[22px] text-[var(--primary)]">check_circle</span>
             </div>
           )}
         />
@@ -5857,7 +5946,7 @@ export function KajiApp() {
 
       <div
         aria-hidden
-        className={`pointer-events-none fixed inset-0 z-[10010] bg-[#F8F9FA] transition-opacity duration-200 ${appReloading ? "opacity-100" : "opacity-0"}`}
+        className={`pointer-events-none fixed inset-0 z-[10010] bg-[var(--app-canvas)] transition-opacity duration-200 ${appReloading ? "opacity-100" : "opacity-0"}`}
       />
 
       {touchDragging && draggingChore ? (
@@ -5871,7 +5960,7 @@ export function KajiApp() {
             zIndex: 9998,
             pointerEvents: "none",
           }}
-          className="inline-flex items-center gap-1 rounded-[10px] border border-[#D2E3FC] bg-[#EEF4FE] px-[10px] py-[6px] text-[12px] font-semibold text-[#202124] shadow-lg opacity-90"
+          className="inline-flex items-center gap-1 rounded-[10px] border border-[var(--primary)] bg-[var(--app-surface-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--foreground)] shadow-lg opacity-90"
         >
           <span className="material-symbols-rounded text-[13px]" style={{ color: draggingChore.iconColor }}>drag_indicator</span>
           <span>{draggingChore.title}</span>
@@ -5879,24 +5968,24 @@ export function KajiApp() {
       ) : null}
 
       <nav className="fixed bottom-4 left-0 right-0 z-[76] mx-auto max-w-[430px] px-4">
-        <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
+        <div className="flex w-full items-center justify-around rounded-full bg-[var(--card)] px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
           <button
             type="button"
             onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("home"); setRefreshAnimationSeed((p) => p + 1); }}
             className="flex w-[62px] flex-col items-center gap-0.5 py-1"
           >
-            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>home</span>
-            <span className="text-[10px] font-bold" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>ホーム</span>
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>home</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>ホーム</span>
           </button>
           <button
             type="button"
             onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("records"); }}
             className="flex w-[62px] flex-col items-center gap-0.5 py-1"
           >
-            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "records" ? PRIMARY_COLOR : "#9AA0A6" }}>menu_book</span>
-            <span className="text-[10px] font-bold" style={{ color: activeTab === "records" ? PRIMARY_COLOR : "#9AA0A6" }}>きろく</span>
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "records" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>menu_book</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "records" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>きろく</span>
           </button>
-          <button type="button" onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); openAddChore(); }} className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[#1A9BE8] text-white shadow-md">
+          <button type="button" onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); openAddChore(); }} className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[var(--primary)] text-white shadow-md">
             <Plus size={20} strokeWidth={2.5} />
           </button>
           <button
@@ -5904,16 +5993,16 @@ export function KajiApp() {
             onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("list"); }}
             className="flex w-[62px] flex-col items-center gap-0.5 py-1"
           >
-            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "#9AA0A6" }}>calendar_month</span>
-            <span className="text-[10px] font-bold" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "#9AA0A6" }}>カレンダー</span>
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>calendar_month</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>カレンダー</span>
           </button>
           <button
             type="button"
             onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("stats"); }}
             className="flex w-[62px] flex-col items-center gap-0.5 py-1"
           >
-            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "#9AA0A6" }}>bar_chart</span>
-            <span className="text-[10px] font-bold" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "#9AA0A6" }}>レポート</span>
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>bar_chart</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>レポート</span>
           </button>
         </div>
       </nav>
@@ -5937,14 +6026,14 @@ export function KajiApp() {
             <div className="space-y-4 pb-2">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[21px] font-bold text-[#202124]">この日の操作</p>
-                  <p className="text-[12px] font-medium text-[#5F6368]">{calendarBlankActionDateKey} ({selectedDateLabel})</p>
+                  <p className="text-[21px] font-bold text-[var(--foreground)]">この日の操作</p>
+                  <p className="text-[12px] font-medium text-[var(--muted-foreground)]">{calendarBlankActionDateKey} ({selectedDateLabel})</p>
                 </div>
                 {calendarBlankActionMode === "record" ? (
                   <button
                     type="button"
                     onClick={() => setCalendarBlankActionMode("choice")}
-                    className="rounded-[10px] border border-[#DADCE0] px-3 py-1.5 text-[12px] font-semibold text-[#5F6368]"
+                    className="rounded-[10px] border border-[var(--border)] px-3 py-1.5 text-[12px] font-semibold text-[var(--muted-foreground)]"
                   >
                     戻る
                   </button>
@@ -5978,7 +6067,7 @@ export function KajiApp() {
               ) : (
                 <div className="space-y-3">
                   {calendarQuickRecordChores.length === 0 ? (
-                    <p className="rounded-[12px] border border-[#E5EAF0] bg-[#F8F9FA] px-3 py-3 text-[13px] font-medium text-[#5F6368]">
+                    <p className="rounded-[12px] border border-[var(--border)] bg-[var(--app-canvas)] px-3 py-3 text-[13px] font-medium text-[var(--muted-foreground)]">
                       登録済みの家事がありません。まずは新規登録してください。
                     </p>
                   ) : (
@@ -5988,11 +6077,11 @@ export function KajiApp() {
                       return (
                         <div
                           key={`calendar-blank-record-${calendarBlankActionDateKey}-${chore.id}`}
-                          className="space-y-2 rounded-[12px] border border-[#E5EAF0] bg-white px-3 py-3"
+                          className="space-y-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 py-3"
                         >
                           <div className="flex items-center gap-2">
                             <TaskIcon size={15} color={chore.iconColor} />
-                            <p className="truncate text-[14px] font-bold text-[#202124]">{chore.title}</p>
+                            <p className="truncate text-[14px] font-bold text-[var(--foreground)]">{chore.title}</p>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             <button
@@ -6001,7 +6090,7 @@ export function KajiApp() {
                               onClick={() => {
                                 handleCalendarBlankComplete(chore, calendarBlankActionDateKey);
                               }}
-                              className="rounded-[10px] bg-[#1A9BE8] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                              className="rounded-[10px] bg-[var(--primary)] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
                             >
                               完了にする
                             </button>
@@ -6011,13 +6100,13 @@ export function KajiApp() {
                               onClick={() => {
                                 handleCalendarBlankPlanned(chore, calendarBlankActionDateKey);
                               }}
-                              className="rounded-[10px] border border-[#DADCE0] bg-white px-3 py-2 text-[13px] font-bold text-[#202124] disabled:opacity-40"
+                              className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] font-bold text-[var(--foreground)] disabled:opacity-40"
                             >
                               予定を登録
                             </button>
                           </div>
                           {isPastDate ? (
-                            <p className="text-[11px] font-medium text-[#9AA0A6]">
+                            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">
                               過去日は「完了にする」のみ選べます。
                             </p>
                           ) : null}
@@ -6042,18 +6131,22 @@ export function KajiApp() {
           setSkipCountDialogOpen(false);
           setSkipCountValue(1);
           setSkipCountMax(1);
+          setCompleteCountDialogOpen(false);
+          setCompleteCountValue(1);
+          setCompleteCountMax(1);
+          setPendingCompletePerformedAtMode("today");
           setMemoTarget(null);
         }}
         title=""
         maxHeightClassName="min-h-[62vh] max-h-[88vh]"
       >
         <div className="space-y-3 pb-2">
-          <p className="text-[14.4px] font-bold text-[#5F6368]">ひとこと（任意）</p>
+          <p className="text-[14.4px] font-bold text-[var(--muted-foreground)]">ひとこと（任意）</p>
           <textarea
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             placeholder="排水口もきれいにしたよ、など"
-            className="h-[80px] w-full resize-none rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15.6px] font-medium text-[#202124] outline-none"
+            className="h-[80px] w-full resize-none rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[15.6px] font-medium text-[var(--foreground)] outline-none"
           />
           <ActionButton
             type="button"
@@ -6079,6 +6172,61 @@ export function KajiApp() {
         </div>
       </BottomSheet>
 
+      {completeCountDialogOpen ? (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 px-6 backdrop-blur-sm"
+          onClick={() => setCompleteCountDialogOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="完了件数の選択"
+            className="w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-[var(--card)] p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-center text-[18px] font-bold text-[var(--foreground)]">完了件数</p>
+            <p className="mt-1 text-center text-[13px] font-medium text-[var(--muted-foreground)]">残り {completeCountMax} 件</p>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setCompleteCountValue((prev) => Math.max(1, prev - 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]"
+              >
+                <Minus size={16} />
+              </button>
+              <p className="min-w-[56px] text-center text-[24px] font-bold text-[var(--foreground)]">{completeCountValue}</p>
+              <button
+                type="button"
+                onClick={() => setCompleteCountValue((prev) => Math.min(completeCountMax, prev + 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--primary)] text-white"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <ActionButton
+                type="button"
+                variant="secondary"
+                size="md"
+                fullWidth
+                onClick={() => setCompleteCountDialogOpen(false)}
+              >
+                キャンセル
+              </ActionButton>
+              <ActionButton
+                type="button"
+                variant="primary"
+                size="md"
+                fullWidth
+                onClick={confirmCompleteWithCount}
+              >
+                完了にする
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {skipCountDialogOpen ? (
         <div
           className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 px-6 backdrop-blur-sm"
@@ -6088,24 +6236,24 @@ export function KajiApp() {
             role="dialog"
             aria-modal="true"
             aria-label="スキップ件数の選択"
-            className="w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl"
+            className="w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-[var(--card)] p-6 shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <p className="text-center text-[18px] font-bold text-[#202124]">スキップ件数</p>
-            <p className="mt-1 text-center text-[13px] font-medium text-[#5F6368]">残り {skipCountMax} 件</p>
+            <p className="text-center text-[18px] font-bold text-[var(--foreground)]">スキップ件数</p>
+            <p className="mt-1 text-center text-[13px] font-medium text-[var(--muted-foreground)]">残り {skipCountMax} 件</p>
             <div className="mt-4 flex items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={() => setSkipCountValue((prev) => Math.max(1, prev - 1))}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-[#DADCE0] bg-white text-[#5F6368]"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]"
               >
                 <Minus size={16} />
               </button>
-              <p className="min-w-[56px] text-center text-[24px] font-bold text-[#202124]">{skipCountValue}</p>
+              <p className="min-w-[56px] text-center text-[24px] font-bold text-[var(--foreground)]">{skipCountValue}</p>
               <button
                 type="button"
                 onClick={() => setSkipCountValue((prev) => Math.min(skipCountMax, prev + 1))}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1A9BE8] text-white"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--primary)] text-white"
               >
                 <Plus size={16} />
               </button>
@@ -6139,13 +6287,14 @@ export function KajiApp() {
         onClose={() => {
           setRescheduleOpen(false);
           setRescheduleTarget(null);
+          setRescheduleTargetCompleted(false);
         }}
         title=""
         maxHeightClassName="min-h-[56vh] max-h-[86vh]"
       >
         <div className="space-y-4 pb-2">
           <div className="flex items-center justify-between">
-            <p className="text-[22px] font-bold text-[#202124]">日にちを変更</p>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">日にちを変更</p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -6153,8 +6302,8 @@ export function KajiApp() {
                 disabled={!rescheduleTarget}
                 aria-label="家事を編集"
                 className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-bold ${rescheduleTarget
-                  ? "border-[#E5EAF0] bg-white text-[#1A9BE8]"
-                  : "cursor-not-allowed border-[#E5EAF0] bg-[#F1F3F4] text-[#9AA0A6]"
+                  ? "border-[var(--border)] bg-[var(--card)] text-[var(--primary)]"
+                  : "cursor-not-allowed border-[var(--border)] bg-[var(--secondary)] text-[var(--app-text-tertiary)]"
                   }`}
               >
                 <span className="material-symbols-rounded text-[16px]">edit</span>
@@ -6165,8 +6314,9 @@ export function KajiApp() {
                 onClick={() => {
                   setRescheduleOpen(false);
                   setRescheduleTarget(null);
+                  setRescheduleTargetCompleted(false);
                 }}
-                className="text-[#5F6368]"
+                className="text-[var(--muted-foreground)]"
                 aria-label="閉じる"
               >
                 <span className="material-symbols-rounded text-[24px]">close</span>
@@ -6174,50 +6324,50 @@ export function KajiApp() {
             </div>
           </div>
           {rescheduleTarget ? (
-            <div className="flex items-center gap-2 rounded-[12px] bg-[#F1F3F4] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-[12px] bg-[var(--secondary)] px-3 py-2">
               {(() => {
                 const TaskIcon = iconByName(rescheduleTarget.icon);
                 return <TaskIcon size={16} color={rescheduleTarget.iconColor} />;
               })()}
-              <p className="text-[14px] font-semibold text-[#202124]">{rescheduleTarget.title}</p>
+              <p className="text-[14px] font-semibold text-[var(--foreground)]">{rescheduleTarget.title}</p>
             </div>
           ) : null}
           <div className="space-y-2">
-            <p className="text-[14px] font-medium text-[#5F6368]">いつに移動しますか？</p>
+            <p className="text-[14px] font-medium text-[var(--muted-foreground)]">いつに移動しますか？</p>
             <button
               type="button"
               onClick={() => setRescheduleChoice("tomorrow")}
-              className={`flex w-full items-center justify-between rounded-[12px] px-3 py-3 text-left ${rescheduleChoice === "tomorrow" ? "border-2 border-[#4CAF50] bg-[#E8F5E9]" : "border border-[#E5EAF0] bg-white"}`}
+              className={`flex w-full items-center justify-between rounded-[12px] px-3 py-3 text-left ${rescheduleChoice === "tomorrow" ? "border-2 border-[var(--primary)] bg-[var(--app-surface-soft)]" : "border border-[var(--border)] bg-[var(--card)]"}`}
             >
               <div>
-                <span className="text-[14px] font-bold text-[#202124]">次の日に変更</span>
-                <p className="text-[11px] font-medium text-[#5F6368]">{shiftDateKey(rescheduleBaseDateKey, 1)}</p>
+                <span className="text-[14px] font-bold text-[var(--foreground)]">次の日に変更</span>
+                <p className="text-[11px] font-medium text-[var(--muted-foreground)]">{shiftDateKey(rescheduleBaseDateKey, 1)}</p>
               </div>
-              <span className="material-symbols-rounded text-[18px] text-[#9AA0A6]">
+              <span className="material-symbols-rounded text-[18px] text-[var(--app-text-tertiary)]">
                 {rescheduleChoice === "tomorrow" ? "check_circle" : "radio_button_unchecked"}
               </span>
             </button>
             <button
               type="button"
               onClick={() => setRescheduleChoice("next_same_weekday")}
-              className={`flex w-full items-center justify-between rounded-[12px] px-3 py-3 text-left ${rescheduleChoice === "next_same_weekday" ? "border-2 border-[#4CAF50] bg-[#E8F5E9]" : "border border-[#E5EAF0] bg-white"}`}
+              className={`flex w-full items-center justify-between rounded-[12px] px-3 py-3 text-left ${rescheduleChoice === "next_same_weekday" ? "border-2 border-[var(--primary)] bg-[var(--app-surface-soft)]" : "border border-[var(--border)] bg-[var(--card)]"}`}
             >
               <div>
-                <span className="text-[14px] font-bold text-[#202124]">来週の同じ曜日</span>
-                <p className="text-[11px] font-medium text-[#5F6368]">{shiftDateKey(rescheduleBaseDateKey, 7)}</p>
+                <span className="text-[14px] font-bold text-[var(--foreground)]">来週の同じ曜日</span>
+                <p className="text-[11px] font-medium text-[var(--muted-foreground)]">{shiftDateKey(rescheduleBaseDateKey, 7)}</p>
               </div>
-              <span className="material-symbols-rounded text-[18px] text-[#9AA0A6]">
+              <span className="material-symbols-rounded text-[18px] text-[var(--app-text-tertiary)]">
                 {rescheduleChoice === "next_same_weekday" ? "check_circle" : "radio_button_unchecked"}
               </span>
             </button>
-            <div className={`space-y-2 rounded-[12px] px-3 py-3 ${rescheduleChoice === "custom" ? "border-2 border-[#4CAF50] bg-[#E8F5E9]" : "border border-[#E5EAF0] bg-white"}`}>
+            <div className={`space-y-2 rounded-[12px] px-3 py-3 ${rescheduleChoice === "custom" ? "border-2 border-[var(--primary)] bg-[var(--app-surface-soft)]" : "border border-[var(--border)] bg-[var(--card)]"}`}>
               <button
                 type="button"
                 onClick={() => setRescheduleChoice("custom")}
                 className="flex w-full items-center justify-between text-left"
               >
-                <span className="text-[14px] font-bold text-[#202124]">日付を指定</span>
-                <span className="material-symbols-rounded text-[18px] text-[#9AA0A6]">
+                <span className="text-[14px] font-bold text-[var(--foreground)]">日付を指定</span>
+                <span className="material-symbols-rounded text-[18px] text-[var(--app-text-tertiary)]">
                   {rescheduleChoice === "custom" ? "check_circle" : "radio_button_unchecked"}
                 </span>
               </button>
@@ -6228,7 +6378,7 @@ export function KajiApp() {
                   setRescheduleCustomDate(event.target.value);
                   setRescheduleChoice("custom");
                 }}
-                className="h-11 w-full rounded-[10px] border border-[#DADCE0] bg-white px-3 text-[14px] font-semibold text-[#202124] outline-none"
+                className="h-11 w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 text-[14px] font-semibold text-[var(--foreground)] outline-none"
               />
             </div>
           </div>
@@ -6247,15 +6397,26 @@ export function KajiApp() {
             type="button"
             onClick={() => {
               if (!rescheduleTarget) return;
+              if (rescheduleTargetCompleted && !canUndoChoreRecord(rescheduleTarget)) {
+                setError("この完了は未完了に戻せません。");
+                return;
+              }
               setRescheduleOpen(false);
+              setRescheduleTarget(null);
+              if (rescheduleTargetCompleted) {
+                requestUndoRecord(rescheduleTarget);
+                setRescheduleTargetCompleted(false);
+                return;
+              }
+              setRescheduleTargetCompleted(false);
               openMemo(rescheduleTarget, rescheduleBaseDateKey);
             }}
             variant="secondary"
             size="lg"
             fullWidth
-            className="border-[#4CAF50] text-[#3EA84A]"
+            className={rescheduleTargetCompleted ? undefined : "border-[var(--primary)] text-[var(--primary)]"}
           >
-            完了にする
+            {rescheduleTargetCompleted ? "未完了にする" : "完了にする"}
           </ActionButton>
         </div>
       </BottomSheet>
@@ -6271,11 +6432,11 @@ export function KajiApp() {
             onClose={() => setPendingRecordDateChoice(null)}
             onCancel={() => {
               setPendingRecordDateChoice(null);
-              void submitMemoAction({ skipped: false, performedAtMode: "today" });
+              submitRecordWithCountChoice("today");
             }}
             onConfirm={() => {
               setPendingRecordDateChoice(null);
-              void submitMemoAction({ skipped: false, performedAtMode: "source" });
+              submitRecordWithCountChoice("source");
             }}
             title={copy.title}
             description={copy.description}
@@ -6283,29 +6444,6 @@ export function KajiApp() {
             cancelLabel={copy.cancelLabel}
             confirmLabel={copy.confirmLabel}
             confirmVariant="success"
-          />
-        );
-      })() : null}
-
-      {pendingMergeDuplicateConfirm ? (() => {
-        const copy = mergeDuplicateDialogCopy({
-          choreTitle: pendingMergeDuplicateConfirm.choreTitle,
-          sourceDateKey: pendingMergeDuplicateConfirm.sourceDateKey,
-          targetDateKey: pendingMergeDuplicateConfirm.targetDateKey,
-        });
-        return (
-          <ConfirmDialog
-            open={Boolean(pendingMergeDuplicateConfirm)}
-            onClose={closePendingMergeDuplicateConfirm}
-            onCancel={() => resolvePendingMergeDuplicateConfirm(false)}
-            onConfirm={() => resolvePendingMergeDuplicateConfirm(true)}
-            title={copy.title}
-            description={copy.description}
-            detail={copy.detail}
-            cancelLabel={copy.cancelLabel}
-            confirmLabel={copy.confirmLabel}
-            confirmVariant="success"
-            loading={rescheduleConfirmLoading}
           />
         );
       })() : null}
@@ -6375,3 +6513,7 @@ export function KajiApp() {
     </main >
   );
 }
+
+
+
+
