@@ -18,6 +18,7 @@ export type HomeRowProjection = {
 
 type ProgressMutable = HomeProgressEntry & {
   latestPerformedAtMs: number;
+  usesOverrideSchedule: boolean;
 };
 
 type HomeProgressRecordInput = {
@@ -66,13 +67,24 @@ function scheduledOccurrencesOnDate(params: {
   return isScheduledOnDate(chore, targetDate) ? Math.max(1, chore.dailyTargetCount ?? 1) : 0;
 }
 
-function sanitizeEntry(entry: HomeProgressEntry): HomeProgressEntry {
+function hasOverrideScheduleForChore(
+  choreId: string,
+  scheduleOverridesByChore: Map<string, ChoreScheduleOverride[]>,
+) {
+  return (scheduleOverridesByChore.get(choreId)?.length ?? 0) > 0;
+}
+
+function sanitizeEntry(
+  entry: HomeProgressEntry,
+  options?: { totalIsPending?: boolean },
+): HomeProgressEntry {
   const total = Math.max(0, Math.trunc(entry.total));
   const completed = Math.max(0, Math.trunc(entry.completed));
   const skipped = Math.max(0, Math.trunc(entry.skipped));
   const consumed = completed + skipped;
-  const normalizedTotal = Math.max(total, consumed);
-  const pending = Math.max(0, normalizedTotal - consumed);
+  const totalIsPending = options?.totalIsPending === true;
+  const normalizedTotal = totalIsPending ? total + consumed : Math.max(total, consumed);
+  const pending = totalIsPending ? total : Math.max(0, normalizedTotal - consumed);
   const latestState: HomeProgressState =
     pending > 0
       ? "pending"
@@ -143,6 +155,7 @@ export function buildHomeProgressByDate(params: {
         pending: total,
         latestState: "pending",
         latestPerformedAtMs: Number.NEGATIVE_INFINITY,
+        usesOverrideSchedule: hasOverrideScheduleForChore(chore.id, scheduleOverridesByChore),
       });
     }
     progressByDate.set(dateKey, byChore);
@@ -169,6 +182,7 @@ export function buildHomeProgressByDate(params: {
         pending: 0,
         latestState: "pending",
         latestPerformedAtMs: Number.NEGATIVE_INFINITY,
+        usesOverrideSchedule: hasOverrideScheduleForChore(record.choreId, scheduleOverridesByChore),
       };
     if (record.isSkipped) {
       nextEntry.skipped += 1;
@@ -187,7 +201,9 @@ export function buildHomeProgressByDate(params: {
   for (const [dateKey, byChore] of progressByDate.entries()) {
     result[dateKey] = {};
     for (const [choreId, entry] of byChore.entries()) {
-      const sanitized = sanitizeEntry(entry);
+      const sanitized = sanitizeEntry(entry, {
+        totalIsPending: entry.usesOverrideSchedule,
+      });
       if (sanitized.total <= 0 && sanitized.completed <= 0 && sanitized.skipped <= 0) {
         continue;
       }
@@ -222,13 +238,14 @@ export function buildHomeRowsByDate(params: {
         dateKey,
         scheduleOverridesByChore,
       });
+      const usesOverrideSchedule = hasOverrideScheduleForChore(chore.id, scheduleOverridesByChore);
       entry = sanitizeEntry({
         total,
         completed,
         skipped,
         pending: 0,
         latestState: isCompletedOnDate ? (chore.lastRecordSkipped ? "skipped" : "done") : "pending",
-      });
+      }, { totalIsPending: usesOverrideSchedule });
     } else {
       entry = sanitizeEntry(entry);
     }

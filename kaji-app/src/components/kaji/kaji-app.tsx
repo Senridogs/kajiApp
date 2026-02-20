@@ -1964,7 +1964,16 @@ export function KajiApp() {
       setDeleteConfirmOpen(false);
       setChoreEditorOpen(false);
     } catch (err: unknown) {
-      setError((err as Error).message ?? "家事の保存に失敗しました。");
+      const rawMessage = (err as Error).message ?? "家事の保存に失敗しました。";
+      if (
+        rawMessage.includes("DB_SCHEMA_MISSING") ||
+        rawMessage.includes("db:init:current-env") ||
+        rawMessage.includes("dailyTargetCount")
+      ) {
+        setError("1日回数を保存するためのDBスキーマが不足しています。npm run db:init:current-env 実行後に再試行してください。");
+      } else {
+        setError(rawMessage);
+      }
     } finally {
       setSaveChoreLoading(false);
     }

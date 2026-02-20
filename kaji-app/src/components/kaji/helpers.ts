@@ -25,7 +25,9 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
       typeof err?.error === "string" && err.error.trim().length > 0
         ? err.error
         : fallback;
-    throw new Error(message.includes("HTTP") ? message : `${message} (HTTP ${res.status})`);
+    const code = typeof err?.code === "string" ? err.code : null;
+    const normalizedMessage = message.includes("HTTP") ? message : `${message} (HTTP ${res.status})`;
+    throw new Error(code ? `[${code}] ${normalizedMessage}` : normalizedMessage);
   }
 
   return res.json() as Promise<T>;

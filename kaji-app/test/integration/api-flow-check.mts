@@ -88,6 +88,21 @@ async function readBootstrapChore(choreId: string) {
   };
 }
 
+async function readBootstrapHomeProgress(choreId: string, dateKey: string) {
+  const res = await request("/api/bootstrap");
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  return body.homeProgressByDate?.[dateKey]?.[choreId] as
+    | {
+      total: number;
+      completed: number;
+      skipped: number;
+      pending: number;
+      latestState: "pending" | "done" | "skipped";
+    }
+    | undefined;
+}
+
 async function main() {
   const bootstrapAsGuest = await request("/api/bootstrap");
   assert.equal(bootstrapAsGuest.status, 200);
@@ -384,6 +399,63 @@ async function main() {
   assert.equal(patchDailyTargetChoreRes.status, 200);
   const patchDailyTargetChoreBody = await patchDailyTargetChoreRes.json();
   assert.equal(patchDailyTargetChoreBody.chore.dailyTargetCount, 5);
+
+  const createFixedDenominatorChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "fixed-denominator-daily-target",
+      intervalDays: 1,
+      dailyTargetCount: 4,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: addModeLastPerformedAt,
+    }),
+  });
+  assert.equal(createFixedDenominatorChoreRes.status, 200);
+  const createFixedDenominatorChoreBody = await createFixedDenominatorChoreRes.json();
+  const fixedDenominatorChoreId: string = createFixedDenominatorChoreBody.chore.id;
+
+  const fixedDenominatorFirstDoneRes = await request(`/api/chores/${fixedDenominatorChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      sourceDate: addModeTodayKey,
+      performedAt: new Date(`${addModeTodayKey}T08:35:00+09:00`).toISOString(),
+      recalculateFuture: false,
+      mergeIfDuplicate: false,
+    }),
+  });
+  assert.equal(fixedDenominatorFirstDoneRes.status, 200);
+
+  const progressAfterFirstDone = await readBootstrapHomeProgress(
+    fixedDenominatorChoreId,
+    addModeTodayKey,
+  );
+  assert.ok(progressAfterFirstDone);
+  assert.equal(progressAfterFirstDone.total, 4);
+  assert.equal(progressAfterFirstDone.completed, 1);
+  assert.equal(progressAfterFirstDone.pending, 3);
+
+  const fixedDenominatorSecondDoneRes = await request(`/api/chores/${fixedDenominatorChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      sourceDate: addModeTodayKey,
+      performedAt: new Date(`${addModeTodayKey}T08:36:00+09:00`).toISOString(),
+      recalculateFuture: false,
+      mergeIfDuplicate: false,
+    }),
+  });
+  assert.equal(fixedDenominatorSecondDoneRes.status, 200);
+
+  const progressAfterSecondDone = await readBootstrapHomeProgress(
+    fixedDenominatorChoreId,
+    addModeTodayKey,
+  );
+  assert.ok(progressAfterSecondDone);
+  assert.equal(progressAfterSecondDone.total, 4);
+  assert.equal(progressAfterSecondDone.completed, 2);
+  assert.equal(progressAfterSecondDone.pending, 2);
 
   const skipCountInvalidRes = await request(`/api/chores/${dailyTargetChoreId}/record`, {
     method: "POST",

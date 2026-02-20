@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 
 import { badRequest, readJsonBody, requireSession } from "@/lib/api";
 import { computeChore } from "@/lib/dashboard";
@@ -17,6 +18,27 @@ type CreateChoreBody = {
   lastPerformedAt?: string;
   defaultAssigneeId?: string | null;
 };
+
+const DB_SCHEMA_MISSING_CODE = "DB_SCHEMA_MISSING";
+const DB_SCHEMA_MISSING_MESSAGE =
+  "Database schema is outdated for dailyTargetCount. Run npm run db:init:current-env and restart the app.";
+
+function isChoreSchemaError(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    (error.code === "P2021" || error.code === "P2022")
+  );
+}
+
+function choreSchemaErrorResponse() {
+  return NextResponse.json(
+    {
+      error: DB_SCHEMA_MISSING_MESSAGE,
+      code: DB_SCHEMA_MISSING_CODE,
+    },
+    { status: 500 },
+  );
+}
 
 export async function GET() {
   const { session, response } = await requireSession();
@@ -77,44 +99,52 @@ export async function POST(request: Request) {
       ? addDays(selectedDayStart, -intervalDays)
       : performedAt;
 
-  const chore = await prisma.$transaction(async (tx) => {
-    const created = await tx.chore.create({
-      data: {
-        householdId: session.householdId,
-        title,
-        intervalDays,
-        dailyTargetCount,
-        isBigTask: Boolean(body.isBigTask),
-        icon: body.icon || "sparkles",
-        iconColor: body.iconColor || "#202124",
-        bgColor: body.bgColor || "#EAF5FF",
-        defaultAssigneeId: body.defaultAssigneeId || null,
-      },
-    });
-
-    await tx.choreRecord.create({
-      data: {
-        householdId: session.householdId,
-        choreId: created.id,
-        userId: session.userId,
-        performedAt: initialPerformedAt,
-        memo: null,
-        isInitial: true,
-      },
-    });
-
-    return tx.chore.findUnique({
-      where: { id: created.id },
-      include: {
-        defaultAssignee: { select: { id: true, name: true } },
-        records: {
-          take: 1,
-          orderBy: { performedAt: "desc" },
-          include: { user: { select: { id: true, name: true } } },
+  let chore;
+  try {
+    chore = await prisma.$transaction(async (tx) => {
+      const created = await tx.chore.create({
+        data: {
+          householdId: session.householdId,
+          title,
+          intervalDays,
+          dailyTargetCount,
+          isBigTask: Boolean(body.isBigTask),
+          icon: body.icon || "sparkles",
+          iconColor: body.iconColor || "#202124",
+          bgColor: body.bgColor || "#EAF5FF",
+          defaultAssigneeId: body.defaultAssigneeId || null,
         },
-      },
+      });
+
+      await tx.choreRecord.create({
+        data: {
+          householdId: session.householdId,
+          choreId: created.id,
+          userId: session.userId,
+          performedAt: initialPerformedAt,
+          memo: null,
+          isInitial: true,
+        },
+      });
+
+      return tx.chore.findUnique({
+        where: { id: created.id },
+        include: {
+          defaultAssignee: { select: { id: true, name: true } },
+          records: {
+            take: 1,
+            orderBy: { performedAt: "desc" },
+            include: { user: { select: { id: true, name: true } } },
+          },
+        },
+      });
     });
-  });
+  } catch (error: unknown) {
+    if (isChoreSchemaError(error) || error instanceof Prisma.PrismaClientInitializationError) {
+      return choreSchemaErrorResponse();
+    }
+    throw error;
+  }
 
   if (!chore) return badRequest("家事の作成に失敗しました。", 500);
 

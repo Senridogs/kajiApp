@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildHomeProgressByDate,
   buildHomeRowsByDate,
   countDoneHomeOccurrences,
   countTotalHomeOccurrences,
@@ -116,4 +117,130 @@ test("fallback recurrence uses dailyTargetCount occurrences", () => {
   assert.equal(rows[0].state, "pending");
   assert.equal(rows[0].total, 3);
   assert.equal(rows[0].pending, 3);
+});
+
+test("buildHomeProgressByDate keeps total fixed when duplicate pending is consumed", () => {
+  const dateKey = "2026-02-20";
+  const chore = makeChore({
+    id: "dup",
+    dueAt: "2026-02-20T00:00:00.000Z",
+    intervalDays: 1,
+    dailyTargetCount: 4,
+  });
+
+  const progressAfterFirstDone = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [dateKey],
+    scheduleOverridesByChore: new Map<string, ChoreScheduleOverride[]>([
+      [
+        "dup",
+        Array.from({ length: 3 }, (_, idx) => ({
+          id: `ov-${idx}`,
+          choreId: "dup",
+          date: dateKey,
+          createdAt: "2026-02-20T00:00:00.000Z",
+        })),
+      ],
+    ]),
+    records: [
+      {
+        choreId: "dup",
+        scheduledDate: dateKey,
+        performedAt: "2026-02-20T01:00:00.000Z",
+        isSkipped: false,
+      },
+    ],
+  });
+  assert.deepEqual(progressAfterFirstDone[dateKey]?.dup, {
+    total: 4,
+    completed: 1,
+    skipped: 0,
+    pending: 3,
+    latestState: "pending",
+  });
+
+  const progressAfterSecondDone = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [dateKey],
+    scheduleOverridesByChore: new Map<string, ChoreScheduleOverride[]>([
+      [
+        "dup",
+        Array.from({ length: 2 }, (_, idx) => ({
+          id: `ov2-${idx}`,
+          choreId: "dup",
+          date: dateKey,
+          createdAt: "2026-02-20T00:00:00.000Z",
+        })),
+      ],
+    ]),
+    records: [
+      {
+        choreId: "dup",
+        scheduledDate: dateKey,
+        performedAt: "2026-02-20T01:00:00.000Z",
+        isSkipped: false,
+      },
+      {
+        choreId: "dup",
+        scheduledDate: dateKey,
+        performedAt: "2026-02-20T02:00:00.000Z",
+        isSkipped: false,
+      },
+    ],
+  });
+  assert.deepEqual(progressAfterSecondDone[dateKey]?.dup, {
+    total: 4,
+    completed: 2,
+    skipped: 0,
+    pending: 2,
+    latestState: "pending",
+  });
+});
+
+test("buildHomeProgressByDate keeps denominator fixed for mixed done/skip", () => {
+  const dateKey = "2026-02-21";
+  const chore = makeChore({
+    id: "mix",
+    dueAt: "2026-02-21T00:00:00.000Z",
+    intervalDays: 1,
+    dailyTargetCount: 4,
+  });
+
+  const progress = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [dateKey],
+    scheduleOverridesByChore: new Map<string, ChoreScheduleOverride[]>([
+      [
+        "mix",
+        Array.from({ length: 2 }, (_, idx) => ({
+          id: `ovm-${idx}`,
+          choreId: "mix",
+          date: dateKey,
+          createdAt: "2026-02-21T00:00:00.000Z",
+        })),
+      ],
+    ]),
+    records: [
+      {
+        choreId: "mix",
+        scheduledDate: dateKey,
+        performedAt: "2026-02-21T01:00:00.000Z",
+        isSkipped: false,
+      },
+      {
+        choreId: "mix",
+        scheduledDate: dateKey,
+        performedAt: "2026-02-21T02:00:00.000Z",
+        isSkipped: true,
+      },
+    ],
+  });
+
+  assert.deepEqual(progress[dateKey]?.mix, {
+    total: 4,
+    completed: 1,
+    skipped: 1,
+    pending: 2,
+    latestState: "pending",
+  });
 });
