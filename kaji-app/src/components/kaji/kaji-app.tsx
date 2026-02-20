@@ -4516,7 +4516,7 @@ export function KajiApp() {
                               }}
                               onDragEnd={clearDragState}
                               onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
-                              style={{ touchAction: "none" }}
+                              style={{ touchAction: "pan-y" }}
                             >
                               <HomeTaskRow
                                 chore={displayChore}
@@ -4630,7 +4630,7 @@ export function KajiApp() {
             onDragEnd={clearDragState}
             onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
             className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
-            style={{ touchAction: "none", ...doneStyle }}
+            style={{ touchAction: "pan-y", ...doneStyle }}
           >
             <ChipIcon size={13} color={chore.iconColor} />
             <span>{chore.title}</span>
@@ -4853,6 +4853,7 @@ export function KajiApp() {
             <button
               type="button"
               onClick={() => openStandaloneScreen("my-records", "records")}
+              data-gesture-priority="tap"
               className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
             >
               <span className="text-[14px] font-semibold text-[#202124]">わたしのきろくを見る</span>
@@ -4877,6 +4878,7 @@ export function KajiApp() {
             <button
               type="button"
               onClick={() => openStandaloneScreen("my-report", "stats")}
+              data-gesture-priority="tap"
               className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
             >
               <span className="text-[14px] font-semibold text-[#202124]">私のレポートを見る</span>
@@ -5459,11 +5461,12 @@ export function KajiApp() {
           const t = e.touches[0];
           sectionTouchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
           const target = e.target as HTMLElement | null;
+          const isTapPrioritySurface = Boolean(target?.closest("[data-gesture-priority='tap']"));
           const isCalendarSurface =
             activeTabRef.current === "list" &&
             Boolean(target?.closest("[data-calendar-swipe-surface='true']"));
-          sectionSwipeSuppressedRef.current = isCalendarSurface;
-          if (isCalendarSurface) {
+          sectionSwipeSuppressedRef.current = isCalendarSurface || isTapPrioritySurface;
+          if (sectionSwipeSuppressedRef.current) {
             swipe.onTouchCancel();
             assignmentEdgeSwipe.onTouchStart(e);
             return;
