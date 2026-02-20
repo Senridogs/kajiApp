@@ -89,7 +89,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const skipped = body.skipped ?? false;
-    const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
+  const mergeIfDuplicate = body?.mergeIfDuplicate !== false;
   const requestedSkipCount = body?.skipCount === undefined ? 1 : Number(body.skipCount);
   if (body?.skipCount !== undefined && !skipped) {
     return badRequest(SKIP_COUNT_ONLY_FOR_SKIP);
@@ -103,10 +103,9 @@ export async function POST(request: Request, { params }: RouteParams) {
     return badRequest(SKIP_COUNT_REQUIRES_SOURCE_DATE);
   }
 
-  const consumeCount = skipped ? requestedSk
+  const consumeCount = skipped ? requestedSkipCount : 1;
   const performedAt = requestedPerformedAt;
-  const isFutureScheduledDate = targetDateKey > toJstDateKey(todayStart);
-  const targetDateKey = toJstDateKey(startOfJstDay(performedAt));
+  const targetDateKey = scheduledDate ?? toJstDateKey(startOfJstDay(performedAt));
 
   let record: { id: string; performedAt: Date; memo: string | null };
   try {
@@ -146,36 +145,6 @@ export async function POST(request: Request, { params }: RouteParams) {
       const latestCreated = createdRecords[createdRecords.length - 1]!;
 
       if (sourceDate) {
-        const shouldApplySchedulePolicy =
-          sourceDate !== targetDateKey ||
-          isFutureScheduledDate ||
-          currentOverrides.length > 0 ||
-          chore.dailyTargetCount > 1 ||
-          consumeCount > 1;
-
-        if (!shouldApplySchedulePolicy) {
-          await consumeOverrideOccurrencesOnDate(tx, chore.id, targetDateKey, consumeCount);
-          return latestCreated;
-        }
-
-        const window = resolveScheduleWindow(sourceDate, targetDateKey);
-        let nextDateKeys = [...currentDateKeys];
-        for (let i = 0; i < consumeCount; i += 1) {
-          if (!recalculateFuture && sourceDate === targetDateKey) {
-            nextDateKeys = removeOneOccurrence(nextDateKeys, targetDateKey);
-            continue;
-          }
-          nextDateKeys = rebuildScheduleDateKeys({
-            currentDateKeys: nextDateKeys,
-            sourceDateKey: sourceDate,
-            targetDateKey,
-            recalculateFuture,
-            mergeIfDuplicate,
-            intervalDays: chore.intervalDays,
-            dailyTargetCount: chore.dailyTargetCount,
-            window,
-          });
-          nextDateKeys = removeOneOccurrence(nextDateKeys, targetDateKey);
         const consumed = await consumePendingOccurrences(tx, chore.id, sourceDate, consumeCount);
         if (consumed < consumeCount) {
           throw new Error(SKIP_COUNT_OUT_OF_RANGE);
