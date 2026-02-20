@@ -117,7 +117,7 @@ const DAY_DOT_VISIBLE_WHEN_OVERFLOW = 5;
 const TAP_PRIORITY_ZONE_SELECTOR = "[data-tap-priority-zone='true']";
 
 type TabKey = "home" | "list" | "records" | "stats" | "settings";
-const TAB_HEADER_HEIGHT_BY_TAB: Record<TabKey, number> = {
+const TAB_HEADER_MIN_HEIGHT_BY_TAB: Record<TabKey, number> = {
   home: TAB_HEADER_HEIGHT_FALLBACK,
   list: TAB_HEADER_HEIGHT_FALLBACK,
   records: 88,
@@ -831,10 +831,10 @@ export function KajiApp() {
   const recordsHeaderRef = useRef<HTMLDivElement | null>(null);
   const statsHeaderRef = useRef<HTMLDivElement | null>(null);
   const settingsHeaderRef = useRef<HTMLDivElement | null>(null);
-  const [listHeaderHeight, setListHeaderHeight] = useState(TAB_HEADER_HEIGHT_BY_TAB.list);
-  const [recordsHeaderHeight, setRecordsHeaderHeight] = useState(TAB_HEADER_HEIGHT_BY_TAB.records);
-  const [statsHeaderHeight, setStatsHeaderHeight] = useState(TAB_HEADER_HEIGHT_BY_TAB.stats);
-  const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(TAB_HEADER_HEIGHT_BY_TAB.settings);
+  const [listHeaderHeight, setListHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.list);
+  const [recordsHeaderHeight, setRecordsHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.records);
+  const [statsHeaderHeight, setStatsHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.stats);
+  const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.settings);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
   const sectionTouchStartRef = useRef<{ x: number; y: number } | null>(null);
   const sectionSwipeSuppressedRef = useRef(false);
@@ -853,11 +853,17 @@ export function KajiApp() {
   const chores = boot?.chores ?? [];
 
   const getTabHeaderHeight = useCallback((tab: TabKey) => {
-    if (tab === "home") return homeHeaderHeight;
-    if (tab === "list") return listHeaderHeight;
-    if (tab === "records") return recordsHeaderHeight;
-    if (tab === "stats") return statsHeaderHeight;
-    return settingsHeaderHeight;
+    const measuredHeight =
+      tab === "home"
+        ? homeHeaderHeight
+        : tab === "list"
+          ? listHeaderHeight
+          : tab === "records"
+            ? recordsHeaderHeight
+            : tab === "stats"
+              ? statsHeaderHeight
+              : settingsHeaderHeight;
+    return Math.max(measuredHeight, TAB_HEADER_MIN_HEIGHT_BY_TAB[tab]);
   }, [homeHeaderHeight, listHeaderHeight, recordsHeaderHeight, settingsHeaderHeight, statsHeaderHeight]);
 
   const isTapPriorityTarget = useCallback((target: EventTarget | null) => {
@@ -1657,11 +1663,11 @@ export function KajiApp() {
   useEffect(() => {
     const entries: Array<[React.RefObject<HTMLDivElement | null>, React.Dispatch<React.SetStateAction<number>>]> = [
       [listHeaderRef, setListHeaderHeight],
+      [recordsHeaderRef, setRecordsHeaderHeight],
+      [statsHeaderRef, setStatsHeaderHeight],
       [settingsHeaderRef, setSettingsHeaderHeight],
     ];
     const updateHeaderHeights = () => {
-      setRecordsHeaderHeight((prev) => (prev === TAB_HEADER_HEIGHT_BY_TAB.records ? prev : TAB_HEADER_HEIGHT_BY_TAB.records));
-      setStatsHeaderHeight((prev) => (prev === TAB_HEADER_HEIGHT_BY_TAB.stats ? prev : TAB_HEADER_HEIGHT_BY_TAB.stats));
       for (const [ref, setter] of entries) {
         const el = ref.current;
         if (!el) continue;
@@ -4879,7 +4885,9 @@ export function KajiApp() {
               type="button"
               data-tap-priority-zone="true"
               onClick={() => {
-                console.log("[records] my-records button onClick reached");
+                if (process.env.NODE_ENV !== "production") {
+                  console.debug("[records] my-records button onClick reached");
+                }
                 openStandaloneScreen("my-records", "records");
               }}
               className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
