@@ -1,10 +1,17 @@
 
 > kaji-app@0.1.0 start
-> next start --hostname 127.0.0.1 --port 4641
+> next start --hostname 127.0.0.1 --port 4638
 
 ▲ Next.js 16.1.6
-- Local:         http://127.0.0.1:4641
-- Network:       http://127.0.0.1:4641
+- Local:         http://127.0.0.1:4638
+- Network:       http://127.0.0.1:4638
 
 ✓ Starting...
-✓ Ready in 502ms
+✓ Ready in 496ms
+prisma:error 
+Invalid `prisma.user.findUnique()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.

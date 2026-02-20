@@ -13,6 +13,7 @@ test("schedule override route supports add mode with duplicate guard", () => {
   const route = read("src/app/api/schedule-override/route.ts");
   assert.match(route, /mode === "add"/);
   assert.match(route, /allowDuplicate/);
+  assert.match(route, /dailyTargetCount/);
   assert.match(route, /deleteMany\(\{ where: \{ choreId \} \}\)/);
   assert.match(route, /createMany\(\{/);
   assert.match(route, /DUPLICATE_INDEX_MISMATCH_CODE/);

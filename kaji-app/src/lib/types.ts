@@ -30,6 +30,7 @@ export type ChoreWithComputed = {
   iconColor: string;
   bgColor: string;
   intervalDays: number;
+  dailyTargetCount: number;
   isBigTask: boolean;
   archived: boolean;
   defaultAssigneeId: string | null;
@@ -47,6 +48,16 @@ export type ChoreWithComputed = {
   overdueDays: number;
   daysSinceLast: number | null;
   doneToday: boolean;
+};
+
+export type HomeProgressState = "done" | "skipped" | "pending";
+
+export type HomeProgressEntry = {
+  total: number;
+  completed: number;
+  skipped: number;
+  pending: number;
+  latestState: HomeProgressState;
 };
 
 export type ChoreAssignmentEntry = {
@@ -143,6 +154,7 @@ export type BootstrapResponse = {
   notificationSettings: NotificationSettings | null;
   customIcons: Array<{ id: string; label: string; icon: string; iconColor: string; bgColor: string }>;
   scheduleOverrides: ChoreScheduleOverride[];
+  homeProgressByDate: Record<string, Record<string, HomeProgressEntry>>;
   needsRegistration: boolean;
 };
 

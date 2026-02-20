@@ -14,6 +14,7 @@ test("computeChore marks due today and doneToday correctly", () => {
     iconColor: "#fff",
     bgColor: "#000",
     intervalDays: 1,
+    dailyTargetCount: 1,
     isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
@@ -56,6 +57,7 @@ test("computeChore keeps initial record as not-done and flags lastRecordIsInitia
     iconColor: "#fff",
     bgColor: "#000",
     intervalDays: 1,
+    dailyTargetCount: 1,
     isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
@@ -92,11 +94,12 @@ test("computeChore marks overdue items", () => {
 
   const chore = {
     id: "chore-2",
-    title: "換気扇掃除",
+    title: "換気扇掁E��",
     icon: "wind",
     iconColor: "#fff",
     bgColor: "#000",
     intervalDays: 2,
+    dailyTargetCount: 1,
     isBigTask: true,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
@@ -136,6 +139,7 @@ test("computeChore ignores future completion records and treats them as pending"
     iconColor: "#fff",
     bgColor: "#000",
     intervalDays: 1,
+    dailyTargetCount: 1,
     isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
@@ -177,6 +181,7 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
       iconColor: "",
       bgColor: "",
       intervalDays: 1,
+      dailyTargetCount: 1,
       isBigTask: false,
       archived: false,
       defaultAssigneeId: null,
@@ -202,6 +207,7 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
       iconColor: "",
       bgColor: "",
       intervalDays: 1,
+      dailyTargetCount: 1,
       isBigTask: true,
       archived: false,
       defaultAssigneeId: null,
@@ -237,6 +243,7 @@ test("splitChoresForHome keeps doneToday daily chore in both today and tomorrow"
     iconColor: "",
     bgColor: "",
     intervalDays: 1,
+    dailyTargetCount: 1,
     isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
@@ -274,3 +281,5 @@ test("getStatsRange validates custom range and returns end-of-day", () => {
   assert.equal(valid?.start?.toISOString(), "2026-01-31T15:00:00.000Z");
   assert.equal(valid?.end.toISOString(), "2026-02-10T14:59:59.999Z");
 });
+
+

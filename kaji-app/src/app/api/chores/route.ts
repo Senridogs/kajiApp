@@ -9,6 +9,7 @@ import { addDays, startOfJstDay } from "@/lib/time";
 type CreateChoreBody = {
   title?: string;
   intervalDays?: number;
+  dailyTargetCount?: number;
   isBigTask?: boolean;
   icon?: string;
   iconColor?: string;
@@ -48,11 +49,15 @@ export async function POST(request: Request) {
 
   const title = body.title?.trim();
   const intervalDays = Number(body.intervalDays ?? 0);
+  const dailyTargetCount = Number(body.dailyTargetCount ?? 1);
   const lastPerformedAt = body.lastPerformedAt;
 
   if (!title) return badRequest("家事名を入力してください。");
   if (!Number.isInteger(intervalDays) || intervalDays <= 0 || intervalDays > 365) {
     return badRequest("リマインド間隔は1〜365の整数で指定してください。");
+  }
+  if (!Number.isInteger(dailyTargetCount) || dailyTargetCount < 1 || dailyTargetCount > 5) {
+    return badRequest("dailyTargetCount must be an integer between 1 and 5.");
   }
   if (!lastPerformedAt) {
     return badRequest("開始日を指定してください。");
@@ -78,6 +83,7 @@ export async function POST(request: Request) {
         householdId: session.householdId,
         title,
         intervalDays,
+        dailyTargetCount,
         isBigTask: Boolean(body.isBigTask),
         icon: body.icon || "sparkles",
         iconColor: body.iconColor || "#202124",

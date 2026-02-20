@@ -2,19 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildHomeOccurrencesByDate,
+  buildHomeRowsByDate,
   countDoneHomeOccurrences,
+  countTotalHomeOccurrences,
 } from "../../src/lib/home-occurrence.js";
 import type { ChoreScheduleOverride, ChoreWithComputed } from "../../src/lib/types.js";
 
 function makeChore(overrides: Partial<ChoreWithComputed> = {}): ChoreWithComputed {
   return {
     id: overrides.id ?? "chore-1",
-    title: overrides.title ?? "洗濯",
+    title: overrides.title ?? "食器洗い",
     icon: overrides.icon ?? "sparkles",
     iconColor: overrides.iconColor ?? "#202124",
     bgColor: overrides.bgColor ?? "#EAF5FF",
     intervalDays: overrides.intervalDays ?? 1,
+    dailyTargetCount: overrides.dailyTargetCount ?? 1,
     isBigTask: overrides.isBigTask ?? false,
     archived: overrides.archived ?? false,
     defaultAssigneeId: overrides.defaultAssigneeId ?? null,
@@ -35,113 +37,83 @@ function makeChore(overrides: Partial<ChoreWithComputed> = {}): ChoreWithCompute
   };
 }
 
-test("buildHomeOccurrencesByDate keeps done+pending for duplicate schedule", () => {
+test("buildHomeRowsByDate keeps row pending while some occurrences remain", () => {
   const dateKey = "2026-02-20";
-  const completed = makeChore({
-    id: "a",
-    title: "洗濯",
-    lastPerformedAt: "2026-02-20T01:00:00.000Z",
-    lastPerformerName: "のぞみ",
-    lastPerformerId: "u1",
-    lastRecordId: "r1",
-    doneToday: true,
-  });
-  const skipped = makeChore({
-    id: "b",
-    title: "ゴミ出し",
-    lastPerformedAt: "2026-02-20T02:00:00.000Z",
-    lastPerformerName: "スキップ",
-    lastPerformerId: "u1",
-    lastRecordId: "r2",
-    lastRecordSkipped: true,
-    doneToday: true,
-  });
-  const scheduleOverridesByChore = new Map<string, ChoreScheduleOverride[]>([
-    [
-      "a",
-      [
-        { id: "ov-a1", choreId: "a", date: dateKey, createdAt: "2026-02-20T00:00:00.000Z" },
-        { id: "ov-a2", choreId: "a", date: dateKey, createdAt: "2026-02-20T00:00:01.000Z" },
-      ],
-    ],
-    [
-      "b",
-      [{ id: "ov-b1", choreId: "b", date: dateKey, createdAt: "2026-02-20T00:00:00.000Z" }],
-    ],
-  ]);
-
-  const occurrences = buildHomeOccurrencesByDate({
-    chores: [completed, skipped],
-    dateKey,
-    scheduleOverridesByChore,
-  });
-
-  assert.equal(occurrences.length, 3);
-  assert.deepEqual(
-    occurrences.map((item) => ({ id: item.chore.id, state: item.state })),
-    [
-      { id: "b", state: "skipped" },
-      { id: "a", state: "done" },
-      { id: "a", state: "pending" },
-    ],
-  );
-  assert.equal(countDoneHomeOccurrences(occurrences), 2);
-});
-
-test("pending occurrence clone resets done/record flags", () => {
-  const dateKey = "2026-02-20";
-  const chore = makeChore({
-    id: "a",
-    title: "食器洗い",
-    lastPerformedAt: "2026-02-20T05:00:00.000Z",
-    lastPerformerName: "せんり",
-    lastPerformerId: "u1",
-    lastRecordId: "record-a",
-    doneToday: true,
-  });
-  const scheduleOverridesByChore = new Map<string, ChoreScheduleOverride[]>([
-    [
-      "a",
-      [
-        { id: "ov-a1", choreId: "a", date: dateKey, createdAt: "2026-02-20T00:00:00.000Z" },
-        { id: "ov-a2", choreId: "a", date: dateKey, createdAt: "2026-02-20T00:00:01.000Z" },
-      ],
-    ],
-  ]);
-
-  const occurrences = buildHomeOccurrencesByDate({
+  const chore = makeChore({ id: "a" });
+  const rows = buildHomeRowsByDate({
     chores: [chore],
     dateKey,
-    scheduleOverridesByChore,
+    scheduleOverridesByChore: new Map<string, ChoreScheduleOverride[]>(),
+    homeProgressByDate: {
+      [dateKey]: {
+        a: {
+          total: 5,
+          completed: 2,
+          skipped: 1,
+          pending: 2,
+          latestState: "done",
+        },
+      },
+    },
   });
-  const pending = occurrences.find((item) => item.state === "pending");
 
-  assert.ok(pending);
-  assert.equal(pending!.chore.doneToday, false);
-  assert.equal(pending!.chore.lastPerformedAt, null);
-  assert.equal(pending!.chore.lastRecordId, null);
-  assert.equal(pending!.chore.lastRecordSkipped, false);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].state, "pending");
+  assert.equal(rows[0].total, 5);
+  assert.equal(rows[0].completed, 2);
+  assert.equal(rows[0].skipped, 1);
+  assert.equal(rows[0].pending, 2);
+  assert.equal(rows[0].chore.doneToday, false);
+  assert.equal(countDoneHomeOccurrences(rows), 3);
+  assert.equal(countTotalHomeOccurrences(rows), 5);
 });
 
-test("when no overrides, recurrence contributes one pending occurrence", () => {
+test("buildHomeRowsByDate prioritizes done when done/skip mixed and pending=0", () => {
+  const dateKey = "2026-02-20";
+  const chore = makeChore({ id: "a" });
+  const rows = buildHomeRowsByDate({
+    chores: [chore],
+    dateKey,
+    scheduleOverridesByChore: new Map<string, ChoreScheduleOverride[]>(),
+    homeProgressByDate: {
+      [dateKey]: {
+        a: {
+          total: 3,
+          completed: 1,
+          skipped: 2,
+          pending: 0,
+          latestState: "skipped",
+        },
+      },
+    },
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].state, "done");
+  assert.equal(rows[0].chore.doneToday, true);
+  assert.equal(rows[0].chore.lastRecordSkipped, false);
+});
+
+test("fallback recurrence uses dailyTargetCount occurrences", () => {
   const dateKey = "2026-02-20";
   const chore = makeChore({
     id: "c",
-    title: "床掃除",
     dueAt: "2026-02-20T00:00:00.000Z",
     intervalDays: 2,
+    dailyTargetCount: 3,
     doneToday: false,
     lastPerformedAt: null,
     lastRecordId: null,
   });
 
-  const occurrences = buildHomeOccurrencesByDate({
+  const rows = buildHomeRowsByDate({
     chores: [chore],
     dateKey,
     scheduleOverridesByChore: new Map(),
   });
 
-  assert.equal(occurrences.length, 1);
-  assert.equal(occurrences[0].state, "pending");
-  assert.equal(occurrences[0].chore.id, "c");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].state, "pending");
+  assert.equal(rows[0].total, 3);
+  assert.equal(rows[0].pending, 3);
 });

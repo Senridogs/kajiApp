@@ -32,7 +32,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
 
     const chore = await tx.chore.findFirst({
       where: { id: record.choreId, householdId: session.householdId, archived: false },
-      select: { intervalDays: true },
+      select: { intervalDays: true, dailyTargetCount: true },
     });
     if (!chore) return;
 
@@ -69,7 +69,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
       where: { choreId: record.choreId },
       select: { id: true },
     });
-    if (hasOverrides) {
+    if (hasOverrides || chore.dailyTargetCount > 1) {
       await tx.choreScheduleOverride.create({
         data: { choreId: record.choreId, date: sourceDateKey },
       });

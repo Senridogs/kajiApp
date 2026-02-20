@@ -3,8 +3,10 @@ import { Prisma } from "@prisma/client";
 
 import { computeChore, splitChoresForHome } from "@/lib/dashboard";
 import { ensureDemoDataForHousehold } from "@/lib/dummy-data";
+import { buildHomeProgressByDate } from "@/lib/home-occurrence";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 function emptyBootstrapPayload() {
   return {
@@ -20,6 +22,7 @@ function emptyBootstrapPayload() {
     notificationSettings: null,
     customIcons: [],
     scheduleOverrides: [],
+    homeProgressByDate: {},
   };
 }
 
@@ -90,6 +93,63 @@ export async function GET() {
 
     const computed = chores.map((c) => computeChore(c));
     const homeSplit = splitChoresForHome(computed);
+    const todayStart = startOfJstDay(new Date());
+    const yesterdayStart = addDays(todayStart, -1);
+    const tomorrowStart = addDays(todayStart, 1);
+    const dayAfterTomorrowStart = addDays(todayStart, 2);
+    const homeDateKeys = [
+      toJstDateKey(yesterdayStart),
+      toJstDateKey(todayStart),
+      toJstDateKey(tomorrowStart),
+    ];
+    const scheduleOverridesByChore = new Map<string, Array<{ id: string; choreId: string; date: string; createdAt: Date }>>();
+    for (const override of scheduleOverrides) {
+      const list = scheduleOverridesByChore.get(override.choreId) ?? [];
+      list.push(override);
+      scheduleOverridesByChore.set(override.choreId, list);
+    }
+    const choreIds = computed.map((chore) => chore.id);
+    const homeProgressRecords =
+      choreIds.length > 0
+        ? await prisma.choreRecord.findMany({
+          where: {
+            householdId: household.id,
+            choreId: { in: choreIds },
+            isInitial: false,
+            OR: [
+              { scheduledDate: { in: homeDateKeys } },
+              {
+                scheduledDate: null,
+                performedAt: { gte: yesterdayStart, lt: dayAfterTomorrowStart },
+              },
+            ],
+          },
+          orderBy: { performedAt: "desc" },
+          select: {
+            choreId: true,
+            scheduledDate: true,
+            performedAt: true,
+            isSkipped: true,
+            isInitial: true,
+          },
+        })
+        : [];
+    const homeProgressByDate = buildHomeProgressByDate({
+      chores: computed,
+      dateKeys: homeDateKeys,
+      scheduleOverridesByChore: new Map(
+        Array.from(scheduleOverridesByChore.entries()).map(([choreId, values]) => [
+          choreId,
+          values.map((value) => ({
+            id: value.id,
+            choreId: value.choreId,
+            date: value.date,
+            createdAt: value.createdAt.toISOString(),
+          })),
+        ]),
+      ),
+      records: homeProgressRecords,
+    });
 
     return NextResponse.json({
       needsRegistration: false,
@@ -120,6 +180,7 @@ export async function GET() {
         date: override.date,
         createdAt: override.createdAt.toISOString(),
       })),
+      homeProgressByDate,
     });
   } catch (error: unknown) {
     if (

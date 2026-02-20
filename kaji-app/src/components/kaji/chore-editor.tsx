@@ -18,6 +18,7 @@ export type ChoreForm = {
   id?: string;
   title: string;
   intervalDays: number;
+  dailyTargetCount: number;
   isBigTask: boolean;
   icon: string;
   iconColor: string;
@@ -37,6 +38,8 @@ export type CustomIconOption = {
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const MIN_INTERVAL_DAYS = 1;
 const MAX_INTERVAL_DAYS = 365;
+const MIN_DAILY_TARGET_COUNT = 1;
+const MAX_DAILY_TARGET_COUNT = 5;
 const ICON_PRESETS_PER_PAGE = 6;
 const CUSTOM_ICON_TAP_WINDOW_MS = 420;
 
@@ -185,6 +188,26 @@ export function ChoreEditor({
     onChange({ ...value, intervalDays: next });
   };
 
+  const updateDailyTargetCount = (delta: number) => {
+    const next = Math.min(
+      MAX_DAILY_TARGET_COUNT,
+      Math.max(MIN_DAILY_TARGET_COUNT, value.dailyTargetCount + delta),
+    );
+    onChange({ ...value, dailyTargetCount: next });
+  };
+
+  const setDailyTargetCount = (rawValue: string) => {
+    const trimmed = rawValue.replace(/[^\d]/g, "");
+    if (!trimmed) {
+      onChange({ ...value, dailyTargetCount: MIN_DAILY_TARGET_COUNT });
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return;
+    const next = Math.min(MAX_DAILY_TARGET_COUNT, Math.max(MIN_DAILY_TARGET_COUNT, parsed));
+    onChange({ ...value, dailyTargetCount: next });
+  };
+
   return (
     <div className="space-y-[10px] pb-0">
       <div>
@@ -223,7 +246,7 @@ export function ChoreEditor({
               inputMode="numeric"
               onChange={(e) => setIntervalDays(e.target.value)}
               className="w-[58px] rounded-lg border border-[#DADCE0] bg-white px-2 py-1.5 text-center text-[16.8px] font-bold text-[#202124] outline-none"
-              aria-label="リマインド間隔（日数）"
+              aria-label="interval-days"
             />
             <span className="text-[15px] font-bold text-[#202124]">日ごと</span>
           </div>
@@ -247,6 +270,36 @@ export function ChoreEditor({
       </div>
 
       <div>
+        <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">1日回数</p>
+        <div className="flex items-center justify-between rounded-[14px] border border-[#DADCE0] bg-white px-3 py-2.5">
+          <button
+            type="button"
+            onClick={() => updateDailyTargetCount(-1)}
+            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#F1F3F4]"
+          >
+            <Minus size={16} className="text-[#6F5A4B]" />
+          </button>
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={String(value.dailyTargetCount)}
+              inputMode="numeric"
+              onChange={(e) => setDailyTargetCount(e.target.value)}
+              className="w-[58px] rounded-lg border border-[#DADCE0] bg-white px-2 py-1.5 text-center text-[16.8px] font-bold text-[#202124] outline-none"
+              aria-label="daily-target-count"
+            />
+            <span className="text-[15px] font-bold text-[#202124]">回 / 日</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => updateDailyTargetCount(1)}
+            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#1A9BE8]"
+          >
+            <Plus size={16} className="text-white" />
+          </button>
+        </div>
+      </div>
+      <div>
         <p className="mb-1.5 text-[14.4px] font-bold text-[#5F6368]">開始日 *</p>
         <input
           type="date"
@@ -260,11 +313,13 @@ export function ChoreEditor({
           inputMode="none"
           disabled={mode === "edit"}
           required
-          aria-label="開始日"
+          aria-label="start-date"
           className={`w-full rounded-[14px] border border-[#DADCE0] py-3 pl-3 pr-3 text-[16.8px] font-semibold text-[#202124] outline-none ${mode === "edit" ? "bg-[#F1F3F4] text-[#5F6368]" : "bg-white"}`}
         />
         {mode === "create" && value.lastPerformedAt && new Date(value.lastPerformedAt) > new Date() ? (
-          <p className="mt-1 text-[11px] font-medium text-[#1A9BE8]">未来日を選択中：その日が初回予定日として登録されます（未完了状態）</p>
+          <p className="mt-1 text-[11px] font-medium text-[#1A9BE8]">
+            未来日を選択中です。次回予定はその日を基準に計算されます。
+          </p>
         ) : null}
       </div>
 
@@ -394,7 +449,7 @@ export function ChoreEditor({
           className="flex w-full items-center justify-between rounded-[14px] border border-[#DADCE0] bg-white p-3 text-left"
         >
           <div>
-            <p className="text-[13px] font-bold text-[#202124]">大仕事として扱う</p>
+            <p className="text-[13px] font-bold text-[#202124]">大きめ家事として扱う</p>
           </div>
           <div
             className={`relative h-6 w-[42px] rounded-xl ${value.isBigTask ? "bg-[#33C28A]" : "bg-[#E8EAED]"
@@ -651,8 +706,10 @@ export function CustomIconPicker({
         }
         className="w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[15.6px] font-bold text-white"
       >
-        このアイコンを追加
+        このアイコンを保存
       </button>
     </div>
   );
 }
+
+

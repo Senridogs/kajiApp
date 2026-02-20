@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Minus,
   Plus,
   Share2,
   User,
@@ -76,8 +77,9 @@ import {
   type DropPosition,
 } from "@/lib/home-order";
 import {
-  buildHomeOccurrencesByDate,
+  buildHomeRowsByDate,
   countDoneHomeOccurrences,
+  countTotalHomeOccurrences,
 } from "@/lib/home-occurrence";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
@@ -669,6 +671,9 @@ export function KajiApp() {
     useState<PendingRecordDateChoice | null>(null);
   const [memoFlowMode, setMemoFlowMode] = useState<MemoFlowMode>("default");
   const [memoQuickDateKey, setMemoQuickDateKey] = useState<string | null>(null);
+  const [skipCountDialogOpen, setSkipCountDialogOpen] = useState(false);
+  const [skipCountValue, setSkipCountValue] = useState(1);
+  const [skipCountMax, setSkipCountMax] = useState(1);
   const [calendarBlankActionOpen, setCalendarBlankActionOpen] = useState(false);
   const [calendarBlankActionDateKey, setCalendarBlankActionDateKey] = useState<string | null>(null);
   const [calendarBlankActionMode, setCalendarBlankActionMode] = useState<CalendarBlankActionMode>("choice");
@@ -1060,7 +1065,7 @@ export function KajiApp() {
 
     const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
     if (Number.isNaN(targetDate.getTime())) return 0;
-    return isScheduledOnDate(chore, targetDate) ? 1 : 0;
+    return isScheduledOnDate(chore, targetDate) ? Math.max(1, chore.dailyTargetCount) : 0;
   }, [chores, scheduleOverridesByChore]);
 
   const assignmentDaysByTab = useMemo(() => {
@@ -1170,7 +1175,6 @@ export function KajiApp() {
 
     chores.forEach((chore) => {
       // Show the latest completed day on calendar as completed (initial seed records are excluded).
-      let completedDateKey: string | null = null;
       if (chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial) {
         const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
         if (
@@ -1178,7 +1182,6 @@ export function KajiApp() {
           performedDateKey <= toJstDateKey(calendarWindowEnd)
         ) {
           addToMap(performedDateKey, chore);
-          completedDateKey = performedDateKey;
         }
       }
 
@@ -1201,9 +1204,11 @@ export function KajiApp() {
 
       for (let day = calendarWindowStart; day <= calendarWindowEnd; day = addDays(day, 1)) {
         const dKey = toJstDateKey(day);
-        if (dKey === completedDateKey) continue;
         if (!isScheduledOnDate(chore, day)) continue;
-        addToMap(dKey, chore);
+        const occurrenceCount = Math.max(1, chore.dailyTargetCount);
+        for (let i = 0; i < occurrenceCount; i += 1) {
+          addToMap(dKey, chore);
+        }
       }
     });
 
@@ -1861,6 +1866,7 @@ export function KajiApp() {
     setEditingChore({
       title: "",
       intervalDays: 7,
+      dailyTargetCount: 1,
       isBigTask: false,
       icon: "sparkles",
       iconColor: "#1A9BE8",
@@ -1880,6 +1886,7 @@ export function KajiApp() {
     setEditingChore({
       title: "",
       intervalDays: 7,
+      dailyTargetCount: 1,
       isBigTask: false,
       icon: "sparkles",
       iconColor: "#1A9BE8",
@@ -1908,6 +1915,7 @@ export function KajiApp() {
       id: chore.id,
       title: chore.title,
       intervalDays: chore.intervalDays,
+      dailyTargetCount: chore.dailyTargetCount,
       isBigTask: chore.isBigTask,
       icon: chore.icon,
       iconColor: chore.iconColor,
@@ -1934,6 +1942,7 @@ export function KajiApp() {
     const payload = {
       title: editingChore.title,
       intervalDays: Number(editingChore.intervalDays),
+      dailyTargetCount: Number(editingChore.dailyTargetCount),
       isBigTask: editingChore.isBigTask,
       icon: editingChore.icon,
       iconColor: editingChore.iconColor,
@@ -2037,6 +2046,9 @@ export function KajiApp() {
     setPendingRecordDateChoice(null);
     setMemoFlowMode("default");
     setMemoQuickDateKey(null);
+    setSkipCountDialogOpen(false);
+    setSkipCountValue(1);
+    setSkipCountMax(1);
     setMemo("");
     setMemoOpen(true);
   };
@@ -2047,9 +2059,23 @@ export function KajiApp() {
     setPendingRecordDateChoice(null);
     setMemoFlowMode("calendar-quick");
     setMemoQuickDateKey(dateKey);
+    setSkipCountDialogOpen(false);
+    setSkipCountValue(1);
+    setSkipCountMax(1);
     setMemo("");
     setMemoOpen(true);
   }, []);
+
+  const memoPendingCount = useMemo(() => {
+    if (!memoTarget) return 1;
+    const sourceDateKey = memoBaseDateKey ?? toJstDateKey(startOfJstDay(new Date()));
+    const pendingFromProgress = boot?.homeProgressByDate?.[sourceDateKey]?.[memoTarget.id]?.pending;
+    if (typeof pendingFromProgress === "number") {
+      return Math.max(1, pendingFromProgress);
+    }
+    const fallbackScheduled = countScheduledOccurrencesOnDate(memoTarget.id, sourceDateKey);
+    return Math.max(1, fallbackScheduled);
+  }, [boot?.homeProgressByDate, countScheduledOccurrencesOnDate, memoBaseDateKey, memoTarget]);
 
   const shiftDateKey = useCallback((dateKey: string, days: number) => {
     const parsed = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
@@ -2779,12 +2805,14 @@ export function KajiApp() {
 
   const submitMemoAction = useCallback(async ({
     skipped,
+    skipCount,
     recalculateFuture,
     bypassFutureConfirm = false,
     mergeIfDuplicate = true,
     performedAtMode = "today",
   }: {
     skipped: boolean;
+    skipCount?: number;
     recalculateFuture?: boolean;
     bypassFutureConfirm?: boolean;
     mergeIfDuplicate?: boolean;
@@ -2861,6 +2889,9 @@ export function KajiApp() {
 
     try {
       const body: Record<string, unknown> = { memo, skipped, performedAt: performedAtIso };
+      if (skipped && typeof skipCount === "number") {
+        body.skipCount = skipCount;
+      }
       if (shouldSendSourceDate && sourceDateKey) {
         const targetMatchesSource = sourceDateKey === performedAtDateKey;
         const effectiveMergeIfDuplicate =
@@ -2900,6 +2931,9 @@ export function KajiApp() {
       setMemoBaseDateKey(null);
       setMemoFlowMode("default");
       setMemoQuickDateKey(null);
+      setSkipCountDialogOpen(false);
+      setSkipCountValue(1);
+      setSkipCountMax(1);
     }
   }, [
     boot,
@@ -2914,6 +2948,8 @@ export function KajiApp() {
     sessionUser,
     setRecordUpdating,
     showTaskBanner,
+    skipCountMax,
+    skipCountValue,
     statsPeriod,
     updateBootChoreOptimistically,
   ]);
@@ -2949,9 +2985,20 @@ export function KajiApp() {
   ]);
 
   const submitSkip = useCallback(() => {
+    if (!memoTarget) return;
+    const defaultCount = Math.max(1, memoPendingCount);
     setPendingRecordDateChoice(null);
-    void submitMemoAction({ skipped: true });
-  }, [submitMemoAction]);
+    setSkipCountMax(defaultCount);
+    setSkipCountValue(defaultCount);
+    setSkipCountDialogOpen(true);
+  }, [memoPendingCount, memoTarget]);
+
+  const confirmSkipWithCount = useCallback(() => {
+    const skipCount = Math.max(1, Math.min(skipCountValue, skipCountMax));
+    setPendingRecordDateChoice(null);
+    setSkipCountDialogOpen(false);
+    void submitMemoAction({ skipped: true, skipCount });
+  }, [skipCountMax, skipCountValue, submitMemoAction]);
 
   const confirmPendingReschedule = useCallback(async (recalculateFuture: boolean) => {
     if (!pendingRescheduleConfirm || rescheduleConfirmLoading) return;
@@ -3870,94 +3917,79 @@ export function KajiApp() {
     return null;
   };
 
-  const yesterdayOccurrencesForHome = buildHomeOccurrencesByDate({
+  const homeProgressByDate = boot.homeProgressByDate ?? {};
+  const yesterdayRowsForHome = buildHomeRowsByDate({
     chores,
     dateKey: yesterdayKey,
     scheduleOverridesByChore,
+    homeProgressByDate,
   });
-  const todayOccurrencesForHome = buildHomeOccurrencesByDate({
+  const todayRowsForHome = buildHomeRowsByDate({
     chores,
     dateKey: todayKey,
     scheduleOverridesByChore,
+    homeProgressByDate,
   });
-  const tomorrowOccurrencesForHome = buildHomeOccurrencesByDate({
+  const tomorrowRowsForHome = buildHomeRowsByDate({
     chores,
     dateKey: tomorrowKey,
     scheduleOverridesByChore,
+    homeProgressByDate,
   });
-  const yesterdayChoresForHome = yesterdayOccurrencesForHome.map((item) => item.chore);
-  const todayChoresForHome = todayOccurrencesForHome.map((item) => item.chore);
-  const tomorrowChoresForHome = tomorrowOccurrencesForHome.map((item) => item.chore);
-  const yesterdaySortedChores = sortHomeSectionChores(
-    "yesterday",
-    yesterdayChoresForHome,
-    sessionUser?.id ?? null,
-    (choreId) => {
-      const c = boot.chores.find((ch) => ch.id === choreId);
-      return resolveAssigneeForSort(choreId, "yesterday", c);
-    },
-    customIcons,
-  );
-  const todaySortedChores = sortHomeSectionChores(
-    "today",
-    todayChoresForHome,
-    sessionUser?.id ?? null,
-    (choreId) => {
-      const c = todayChoresForHome.find((ch) => ch.id === choreId);
-      return resolveAssigneeForSort(choreId, "today", c);
-    },
-    customIcons,
-  );
-  const tomorrowSortedChores = sortHomeSectionChores(
-    "tomorrow",
-    tomorrowChoresForHome,
-    sessionUser?.id ?? null,
-    (choreId) => {
-      const c = tomorrowChoresForHome.find((ch) => ch.id === choreId);
-      return resolveAssigneeForSort(choreId, "tomorrow", c);
-    },
-    customIcons,
-  );
 
-  const applyStoredOrderToSection = (dateKey: string, sectionChores: ChoreWithComputed[]) => {
-    const baseIds = sectionChores.map((chore) => chore.id);
-    if (new Set(baseIds).size !== baseIds.length) {
-      return sectionChores;
-    }
-    const orderedIds = applyHomeStoredOrder(baseIds, homeOrderByDate[dateKey] ?? []);
-    const map = new Map(sectionChores.map((chore) => [chore.id, chore]));
+  const orderHomeRows = (
+    sectionKey: "today" | "yesterday" | "tomorrow",
+    dateKey: string,
+    sectionRows: typeof todayRowsForHome,
+  ) => {
+    const sortedChores = sortHomeSectionChores(
+      sectionKey,
+      sectionRows.map((row) => row.chore),
+      sessionUser?.id ?? null,
+      (choreId) => {
+        const found = sectionRows.find((row) => row.chore.id === choreId)?.chore;
+        return resolveAssigneeForSort(choreId, sectionKey, found);
+      },
+      customIcons,
+    );
+    const orderedIds = applyHomeStoredOrder(
+      sortedChores.map((chore) => chore.id),
+      homeOrderByDate[dateKey] ?? [],
+    );
+    const rowMap = new Map(sectionRows.map((row) => [row.chore.id, row]));
     return orderedIds
-      .map((id) => map.get(id))
-      .filter((chore): chore is ChoreWithComputed => Boolean(chore));
+      .map((id) => rowMap.get(id))
+      .filter((row): row is (typeof sectionRows)[number] => Boolean(row));
   };
 
   const homeSections = [
     {
       key: "yesterday" as const,
       title: "きのうのにんむ",
-      chores: applyStoredOrderToSection(yesterdayKey, yesterdaySortedChores),
-      doneCount: countDoneHomeOccurrences(yesterdayOccurrencesForHome),
+      rows: orderHomeRows("yesterday", yesterdayKey, yesterdayRowsForHome),
     },
     {
       key: "today" as const,
       title: "きょうのにんむ",
-      chores: applyStoredOrderToSection(todayKey, todaySortedChores),
-      doneCount: countDoneHomeOccurrences(todayOccurrencesForHome),
+      rows: orderHomeRows("today", todayKey, todayRowsForHome),
     },
     {
       key: "tomorrow" as const,
       title: "あしたのにんむ",
-      chores: applyStoredOrderToSection(tomorrowKey, tomorrowSortedChores),
-      doneCount: countDoneHomeOccurrences(tomorrowOccurrencesForHome),
+      rows: orderHomeRows("tomorrow", tomorrowKey, tomorrowRowsForHome),
     },
-  ];
+  ].map((section) => ({
+    ...section,
+    doneCount: countDoneHomeOccurrences(section.rows),
+    totalCount: countTotalHomeOccurrences(section.rows),
+  }));
   homeSectionChoreIdsRef.current = Object.fromEntries(
     homeSections.map((section) => [
       getHomeSectionDateKey(section.key),
-      section.chores.map((chore) => chore.id),
+      section.rows.map((row) => row.chore.id),
     ]),
   );
-  const hasAnyUpcomingChores = homeSections.some((section) => section.chores.length > 0);
+  const hasAnyUpcomingChores = homeSections.some((section) => section.rows.length > 0);
   const swipeProgress = swipe.visual.progress;
   const swipeFromTabIndex = Math.max(0, TAB_ORDER.indexOf(swipe.visual.fromTab));
   const swipeTrackTranslatePercent = (-swipeFromTabIndex + swipeProgress) * 100;
@@ -4429,15 +4461,16 @@ export function KajiApp() {
                         className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
                         style={{ top: 0 }}
                       >
-                        <HomeSectionTitle title={`${section.title}（${section.doneCount}/${section.chores.length}）`} />
+                        <HomeSectionTitle title={`${section.title}（${section.doneCount}/${section.totalCount}）`} />
                         {section.key === "tomorrow" ? (
                           <p className="mt-0.5 text-[12px] font-medium text-[#5F6368]">今日やっちゃってもOK！</p>
                         ) : null}
                       </div>
                       <div className="grid grid-cols-2 items-stretch gap-2">
-                        {section.chores.length === 0 ? (
+                        {section.rows.length === 0 ? (
                           <p className="py-2 text-center text-[12px] font-medium text-[#BDC1C6]">予定なし</p>
-                        ) : section.chores.map((chore, choreIndex) => {
+                        ) : section.rows.map((row, choreIndex) => {
+                          const chore = row.chore;
                           const assignedEntry = assignments.find(
                             (x) => x.choreId === chore.id && x.date === sectionDateKey,
                           );
@@ -4512,6 +4545,7 @@ export function KajiApp() {
                                 chore={displayChore}
                                 onRecord={(target) => openMemo(target, sectionDateKey)}
                                 onUndo={requestUndoRecord}
+                                meta={`${row.completed + row.skipped}/${row.total} ・ 完了${row.completed} / スキップ${row.skipped} / 残り${row.pending}`}
                                 isUpdating={recordUpdatingIds.includes(chore.id)}
                                 recordDisabled={disableTomorrowDailyCheck}
                                 assigneeName={assigneeName}
@@ -5951,6 +5985,9 @@ export function KajiApp() {
           setPendingRecordDateChoice(null);
           setMemoFlowMode("default");
           setMemoQuickDateKey(null);
+          setSkipCountDialogOpen(false);
+          setSkipCountValue(1);
+          setSkipCountMax(1);
           setMemoTarget(null);
         }}
         title=""
@@ -5987,6 +6024,61 @@ export function KajiApp() {
           ) : null}
         </div>
       </BottomSheet>
+
+      {skipCountDialogOpen ? (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 px-6 backdrop-blur-sm"
+          onClick={() => setSkipCountDialogOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="スキップ件数の選択"
+            className="w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-center text-[18px] font-bold text-[#202124]">スキップ件数</p>
+            <p className="mt-1 text-center text-[13px] font-medium text-[#5F6368]">残り {skipCountMax} 件</p>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSkipCountValue((prev) => Math.max(1, prev - 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[#DADCE0] bg-white text-[#5F6368]"
+              >
+                <Minus size={16} />
+              </button>
+              <p className="min-w-[56px] text-center text-[24px] font-bold text-[#202124]">{skipCountValue}</p>
+              <button
+                type="button"
+                onClick={() => setSkipCountValue((prev) => Math.min(skipCountMax, prev + 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1A9BE8] text-white"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <ActionButton
+                type="button"
+                variant="secondary"
+                size="md"
+                fullWidth
+                onClick={() => setSkipCountDialogOpen(false)}
+              >
+                キャンセル
+              </ActionButton>
+              <ActionButton
+                type="button"
+                variant="success"
+                size="md"
+                fullWidth
+                onClick={confirmSkipWithCount}
+              >
+                スキップ
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <BottomSheet
         open={rescheduleOpen}

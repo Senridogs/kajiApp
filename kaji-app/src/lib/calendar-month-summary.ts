@@ -6,6 +6,7 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 export type CalendarSummaryChoreSource = {
   id: string;
   intervalDays: number;
+  dailyTargetCount?: number;
   createdAt: Date;
   latestRecord: { performedAt: Date; isSkipped: boolean } | null;
   scheduleOverrides: Array<{ date: string }>;
@@ -94,9 +95,12 @@ export function buildCalendarMonthCountsByDate(
     } else {
       const dueBase = chore.latestRecord?.performedAt ?? chore.createdAt;
       const dueAt = addDays(dueBase, chore.intervalDays);
+      const occurrenceCount = Math.max(1, Math.trunc(chore.dailyTargetCount ?? 1));
       for (const entry of dateEntries) {
         if (isScheduledOnDate(dueAt, chore.intervalDays, entry.date)) {
-          addCount(entry.dateKey);
+          for (let i = 0; i < occurrenceCount; i += 1) {
+            addCount(entry.dateKey);
+          }
         }
       }
     }

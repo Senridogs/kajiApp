@@ -44,6 +44,7 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
     iconColor: chore.iconColor,
     bgColor: chore.bgColor,
     intervalDays: chore.intervalDays,
+    dailyTargetCount: chore.dailyTargetCount,
     isBigTask: chore.isBigTask,
     archived: chore.archived,
     defaultAssigneeId: chore.defaultAssigneeId ?? null,

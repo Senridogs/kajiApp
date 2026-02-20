@@ -109,8 +109,19 @@ test("Editor interaction keeps interval controls", () => {
   const editor = read("src/components/kaji/chore-editor.tsx");
   assert.match(editor, /updateIntervalDays\(-7\)/);
   assert.match(editor, /updateIntervalDays\(7\)/);
+  assert.match(editor, /updateDailyTargetCount\(-1\)/);
+  assert.match(editor, /updateDailyTargetCount\(1\)/);
+  assert.match(editor, /aria-label="daily-target-count"/);
   assert.match(editor, /aria-label="(interval-days|リマインド間隔（日数）)"/);
   assert.match(editor, /disabled=\{mode === "edit"\}/);
+});
+
+test("Skip count dialog wiring exists on memo flow", () => {
+  const app = read("src/components/kaji/kaji-app.tsx");
+  assert.match(app, /skipCountDialogOpen/);
+  assert.match(app, /memoPendingCount/);
+  assert.match(app, /confirmSkipWithCount/);
+  assert.match(app, /skipCount/);
 });
 
 test("BottomSheet stays above standalone manage screen", () => {
@@ -136,7 +147,7 @@ test("Completion date choice dialog is wired for non-today record only", () => {
   assert.match(app, /if \(memoTarget && memoBaseDateKey && memoBaseDateKey !== todayDateKey\)[\s\S]*setPendingRecordDateChoice/);
   assert.match(app, /submitMemoAction\(\{ skipped: false, performedAtMode: "source" \}\)/);
   assert.match(app, /submitMemoAction\(\{ skipped: false, performedAtMode: "today" \}\)/);
-  assert.match(app, /submitSkip[\s\S]*submitMemoAction\(\{ skipped: true \}\)/);
+  assert.match(app, /submitSkip[\s\S]*setSkipCountDialogOpen\(true\)/);
 });
 
 test("Reschedule confirmation is centralized for drag and sheet flows", () => {

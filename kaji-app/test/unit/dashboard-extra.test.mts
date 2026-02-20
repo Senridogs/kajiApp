@@ -14,6 +14,7 @@ test("computeChore handles skipped status correctly", () => {
         iconColor: "#fff",
         bgColor: "#000",
         intervalDays: 1,
+        dailyTargetCount: 1,
         isBigTask: false,
         defaultAssigneeId: null,
         defaultAssigneeName: null,
@@ -40,7 +41,7 @@ test("computeChore handles skipped status correctly", () => {
     const computed = computeChore(chore, now);
 
     assert.equal(computed.lastRecordSkipped, true);
-    assert.equal(computed.lastPerformerName, "スキップ");
+    assert.equal(computed.lastPerformerName, "\u30b9\u30ad\u30c3\u30d7");
     assert.equal(computed.doneToday, true);
     assert.equal(computed.isDueToday, false);
     assert.equal(computed.isDueTomorrow, true);
@@ -56,5 +57,8 @@ test("getStatsRange handles ALL period", () => {
     assert.equal(range.start, undefined);
     // End should be end of today
     assert.ok(range.end.getTime() >= now.getTime());
-    assert.equal(range.label, "全期間");
+    assert.equal(range.label, "\u5168\u671f\u9593");
 });
+
+
+

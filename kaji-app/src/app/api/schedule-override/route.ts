@@ -105,6 +105,7 @@ export async function POST(request: Request) {
     select: {
       id: true,
       intervalDays: true,
+      dailyTargetCount: true,
       createdAt: true,
       records: {
         where: { performedAt: { lt: tomorrowStart } },
@@ -137,6 +138,7 @@ export async function POST(request: Request) {
             overrideDateKeys: [],
             dueDateKey,
             intervalDays: chore.intervalDays,
+            dailyTargetCount: chore.dailyTargetCount,
             window,
           });
       const scheduledCount = currentDateKeys.filter((dateKey) => dateKey === date).length;
@@ -188,6 +190,7 @@ export async function POST(request: Request) {
       overrideDateKeys: currentOverrides.map((entry) => entry.date),
       dueDateKey,
       intervalDays: chore.intervalDays,
+      dailyTargetCount: chore.dailyTargetCount,
       window,
     });
     const currentDateKeysForMove = includeSourceDateIfMissing(
@@ -201,6 +204,7 @@ export async function POST(request: Request) {
       recalculateFuture,
       mergeIfDuplicate,
       intervalDays: chore.intervalDays,
+      dailyTargetCount: chore.dailyTargetCount,
       window,
     });
     const remainingDateKeys = removeOneOccurrence(nextDateKeys, date);
@@ -268,6 +272,7 @@ export async function POST(request: Request) {
     overrideDateKeys: currentOverrides.map((entry) => entry.date),
     dueDateKey,
     intervalDays: chore.intervalDays,
+    dailyTargetCount: chore.dailyTargetCount,
     window,
   });
 
@@ -282,6 +287,7 @@ export async function POST(request: Request) {
     recalculateFuture,
     mergeIfDuplicate,
     intervalDays: chore.intervalDays,
+    dailyTargetCount: chore.dailyTargetCount,
     window,
   });
   const savedOverrides = await prisma.$transaction(async (tx) => {

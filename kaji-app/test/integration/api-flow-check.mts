@@ -359,6 +359,79 @@ async function main() {
   assert.equal(addModeDuplicateAllowedRes.status, 200);
   assert.equal(await countOverridesOnDate(addModeChoreId, addModeUnsheduledDateKey), 2);
 
+  const createDailyTargetChoreRes = await request("/api/chores", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "daily-target-count",
+      intervalDays: 1,
+      dailyTargetCount: 3,
+      isBigTask: false,
+      icon: "sparkles",
+      iconColor: "#202124",
+      bgColor: "#EAF5FF",
+      lastPerformedAt: addModeLastPerformedAt,
+    }),
+  });
+  assert.equal(createDailyTargetChoreRes.status, 200);
+  const createDailyTargetChoreBody = await createDailyTargetChoreRes.json();
+  const dailyTargetChoreId: string = createDailyTargetChoreBody.chore.id;
+  assert.equal(createDailyTargetChoreBody.chore.dailyTargetCount, 3);
+
+  const patchDailyTargetChoreRes = await request(`/api/chores/${dailyTargetChoreId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ dailyTargetCount: 5 }),
+  });
+  assert.equal(patchDailyTargetChoreRes.status, 200);
+  const patchDailyTargetChoreBody = await patchDailyTargetChoreRes.json();
+  assert.equal(patchDailyTargetChoreBody.chore.dailyTargetCount, 5);
+
+  const skipCountInvalidRes = await request(`/api/chores/${dailyTargetChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      skipped: true,
+      skipCount: 0,
+      sourceDate: addModeTodayKey,
+      performedAt: new Date(`${addModeTodayKey}T08:30:00+09:00`).toISOString(),
+      recalculateFuture: false,
+      mergeIfDuplicate: false,
+    }),
+  });
+  assert.equal(skipCountInvalidRes.status, 400);
+
+  const skipCountTooManyRes = await request(`/api/chores/${dailyTargetChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      skipped: true,
+      skipCount: 6,
+      sourceDate: addModeTodayKey,
+      performedAt: new Date(`${addModeTodayKey}T08:31:00+09:00`).toISOString(),
+      recalculateFuture: false,
+      mergeIfDuplicate: false,
+    }),
+  });
+  assert.equal(skipCountTooManyRes.status, 400);
+
+  const skipCountAllRes = await request(`/api/chores/${dailyTargetChoreId}/record`, {
+    method: "POST",
+    body: JSON.stringify({
+      skipped: true,
+      skipCount: 5,
+      sourceDate: addModeTodayKey,
+      performedAt: new Date(`${addModeTodayKey}T08:32:00+09:00`).toISOString(),
+      recalculateFuture: false,
+      mergeIfDuplicate: false,
+    }),
+  });
+  assert.equal(skipCountAllRes.status, 200);
+  const skipCountAllBody = await skipCountAllRes.json();
+  assert.equal(await countOverridesOnDate(dailyTargetChoreId, addModeTodayKey), 0);
+
+  const undoSkipCountRes = await request(`/api/records/${skipCountAllBody.record.id}`, {
+    method: "DELETE",
+  });
+  assert.equal(undoSkipCountRes.status, 200);
+  assert.equal(await countOverridesOnDate(dailyTargetChoreId, addModeTodayKey), 1);
+
   const duplicateSequenceCases: Array<{
     name: string;
     steps: Array<"complete" | "skip" | "undo">;

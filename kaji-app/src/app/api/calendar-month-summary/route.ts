@@ -25,6 +25,7 @@ export async function GET(request: Request) {
     select: {
       id: true,
       intervalDays: true,
+      dailyTargetCount: true,
       createdAt: true,
       records: {
         where: { performedAt: { lt: tomorrowStart } },
@@ -46,6 +47,7 @@ export async function GET(request: Request) {
     chores.map((chore) => ({
       id: chore.id,
       intervalDays: chore.intervalDays,
+      dailyTargetCount: chore.dailyTargetCount,
       createdAt: chore.createdAt,
       latestRecord: chore.records[0]
         ? {

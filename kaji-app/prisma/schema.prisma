@@ -61,6 +61,7 @@ model Chore {
   iconColor         String                  @default("#202124")
   bgColor           String                  @default("#EAF5FF")
   intervalDays      Int
+  dailyTargetCount  Int                     @default(1)
   isBigTask         Boolean                 @default(false)
   defaultAssigneeId String?
   archived          Boolean                 @default(false)

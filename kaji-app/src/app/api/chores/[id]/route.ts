@@ -8,6 +8,7 @@ import { touchHousehold } from "@/lib/sync";
 type UpdateChoreBody = {
   title?: string;
   intervalDays?: number;
+  dailyTargetCount?: number;
   isBigTask?: boolean;
   icon?: string;
   iconColor?: string;
@@ -35,6 +36,16 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       return badRequest("リマインド間隔は1〜365日で設定してください。");
     }
     data.intervalDays = body.intervalDays;
+  }
+  if (typeof body?.dailyTargetCount === "number") {
+    if (
+      !Number.isInteger(body.dailyTargetCount) ||
+      body.dailyTargetCount < 1 ||
+      body.dailyTargetCount > 5
+    ) {
+      return badRequest("dailyTargetCount must be an integer between 1 and 5.");
+    }
+    data.dailyTargetCount = body.dailyTargetCount;
   }
   if (typeof body?.isBigTask === "boolean") data.isBigTask = body.isBigTask;
   if (typeof body?.icon === "string") data.icon = body.icon;

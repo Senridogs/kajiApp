@@ -61,10 +61,12 @@ export function resolveScheduleWindow(sourceDateKey: string, targetDateKey: stri
 export function buildRecurrenceDateKeys(params: {
   dueDateKey: string;
   intervalDays: number;
+  dailyTargetCount?: number;
   fromDateKey: string;
   toDateKey: string;
 }) {
   const { dueDateKey, intervalDays, fromDateKey, toDateKey } = params;
+  const dailyTargetCount = Math.max(1, Math.trunc(params.dailyTargetCount ?? 1));
   const dueDate = dateKeyToJstDate(dueDateKey);
   const fromDate = dateKeyToJstDate(fromDateKey);
   const toDate = dateKeyToJstDate(toDateKey);
@@ -89,7 +91,10 @@ export function buildRecurrenceDateKeys(params: {
 
   const results: string[] = [];
   while (cursor.getTime() <= toDate.getTime()) {
-    results.push(toJstDateKey(cursor));
+    const dateKey = toJstDateKey(cursor);
+    for (let i = 0; i < dailyTargetCount; i += 1) {
+      results.push(dateKey);
+    }
     cursor = addDays(cursor, intervalDays);
   }
   return results;
@@ -99,6 +104,7 @@ export function resolveCurrentScheduleDateKeys(params: {
   overrideDateKeys: string[];
   dueDateKey: string;
   intervalDays: number;
+  dailyTargetCount?: number;
   window: WindowRange;
 }) {
   const { overrideDateKeys, dueDateKey, intervalDays, window } = params;
@@ -112,6 +118,7 @@ export function resolveCurrentScheduleDateKeys(params: {
   return buildRecurrenceDateKeys({
     dueDateKey,
     intervalDays,
+    dailyTargetCount: params.dailyTargetCount,
     fromDateKey: window.fromDateKey,
     toDateKey: window.toDateKey,
   });
@@ -124,6 +131,7 @@ export function rebuildScheduleDateKeys(params: {
   recalculateFuture: boolean;
   mergeIfDuplicate: boolean;
   intervalDays: number;
+  dailyTargetCount?: number;
   window: WindowRange;
 }) {
   const {
@@ -133,6 +141,7 @@ export function rebuildScheduleDateKeys(params: {
     recalculateFuture,
     mergeIfDuplicate,
     intervalDays,
+    dailyTargetCount,
     window,
   } = params;
   if (!recalculateFuture) {
@@ -150,7 +159,11 @@ export function rebuildScheduleDateKeys(params: {
   let cursor = dateKeyToJstDate(targetDateKey);
   if (!Number.isNaN(cursor.getTime()) && intervalDays > 0) {
     while (cursor.getTime() <= toDate.getTime()) {
-      futureDates.push(toJstDateKey(cursor));
+      const dateKey = toJstDateKey(cursor);
+      const occurrenceCount = Math.max(1, Math.trunc(dailyTargetCount ?? 1));
+      for (let i = 0; i < occurrenceCount; i += 1) {
+        futureDates.push(dateKey);
+      }
       cursor = addDays(cursor, intervalDays);
     }
   }

@@ -5,10 +5,10 @@ import { dueInDaysLabel, labelForDue, relativeLastPerformed } from "../../src/co
 
 test("relativeLastPerformed returns today/yesterday/NDays ago", () => {
   const now = new Date("2026-02-15T06:00:00.000Z");
-  assert.equal(relativeLastPerformed("2026-02-15T01:00:00.000Z", now), "今日");
-  assert.equal(relativeLastPerformed("2026-02-14T10:00:00.000Z", now), "昨日");
-  assert.equal(relativeLastPerformed("2026-02-10T10:00:00.000Z", now), "5日前");
-  assert.equal(relativeLastPerformed(null, now), "未実施");
+  assert.equal(relativeLastPerformed("2026-02-15T01:00:00.000Z", now), "\u4eca\u65e5");
+  assert.equal(relativeLastPerformed("2026-02-14T10:00:00.000Z", now), "\u6628\u65e5");
+  assert.equal(relativeLastPerformed("2026-02-10T10:00:00.000Z", now), "5\u65e5\u524d");
+  assert.equal(relativeLastPerformed(null, now), "\u672a\u5b9f\u65bd");
 });
 
 test("dueInDaysLabel returns future/today/overdue labels", () => {
@@ -21,6 +21,7 @@ test("dueInDaysLabel returns future/today/overdue labels", () => {
     iconColor: "#fff",
     bgColor: "#000",
     intervalDays: 1,
+    dailyTargetCount: 1,
     isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,
@@ -41,17 +42,17 @@ test("dueInDaysLabel returns future/today/overdue labels", () => {
 
   assert.equal(
     dueInDaysLabel({ ...base, dueAt: "2026-02-17T00:00:00.000Z" }, now),
-    "期限まで2日",
+    "\u671f\u9650\u307e\u30672\u65e5",
   );
   assert.equal(
     dueInDaysLabel({ ...base, dueAt: "2026-02-15T00:00:00.000Z" }, now),
-    "期限は今日",
+    "\u671f\u9650\u306f\u4eca\u65e5",
   );
   assert.equal(
     dueInDaysLabel({ ...base, dueAt: "2026-02-13T00:00:00.000Z" }, now),
-    "2日超過",
+    "2\u65e5\u8d85\u904e",
   );
-  assert.equal(dueInDaysLabel({ ...base, dueAt: null }, now), "期限未設定");
+  assert.equal(dueInDaysLabel({ ...base, dueAt: null }, now), "\u671f\u9650\u672a\u8a2d\u5b9a");
 });
 
 test("labelForDue formats due date in JST", () => {
@@ -62,6 +63,7 @@ test("labelForDue formats due date in JST", () => {
     iconColor: "#fff",
     bgColor: "#000",
     intervalDays: 1,
+    dailyTargetCount: 1,
     isBigTask: false,
     defaultAssigneeId: null,
     defaultAssigneeName: null,

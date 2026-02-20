@@ -56,7 +56,7 @@ export function ScreenTitle({ title }: { title: string }) {
 }
 
 export function HomeSectionTitle({ title }: { title: string }) {
-  return <h2 className="text-[18px] font-bold leading-none text-[#202124]">{title}</h2>;
+  return <h2 className="text-[22px] font-bold leading-none text-[#202124]">{title}</h2>;
 }
 
 export function HomeTaskRow({
