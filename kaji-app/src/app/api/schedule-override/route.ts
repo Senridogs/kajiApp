@@ -9,7 +9,7 @@ import {
   sortedDateKeys,
 } from "@/lib/schedule-policy";
 import { touchHousehold } from "@/lib/sync";
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { addDays, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 type Body = {
   choreId?: string;
@@ -68,8 +68,9 @@ function moveDateKeepingTimeOfDay(
   originalPerformedAt: Date,
   targetDateKey: string,
 ) {
-  const targetMidnightJst = new Date(`${targetDateKey}T00:00:00+09:00`);
+  const targetMidnightJst = parseDateKey(targetDateKey);
   const jstOffsetMs = 9 * 60 * 60 * 1000;
+  if (!targetMidnightJst) return new Date(Number.NaN);
   const originalJst = new Date(originalPerformedAt.getTime() + jstOffsetMs);
   return new Date(
     targetMidnightJst.getTime() +

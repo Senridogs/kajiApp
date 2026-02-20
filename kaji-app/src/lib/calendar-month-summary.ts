@@ -1,4 +1,4 @@
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { addDays, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -40,7 +40,7 @@ function monthDateKeys(monthInfo: MonthInfo): string[] {
 function monthDates(monthInfo: MonthInfo): Array<{ dateKey: string; date: Date }> {
   return monthDateKeys(monthInfo).map((dateKey) => ({
     dateKey,
-    date: startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`)),
+    date: parseDateKey(dateKey) ?? new Date(Number.NaN),
   }));
 }
 

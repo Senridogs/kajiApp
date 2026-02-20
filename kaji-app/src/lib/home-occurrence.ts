@@ -1,4 +1,4 @@
-import { startOfJstDay, toJstDateKey } from "@/lib/time";
+import { parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
 import type {
   ChoreScheduleOverride,
   ChoreWithComputed,
@@ -62,8 +62,8 @@ function scheduledOccurrencesOnDate(params: {
   if (overrideList.length > 0) {
     return overrideList.filter((override) => override.date === dateKey).length;
   }
-  const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-  if (Number.isNaN(targetDate.getTime())) return 0;
+  const targetDate = parseDateKey(dateKey);
+  if (!targetDate) return 0;
   return isScheduledOnDate(chore, targetDate) ? Math.max(1, chore.dailyTargetCount ?? 1) : 0;
 }
 

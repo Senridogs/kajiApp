@@ -78,7 +78,7 @@ import {
 import {
   buildHomeRowsByDate,
 } from "@/lib/home-occurrence";
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { addDateKeyDays, addDays, compareDateKey, formatDateKey, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const JA_COLLATOR = new Intl.Collator("ja");
 type ListSortKey = "kana" | "due" | "icon";
@@ -268,19 +268,16 @@ function applyPullResistance(distance: number) {
   return Math.min(PULL_REFRESH_MAX_PX, Math.max(0, distance) * 0.5);
 }
 
-function compareDateKey(left: string, right: string) {
-  return left.localeCompare(right);
-}
-
-function resolvePerformedAtForDateKey(dateKey: string, now = new Date()) {
-  const todayKey = toJstDateKey(startOfJstDay(now));
-  if (compareDateKey(dateKey, todayKey) > 0) {
-    return now;
+function resolveDateKeyTimestamp(dateKey: string, now = new Date()) {
+  const parsedDate = parseDateKey(dateKey);
+  if (!parsedDate) {
+    return { parsedDate: null, scheduledDateKey: formatDateKey(now), performedAt: now, hasFutureScheduledDate: false };
   }
 
-  const targetDayStart = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-  if (Number.isNaN(targetDayStart.getTime())) {
-    return now;
+  const scheduledDateKey = formatDateKey(parsedDate);
+  const todayKey = formatDateKey(now);
+  if (compareDateKey(scheduledDateKey, todayKey) > 0) {
+    return { parsedDate, scheduledDateKey, performedAt: now, hasFutureScheduledDate: true };
   }
 
   const jstOffsetMs = 9 * 60 * 60 * 1000;
@@ -288,8 +285,14 @@ function resolvePerformedAtForDateKey(dateKey: string, now = new Date()) {
   const elapsedMs =
     ((nowJst.getUTCHours() * 60 + nowJst.getUTCMinutes()) * 60 + nowJst.getUTCSeconds()) * 1000 +
     nowJst.getUTCMilliseconds();
-  return new Date(targetDayStart.getTime() + elapsedMs);
+  return {
+    parsedDate,
+    scheduledDateKey,
+    performedAt: new Date(parsedDate.getTime() + elapsedMs),
+    hasFutureScheduledDate: false,
+  };
 }
+
 
 function buildGroupedTimelineRecords(items: ChoreRecordItem[]): TimelineRecordGroup[] {
   const todayKey = toJstDateKey(startOfJstDay(new Date()));
@@ -343,8 +346,8 @@ function isSameDateKey(a: string, b: string) {
 }
 
 function formatDateKeyMonthDayWeekday(dateKey: string) {
-  const date = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-  if (Number.isNaN(date.getTime())) return dateKey;
+  const date = parseDateKey(dateKey);
+  if (!date) return dateKey;
   const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
   const month = jstDate.getUTCMonth() + 1;
   const day = jstDate.getUTCDate();
@@ -1047,8 +1050,8 @@ export function KajiApp() {
       return overrideList.filter((override) => override.date === dateKey).length;
     }
 
-    const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-    if (Number.isNaN(targetDate.getTime())) return 0;
+    const targetDate = parseDateKey(dateKey);
+    if (!targetDate) return 0;
     return isScheduledOnDate(chore, targetDate) ? Math.max(1, chore.dailyTargetCount) : 0;
   }, [chores, scheduleOverridesByChore]);
 
@@ -1204,9 +1207,7 @@ export function KajiApp() {
 
   const calendarMonthGridDates = useMemo(() => {
     const monthStart = startOfJstDay(new Date(calendarMonthCursor));
-    const firstOfMonth = startOfJstDay(new Date(
-      `${toJstDateKey(monthStart).slice(0, 8)}01T00:00:00+09:00`,
-    ));
+    const firstOfMonth = parseDateKey(`${toJstDateKey(monthStart).slice(0, 8)}01`) ?? monthStart;
     const gridStart = startOfJstWeekMonday(firstOfMonth);
     return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
   }, [calendarMonthCursor]);
@@ -1527,8 +1528,8 @@ export function KajiApp() {
   }, [calendarMonthKey, loadCalendarMonthSummary]);
 
   useEffect(() => {
-    const selected = startOfJstDay(new Date(`${calendarSelectedDateKey}T00:00:00+09:00`));
-    if (Number.isNaN(selected.getTime())) return;
+    const selected = parseDateKey(calendarSelectedDateKey);
+    if (!selected) return;
     setCalendarWeekStart(startOfJstWeekMonday(selected));
   }, [calendarSelectedDateKey]);
 
@@ -1854,10 +1855,10 @@ export function KajiApp() {
   };
 
   const openAddChoreForDate = (dateKey: string) => {
-    const selectedDate = new Date(`${dateKey}T00:00:00+09:00`);
-    const initialPerformedAt = Number.isNaN(selectedDate.getTime())
-      ? defaultLastPerformedAt()
-      : selectedDate.toISOString();
+    const resolved = resolveDateKeyTimestamp(dateKey);
+    const initialPerformedAt = resolved.parsedDate
+      ? resolved.parsedDate.toISOString()
+      : defaultLastPerformedAt();
     closeSettings();
     closeStandaloneScreen();
     setEditingChore({
@@ -2068,11 +2069,11 @@ export function KajiApp() {
   }, [boot?.homeProgressByDate, countScheduledOccurrencesOnDate, memoBaseDateKey, memoTarget]);
 
   const shiftDateKey = useCallback((dateKey: string, days: number) => {
-    const parsed = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-    if (Number.isNaN(parsed.getTime())) {
+    const shifted = addDateKeyDays(dateKey, days);
+    if (!shifted) {
       return toJstDateKey(addDays(startOfJstDay(new Date()), days));
     }
-    return toJstDateKey(addDays(parsed, days));
+    return shifted;
   }, []);
 
   const openReschedule = (chore: ChoreWithComputed, baseDateKey?: string) => {
@@ -2162,8 +2163,8 @@ export function KajiApp() {
   );
 
   const focusCalendarDate = useCallback((dateKey: string) => {
-    const nextDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-    if (Number.isNaN(nextDate.getTime())) return;
+    const nextDate = parseDateKey(dateKey);
+    if (!nextDate) return;
     // Cancel any pending week-nav timer so it doesn't fire after this explicit navigation.
     if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
     dragNavHoveringRef.current = null;
@@ -2592,7 +2593,8 @@ export function KajiApp() {
 
   const shiftTargetDateByWeek = useCallback((direction: -1 | 1) => {
     const source = dragSourceDateKey ?? toJstDateKey(startOfJstDay(new Date()));
-    const sourceDate = startOfJstDay(new Date(`${source}T00:00:00+09:00`));
+    const sourceDate = parseDateKey(source);
+    if (!sourceDate) return source;
     const jstDay = new Date(sourceDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
     const weekDayIndex = jstDay === 0 ? 6 : jstDay - 1;
     // Use the source date's own week start (not calendarWeekStart) so that week-nav buttons
@@ -2617,9 +2619,10 @@ export function KajiApp() {
     const todayStart = startOfJstDay(now);
     const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrow = addDays(todayStart, 2);
-    const performedAt = resolvePerformedAtForDateKey(dateKey, now);
+    const resolved = resolveDateKeyTimestamp(dateKey, now);
+    const performedAt = resolved.performedAt;
     const performedAtIso = performedAt.toISOString();
-    const performedAtDateKey = toJstDateKey(startOfJstDay(performedAt));
+    const performedAtDateKey = resolved.scheduledDateKey;
     const completedTomorrowTask = chore.isDueTomorrow;
 
     setMemoOpen(false);
@@ -2657,6 +2660,7 @@ export function KajiApp() {
         memo: memoText,
         skipped: false,
         performedAt: performedAtIso,
+        scheduledDate: performedAtDateKey,
       };
       if (scheduledCount > 0) {
         body.sourceDate = dateKey;
@@ -2817,12 +2821,8 @@ export function KajiApp() {
     const dayAfterTomorrow = addDays(todayStart, 2);
     const sourceDateKey = memoBaseDateKey ?? undefined;
     const shouldSendSourceDate = Boolean(sourceDateKey);
-    let hasFutureMemoBase = false;
-    if (sourceDateKey) {
-      const baseDate = startOfJstDay(new Date(`${sourceDateKey}T00:00:00+09:00`));
-      hasFutureMemoBase =
-        !Number.isNaN(baseDate.getTime()) && baseDate.getTime() > todayStart.getTime();
-    }
+    const resolvedSourceDate = sourceDateKey ? resolveDateKeyTimestamp(sourceDateKey, now) : null;
+    const hasFutureMemoBase = resolvedSourceDate?.hasFutureScheduledDate ?? false;
     if (performedAtMode === "today" && hasFutureMemoBase && !bypassFutureConfirm && sourceDateKey) {
       openRescheduleConfirmWithCollisionCheck({
         origin: skipped ? "future-skip" : "future-record",
@@ -2834,16 +2834,13 @@ export function KajiApp() {
       return;
     }
 
-    let performedAt = now;
-    if (performedAtMode === "source" && sourceDateKey) {
-      const sourceDayStart = startOfJstDay(new Date(`${sourceDateKey}T00:00:00+09:00`));
-      if (!Number.isNaN(sourceDayStart.getTime())) {
-        const elapsedTodayMs = Math.max(0, now.getTime() - todayStart.getTime());
-        performedAt = new Date(sourceDayStart.getTime() + elapsedTodayMs);
-      }
-    }
+    const resolvedPerformedAt =
+      performedAtMode === "source" && sourceDateKey
+        ? resolveDateKeyTimestamp(sourceDateKey, now)
+        : { performedAt: now, scheduledDateKey: formatDateKey(now) };
+    const performedAt = resolvedPerformedAt.performedAt;
     const performedAtIso = performedAt.toISOString();
-    const performedAtDateKey = toJstDateKey(startOfJstDay(performedAt));
+    const performedAtDateKey = resolvedPerformedAt.scheduledDateKey;
     const completedTomorrowTask = memoTarget.isDueTomorrow;
 
     setMemoOpen(false);
@@ -2878,7 +2875,12 @@ export function KajiApp() {
     }
 
     try {
-      const body: Record<string, unknown> = { memo, skipped, performedAt: performedAtIso };
+      const body: Record<string, unknown> = {
+        memo,
+        skipped,
+        performedAt: performedAtIso,
+        scheduledDate: performedAtDateKey,
+      };
       if (skipped && typeof skipCount === "number") {
         body.skipCount = skipCount;
       }
@@ -4586,7 +4588,7 @@ export function KajiApp() {
         year: "numeric",
         month: "long",
       }).format(calendarMonthCursor);
-      const selectedDate = startOfJstDay(new Date(`${calendarSelectedDateKey}T00:00:00+09:00`));
+      const selectedDate = parseDateKey(calendarSelectedDateKey) ?? startOfJstDay(new Date());
       const selectedDateJst = new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000);
       const selectedDateLabel = `${WEEKDAY_SHORT[selectedDateJst.getUTCDay()]} ${selectedDateJst.getUTCDate()}`;
       const previousWeekTarget = shiftTargetDateByWeek(-1);
@@ -5829,8 +5831,8 @@ export function KajiApp() {
         maxHeightClassName="min-h-[52vh] max-h-[86vh]"
       >
         {calendarBlankActionDateKey ? (() => {
-          const selectedDate = startOfJstDay(new Date(`${calendarBlankActionDateKey}T00:00:00+09:00`));
-          const selectedDateLabel = Number.isNaN(selectedDate.getTime())
+          const selectedDate = parseDateKey(calendarBlankActionDateKey);
+          const selectedDateLabel = !selectedDate
             ? calendarBlankActionDateKey
             : `${WEEKDAY_SHORT[new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay()]} ${new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDate()}`;
           const todayDateKey = toJstDateKey(startOfJstDay(new Date()));

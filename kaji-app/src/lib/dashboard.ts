@@ -1,6 +1,6 @@
 import type { Chore, ChoreRecord, User } from "@prisma/client";
 
-import { addDays, diffDaysFloor, startOfJstDay } from "@/lib/time";
+import { addDays, diffDaysFloor, parseDateKey, startOfJstDay } from "@/lib/time";
 import type { ChoreWithComputed, StatsPeriodKey } from "@/lib/types";
 
 type ChoreWithLatest = Chore & {
@@ -90,9 +90,10 @@ export function getStatsRange(
   if (period === "custom") {
     if (!customFrom || !customTo) return null;
 
-    const from = new Date(`${customFrom}T00:00:00+09:00`);
-    const to = new Date(`${customTo}T23:59:59.999+09:00`);
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
+    const from = parseDateKey(customFrom);
+    const toStart = parseDateKey(customTo);
+    if (!from || !toStart) return null;
+    const to = new Date(addDays(toStart, 1).getTime() - 1);
     if (from > to) return null;
 
     return { start: from, end: to, label: `${customFrom} - ${customTo}` };
