@@ -81,6 +81,7 @@ import {
 import { addDateKeyDays, addDays, buildHomeDateKeys, compareDateKey, formatDateKey, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
 import { countScheduledOccurrencesOnDate as countScheduledOccurrencesOnDateByReadModel } from "@/lib/occurrence-read-model";
 import { normalizeThemeMode, resolveTheme, THEME_MODE_STORAGE_KEY, type ThemeMode } from "@/lib/theme-mode";
+import { normalizeThemeColor, THEME_COLOR_STORAGE_KEY, type ThemeColor } from "@/lib/theme-color";
 
 const JA_COLLATOR = new Intl.Collator("ja");
 type ListSortKey = "kana" | "due" | "icon";
@@ -135,7 +136,7 @@ type AssignmentTabKey = "daily";
 const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily"] as const;
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
-type SettingsViewKey = "menu" | "my-report" | "my-records" | "push" | "push-guide" | "family" | "manage" | "sleep";
+type SettingsViewKey = "menu" | "my-report" | "my-records" | "push" | "push-guide" | "family" | "manage" | "sleep" | "theme";
 type PushGuidePlatform = "android" | "iphone";
 type PushGuideContent = {
   setupTitle: string;
@@ -194,6 +195,16 @@ const THEME_MODE_ITEMS: Array<{ key: ThemeMode; label: string }> = [
   { key: "system", label: "システム" },
   { key: "light", label: "ライト" },
   { key: "dark", label: "ダーク" },
+];
+const THEME_COLOR_ITEMS: Array<{
+  key: ThemeColor;
+  label: string;
+  preview: string;
+}> = [
+  { key: "orange", label: "オレンジ", preview: "#f97316" },
+  { key: "blue", label: "ブルー", preview: "#2563eb" },
+  { key: "emerald", label: "エメラルド", preview: "#059669" },
+  { key: "rose", label: "ローズ", preview: "#e11d48" },
 ];
 const ONBOARDING_PRESET_CHORES = [
   { title: "食器洗い", icon: "cooking-pot", iconColor: "#33C28A", bgColor: "#EAF7EF", intervalDays: 1 },
@@ -525,6 +536,7 @@ export function KajiApp() {
   });
   const [themeMode, setThemeMode] = useState<ThemeMode>("system");
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+  const [themeColor, setThemeColor] = useState<ThemeColor>("orange");
   const themeModeRef = useRef<ThemeMode>("system");
 
   const [records, setRecords] = useState<ChoreRecordItem[]>([]);
@@ -669,6 +681,12 @@ export function KajiApp() {
       themeColorMeta.content = nextResolved === "dark" ? THEME_COLOR_DARK : THEME_COLOR_LIGHT;
     }
   }, []);
+  const applyThemeColor = useCallback((nextColor: ThemeColor) => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.dataset.themeColor = nextColor;
+    setThemeColor(nextColor);
+  }, []);
   const applyThemeMode = useCallback((mode: ThemeMode) => {
     if (typeof window === "undefined") return;
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -683,8 +701,15 @@ export function KajiApp() {
     window.localStorage.setItem(THEME_MODE_STORAGE_KEY, nextMode);
     applyThemeMode(nextMode);
   }, [applyThemeMode]);
+  const handleThemeColorChange = useCallback((nextColor: ThemeColor) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(THEME_COLOR_STORAGE_KEY, nextColor);
+    applyThemeColor(nextColor);
+  }, [applyThemeColor]);
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const initialColor = normalizeThemeColor(window.localStorage.getItem(THEME_COLOR_STORAGE_KEY));
+    applyThemeColor(initialColor);
     const initialMode = normalizeThemeMode(window.localStorage.getItem(THEME_MODE_STORAGE_KEY));
     applyThemeMode(initialMode);
 
@@ -702,7 +727,7 @@ export function KajiApp() {
     }
     media.addListener(handleSystemThemeChange);
     return () => media.removeListener(handleSystemThemeChange);
-  }, [applyResolvedTheme, applyThemeMode]);
+  }, [applyResolvedTheme, applyThemeColor, applyThemeMode]);
 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [assignmentMounted, setAssignmentMounted] = useState(false);
@@ -5515,6 +5540,77 @@ export function KajiApp() {
       );
     }
 
+    if (settingsView === "theme") {
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">テーマカラー</p>
+          </div>
+
+          <p className="text-[13px] font-medium leading-relaxed text-[var(--muted-foreground)]">
+            ライト/ダーク表示とアクセントカラーを切り替えられます。白黒ベースのUIに差し色が適用されます。
+          </p>
+
+          <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+            <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">表示テーマ</p>
+            <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-[var(--secondary)] p-1">
+              {THEME_MODE_ITEMS.map((item) => {
+                const selected = themeMode === item.key;
+                return (
+                  <button
+                    key={`theme-mode-settings-${item.key}`}
+                    type="button"
+                    onClick={() => handleThemeModeChange(item.key)}
+                    className={`rounded-[8px] px-2 py-1.5 text-[12px] font-bold transition-colors ${selected
+                      ? "bg-[var(--card)] text-[var(--foreground)]"
+                      : "text-[var(--muted-foreground)]"
+                      }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">
+              現在の表示: {resolvedTheme === "dark" ? "ダーク" : "ライト"}
+            </p>
+          </div>
+
+          <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+            <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">アクセントカラー</p>
+            <div className="grid grid-cols-2 gap-2">
+              {THEME_COLOR_ITEMS.map((item) => {
+                const selected = themeColor === item.key;
+                return (
+                  <button
+                    key={`theme-color-${item.key}`}
+                    type="button"
+                    onClick={() => handleThemeColorChange(item.key)}
+                    className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-left ${selected
+                      ? "border-[var(--primary)] bg-[var(--app-surface-soft)]"
+                      : "border-[var(--border)] bg-[var(--card)]"
+                      }`}
+                  >
+                    <span
+                      className="h-5 w-5 shrink-0 rounded-full border border-black/10"
+                      style={{ backgroundColor: item.preview }}
+                    />
+                    <span className="flex-1 text-[13px] font-semibold text-[var(--foreground)]">{item.label}</span>
+                    <span className={`material-symbols-rounded text-[18px] ${selected ? "text-[var(--primary)]" : "text-[var(--app-text-tertiary)]"}`}>
+                      {selected ? "check_circle" : "radio_button_unchecked"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex h-full flex-col">
         <div className="space-y-4">
@@ -6513,7 +6609,3 @@ export function KajiApp() {
     </main >
   );
 }
-
-
-
-

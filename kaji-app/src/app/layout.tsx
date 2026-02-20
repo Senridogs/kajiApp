@@ -1,6 +1,7 @@
 ﻿import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { THEME_MODE_STORAGE_KEY } from "@/lib/theme-mode";
+import { THEME_COLOR_STORAGE_KEY } from "@/lib/theme-color";
 
 const SVG_ICON_URL = "/app-icon.svg";
 const ICON_192_URL = "/icon-192-v2.png";
@@ -14,10 +15,13 @@ const themeInitScript = `(() => {
   try {
     const raw = window.localStorage.getItem("${THEME_MODE_STORAGE_KEY}");
     const mode = raw === "light" || raw === "dark" || raw === "system" ? raw : "system";
+    const colorRaw = window.localStorage.getItem("${THEME_COLOR_STORAGE_KEY}");
+    const themeColor = colorRaw === "orange" || colorRaw === "blue" || colorRaw === "emerald" || colorRaw === "rose" ? colorRaw : "orange";
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const resolved = mode === "system" ? (prefersDark ? "dark" : "light") : mode;
     const root = document.documentElement;
     root.classList.toggle("dark", resolved === "dark");
+    root.dataset.themeColor = themeColor;
     root.style.colorScheme = resolved;
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
     if (themeColorMeta instanceof HTMLMetaElement) {
