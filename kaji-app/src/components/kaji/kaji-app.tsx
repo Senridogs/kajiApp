@@ -118,8 +118,16 @@ const REPORT_MONTH_LABELS: Record<(typeof REPORT_MONTH_OFFSETS)[number], string>
 const CALENDAR_WEEK_DAYS = 7;
 const MAX_DAY_DOT_SLOTS = 6;
 const DAY_DOT_VISIBLE_WHEN_OVERFLOW = 5;
+const TAP_PRIORITY_ZONE_SELECTOR = "[data-tap-priority-zone='true']";
 
 type TabKey = "home" | "list" | "records" | "stats" | "settings";
+const TAB_HEADER_MIN_HEIGHT_BY_TAB: Record<TabKey, number> = {
+  home: TAB_HEADER_HEIGHT_FALLBACK,
+  list: TAB_HEADER_HEIGHT_FALLBACK,
+  records: 88,
+  stats: 132,
+  settings: TAB_HEADER_HEIGHT_FALLBACK,
+};
 const TAB_ORDER: readonly TabKey[] = ["home", "records", "list", "stats"] as const;
 type AssignmentTabKey = "daily";
 const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily"] as const;
@@ -794,13 +802,14 @@ export function KajiApp() {
   const recordsHeaderRef = useRef<HTMLDivElement | null>(null);
   const statsHeaderRef = useRef<HTMLDivElement | null>(null);
   const settingsHeaderRef = useRef<HTMLDivElement | null>(null);
-  const [listHeaderHeight, setListHeaderHeight] = useState(TAB_HEADER_HEIGHT_FALLBACK);
-  const [recordsHeaderHeight, setRecordsHeaderHeight] = useState(TAB_HEADER_HEIGHT_FALLBACK);
-  const [statsHeaderHeight, setStatsHeaderHeight] = useState(TAB_HEADER_HEIGHT_FALLBACK);
-  const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(TAB_HEADER_HEIGHT_FALLBACK);
+  const [listHeaderHeight, setListHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.list);
+  const [recordsHeaderHeight, setRecordsHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.records);
+  const [statsHeaderHeight, setStatsHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.stats);
+  const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.settings);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
   const sectionTouchStartRef = useRef<{ x: number; y: number } | null>(null);
   const sectionSwipeSuppressedRef = useRef(false);
+  const tapPriorityZoneActiveRef = useRef(false);
   const pullStartYRef = useRef(0);
   const pullStartXRef = useRef(0);
   const pullStartScrollTopRef = useRef(0);
@@ -814,6 +823,24 @@ export function KajiApp() {
 
   const sessionUser = boot?.sessionUser ?? null;
   const chores = boot?.chores ?? [];
+
+  const getTabHeaderHeight = useCallback((tab: TabKey) => {
+    const measuredHeight =
+      tab === "home"
+        ? homeHeaderHeight
+        : tab === "list"
+          ? listHeaderHeight
+          : tab === "records"
+            ? recordsHeaderHeight
+            : tab === "stats"
+              ? statsHeaderHeight
+              : settingsHeaderHeight;
+    return Math.max(measuredHeight, TAB_HEADER_MIN_HEIGHT_BY_TAB[tab]);
+  }, [homeHeaderHeight, listHeaderHeight, recordsHeaderHeight, settingsHeaderHeight, statsHeaderHeight]);
+
+  const isTapPriorityTarget = useCallback((target: EventTarget | null) => {
+    return Boolean((target as HTMLElement | null)?.closest(TAP_PRIORITY_ZONE_SELECTOR));
+  }, []);
   const calendarQuickRecordChores = useMemo(
     () =>
       [...chores]
@@ -1649,7 +1676,8 @@ export function KajiApp() {
 
     const handleNativeTouchMove = (event: globalThis.TouchEvent) => {
       if (assignmentOpen || pullRefreshing) return;
-      if (!pullEligibleRef.current) return;
+      if (!pullEligibleRef.current || tapPriorityZoneActiveRef.current) return;
+      if (isTapPriorityTarget(event.target)) return;
 
       const touch = event.touches[0];
       if (!touch) return;
@@ -1671,7 +1699,7 @@ export function KajiApp() {
     return () => {
       scroller.removeEventListener("touchmove", handleNativeTouchMove);
     };
-  }, [assignmentOpen, pullRefreshing]);
+  }, [assignmentOpen, isTapPriorityTarget, pullRefreshing]);
 
   const buildRecordMutationKey = useCallback((choreId: string, dateKey: string) => `${choreId}:${dateKey}`, []);
 
@@ -3438,6 +3466,10 @@ export function KajiApp() {
       }
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
+      if (!touch || !scroller) return;
+      tapPriorityZoneActiveRef.current = isTapPriorityTarget(event.target);
+      pullStartScrollTopRef.current = scroller.scrollTop;
+      if (tapPriorityZoneActiveRef.current || scroller.scrollTop > 0) {
       if (!touch || !scroller) {
         logPullGuard("touchstart", "missing_touch_or_scroller", { hasTouch: Boolean(touch), hasScroller: Boolean(scroller) });
         return;
@@ -3458,11 +3490,14 @@ export function KajiApp() {
       pullStartYRef.current = touch.clientY;
       pullStartXRef.current = touch.clientX;
     },
+    [assignmentOpen, isTapPriorityTarget, pullRefreshing, settingsOpen],
     [assignmentOpen, logPullGuard, pullRefreshEnabled, pullRefreshing, settingsOpen],
   );
 
   const handleMainScrollTouchMove = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
+      if (!pullRefreshEnabled) return;
+      if (!pullEligibleRef.current || pullRefreshing || tapPriorityZoneActiveRef.current) return;
       if (!pullRefreshEnabled) {
         logPullGuard("touchmove", "disabled");
         return;
@@ -3568,6 +3603,7 @@ export function KajiApp() {
         logPullGuard("touchend", "gesture_end", { pullDistance });
         event.stopPropagation();
       }
+      tapPriorityZoneActiveRef.current = false;
       endMainScrollPullGesture();
     },
     [endMainScrollPullGesture, logPullGuard, pullDistance, pullRefreshEnabled],
@@ -3583,6 +3619,7 @@ export function KajiApp() {
         logPullGuard("touchcancel", "gesture_cancel", { pullDistance });
         event.stopPropagation();
       }
+      tapPriorityZoneActiveRef.current = false;
       endMainScrollPullGesture();
     },
     [endMainScrollPullGesture, logPullGuard, pullDistance, pullRefreshEnabled],
@@ -4583,7 +4620,7 @@ export function KajiApp() {
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
       return (
-        <div className="space-y-4" style={{ paddingTop: homeHeaderHeight }}>
+        <div className="space-y-4" style={{ paddingTop: getTabHeaderHeight("home") }}>
           <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             {hasAnyUpcomingChores ? (
@@ -4746,7 +4783,7 @@ export function KajiApp() {
       };
 
       return (
-        <div className="space-y-4" style={{ paddingTop: listHeaderHeight }}>
+        <div className="space-y-4" style={{ paddingTop: getTabHeaderHeight("list") }}>
           <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             {calendarExpanded ? (
@@ -4931,9 +4968,21 @@ export function KajiApp() {
 
     if (tab === "records") {
       return (
-        <div className="space-y-4" style={{ paddingTop: recordsHeaderHeight }}>
+        <div className="space-y-4" style={{ paddingTop: getTabHeaderHeight("records") }}>
           <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
+            <div data-tap-priority-zone="true" className="-mx-1 px-1 py-1">
+              <button
+                type="button"
+                onClick={() => {
+                  openStandaloneScreen("my-records", "records");
+                }}
+                className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
+              >
+                <span className="text-[14px] font-semibold text-[#202124]">わたしのきろくを見る</span>
+                <ChevronRight size={16} color="#9AA0A6" />
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => openStandaloneScreen("my-records", "records")}
@@ -4956,7 +5005,7 @@ export function KajiApp() {
         householdReportDiff > 0 ? `+${householdReportDiff}` : `${householdReportDiff}`;
 
       return (
-        <div className="space-y-5" style={{ paddingTop: statsHeaderHeight }}>
+        <div className="space-y-5" style={{ paddingTop: getTabHeaderHeight("stats") }}>
           <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             <button
@@ -5556,6 +5605,11 @@ export function KajiApp() {
           const isCalendarSurface =
             activeTabRef.current === "list" &&
             Boolean(target?.closest("[data-calendar-swipe-surface='true']"));
+          const isTapPriorityZone =
+            activeTabRef.current === "records" &&
+            Boolean(target?.closest(TAP_PRIORITY_ZONE_SELECTOR));
+          sectionSwipeSuppressedRef.current = isCalendarSurface || isTapPriorityZone;
+          if (isCalendarSurface || isTapPriorityZone) {
           sectionSwipeSuppressedRef.current = isCalendarSurface || isTapPrioritySurface;
           if (sectionSwipeSuppressedRef.current) {
             swipe.onTouchCancel();
@@ -5604,10 +5658,12 @@ export function KajiApp() {
           sectionTouchStartRef.current = null;
           if (sectionSwipeSuppressedRef.current) {
             sectionSwipeSuppressedRef.current = false;
+            tapPriorityZoneActiveRef.current = false;
             assignmentEdgeSwipe.onTouchEnd(e);
             return;
           }
           swipe.onTouchEnd(e);
+          tapPriorityZoneActiveRef.current = false;
           assignmentEdgeSwipe.onTouchEnd(e);
         }}
         onTouchCancel={() => {
@@ -5616,11 +5672,12 @@ export function KajiApp() {
             swipe.onTouchCancel();
           }
           sectionSwipeSuppressedRef.current = false;
+          tapPriorityZoneActiveRef.current = false;
           assignmentEdgeSwipe.onTouchCancel();
         }}
       >
         <div className="relative h-full overflow-hidden">
-          <div className="pointer-events-none absolute left-0 right-0 top-0 z-30 overflow-hidden" style={isSwipeSheetMoving ? undefined : { height: activeTab === "home" ? homeHeaderHeight : activeTab === "list" ? listHeaderHeight : activeTab === "records" ? recordsHeaderHeight : activeTab === "stats" ? statsHeaderHeight : settingsHeaderHeight }}>
+          <div className="pointer-events-none absolute left-0 right-0 top-0 z-30 overflow-hidden" style={isSwipeSheetMoving ? undefined : { height: getTabHeaderHeight(activeTab) }}>
             <div
               className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
               style={{
