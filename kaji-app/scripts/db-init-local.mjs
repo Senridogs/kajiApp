@@ -20,4 +20,22 @@ const run = (command, args) => {
 };
 
 run(NPX_COMMAND, ["prisma", "generate"]);
+run(NPX_COMMAND, [
+  "prisma",
+  "db",
+  "execute",
+  "--file",
+  "scripts/drop-is-big-task-column.sql",
+  "--schema",
+  "prisma/schema.prisma",
+]);
 run(NPX_COMMAND, ["prisma", "db", "push", "--skip-generate"]);
+run(NPX_COMMAND, [
+  "prisma",
+  "db",
+  "execute",
+  "--file",
+  "scripts/apply-schedule-override-duplicate-support.sql",
+  "--schema",
+  "prisma/schema.prisma",
+]);

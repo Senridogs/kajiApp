@@ -4,6 +4,25 @@ export type AppUser = {
   color: string | null;
 };
 
+export type RecordReaction = {
+  id: string;
+  userId: string;
+  userName: string;
+  emoji: string;
+  createdAt: string;
+};
+
+export type ChoreRecordItem = {
+  id: string;
+  performedAt: string;
+  memo: string | null;
+  chore: { id: string; title: string };
+  user: { id: string; name: string };
+  isInitial?: boolean;
+  isSkipped?: boolean;
+  reactions?: RecordReaction[];
+};
+
 export type ChoreWithComputed = {
   id: string;
   title: string;
@@ -11,7 +30,7 @@ export type ChoreWithComputed = {
   iconColor: string;
   bgColor: string;
   intervalDays: number;
-  isBigTask: boolean;
+  dailyTargetCount: number;
   archived: boolean;
   defaultAssigneeId: string | null;
   defaultAssigneeName: string | null;
@@ -19,6 +38,7 @@ export type ChoreWithComputed = {
   lastPerformerName: string | null;
   lastPerformerId: string | null;
   lastRecordId: string | null;
+  lastRecordIsInitial: boolean;
   lastRecordSkipped: boolean;
   dueAt: string | null;
   isDueToday: boolean;
@@ -27,6 +47,16 @@ export type ChoreWithComputed = {
   overdueDays: number;
   daysSinceLast: number | null;
   doneToday: boolean;
+};
+
+export type HomeProgressState = "done" | "skipped" | "pending";
+
+export type HomeProgressEntry = {
+  total: number;
+  completed: number;
+  skipped: number;
+  pending: number;
+  latestState: HomeProgressState;
 };
 
 export type ChoreAssignmentEntry = {
@@ -38,8 +68,7 @@ export type ChoreAssignmentEntry = {
 
 export type NotificationSettings = {
   reminderTimes: string[];
-  notifyDueToday: boolean;
-  remindDailyIfOverdue: boolean;
+  notifyReminder: boolean;
   notifyCompletion: boolean;
 };
 
@@ -58,7 +87,6 @@ export type StatsChoreUserBreakdown = StatsUserCount & {
 export type StatsChoreCount = {
   choreId: string;
   title: string;
-  isBigTask: boolean;
   count: number;
   userCounts: StatsChoreUserBreakdown[];
 };
@@ -67,7 +95,48 @@ export type StatsResponse = {
   rangeLabel: string;
   choreCounts: StatsChoreCount[];
   userCounts: StatsUserCount[];
-  bigTaskUserCounts: StatsUserCount[];
+};
+
+export type HouseholdReportResponse = {
+  currentMonthTotal: number;
+  previousMonthTotal: number;
+  choreCounts: Array<{
+    choreId: string;
+    title: string;
+    icon: string;
+    iconColor: string;
+    bgColor: string;
+    count: number;
+  }>;
+  staleTasks: Array<{
+    choreId: string;
+    title: string;
+    icon: string;
+    iconColor: string;
+    bgColor: string;
+    lastPerformedAt: string;
+    intervalDays: number;
+    daysSinceLast: number;
+  }>;
+};
+
+export type MyStatsResponse = {
+  currentMonthTotal: number;
+  choreCounts: Array<{
+    choreId: string;
+    title: string;
+    icon: string;
+    iconColor: string;
+    bgColor: string;
+    count: number;
+  }>;
+};
+
+export type ChoreScheduleOverride = {
+  id: string;
+  choreId: string;
+  date: string;
+  createdAt: string;
 };
 
 export type BootstrapResponse = {
@@ -77,9 +146,17 @@ export type BootstrapResponse = {
   chores: ChoreWithComputed[];
   todayChores: ChoreWithComputed[];
   tomorrowChores: ChoreWithComputed[];
-  upcomingBigChores: ChoreWithComputed[];
   assignments: ChoreAssignmentEntry[];
   notificationSettings: NotificationSettings | null;
   customIcons: Array<{ id: string; label: string; icon: string; iconColor: string; bgColor: string }>;
+  scheduleOverrides: ChoreScheduleOverride[];
+  homeProgressByDate: Record<string, Record<string, HomeProgressEntry>>;
   needsRegistration: boolean;
+};
+
+export type CalendarMonthSummaryResponse = {
+  month: string;
+  countsByDate: Record<string, number>;
+  occurrenceByDate: Record<string, Record<string, { scheduled: number; completed: number; skipped: number; pending: number }>>;
+  generatedAt: string;
 };

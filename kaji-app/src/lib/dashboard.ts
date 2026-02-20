@@ -5,27 +5,36 @@ import type { ChoreWithComputed, StatsPeriodKey } from "@/lib/types";
 
 type ChoreWithLatest = Chore & {
   records: (ChoreRecord & { user: Pick<User, "id" | "name"> })[];
-  defaultAssignee?: Pick<User, "id" | "name"> | null;
+};
+
+type ChoreRecordWithOptionalSkip = ChoreRecord & {
+  isSkipped?: boolean | null;
 };
 
 export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWithComputed {
-  const latest = chore.records[0];
-  const lastPerformedAt = latest?.performedAt ?? null;
-  const dueBase = lastPerformedAt ?? chore.createdAt;
-  const dueAt = addDays(dueBase, chore.intervalDays);
   const todayStart = startOfJstDay(now);
   const tomorrowStart = addDays(todayStart, 1);
   const dayAfterTomorrow = addDays(todayStart, 2);
+  const latestRecord = chore.records[0];
+  // Future completion records are treated as pending to keep metrics/schedule consistent.
+  const latest =
+    latestRecord && latestRecord.performedAt < tomorrowStart
+      ? latestRecord
+      : undefined;
+  const lastPerformedAt = latest?.performedAt ?? null;
+  const dueBase = lastPerformedAt ?? chore.createdAt;
+  const dueAt = addDays(dueBase, chore.intervalDays);
 
   const isDueToday = !!dueAt && dueAt >= todayStart && dueAt < tomorrowStart;
   const isDueTomorrow = !!dueAt && dueAt >= tomorrowStart && dueAt < dayAfterTomorrow;
   const isOverdue = !!dueAt && dueAt < todayStart;
   const overdueDays = isOverdue && dueAt ? diffDaysFloor(dueAt, todayStart) : 0;
   const daysSinceLast = lastPerformedAt ? diffDaysFloor(lastPerformedAt, now) : null;
-  const doneToday = !!latest && latest.performedAt >= todayStart;
+  const isInitial = latest?.isInitial ?? false;
+  const doneToday = !!latest && !isInitial && latest.performedAt >= todayStart;
 
-  // Use 'any' cast for isSkipped if types are not up to date
-  const isSkipped = (latest as any)?.isSkipped ?? false;
+  const latestWithOptionalSkip = latest as ChoreRecordWithOptionalSkip | undefined;
+  const isSkipped = latestWithOptionalSkip?.isSkipped ?? false;
 
   return {
     id: chore.id,
@@ -34,14 +43,15 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
     iconColor: chore.iconColor,
     bgColor: chore.bgColor,
     intervalDays: chore.intervalDays,
-    isBigTask: chore.isBigTask,
+    dailyTargetCount: chore.dailyTargetCount,
     archived: chore.archived,
-    defaultAssigneeId: chore.defaultAssigneeId ?? null,
-    defaultAssigneeName: chore.defaultAssignee?.name ?? null,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
     lastPerformedAt: lastPerformedAt ? lastPerformedAt.toISOString() : null,
     lastPerformerName: isSkipped ? "スキップ" : (latest?.user.name ?? null),
     lastPerformerId: latest?.user.id ?? null,
     lastRecordId: latest?.id ?? null,
+    lastRecordIsInitial: isInitial,
     lastRecordSkipped: isSkipped,
     dueAt: dueAt ? dueAt.toISOString() : null,
     isDueToday,
@@ -59,30 +69,9 @@ export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()
   );
   const tomorrowChores = chores.filter(
     (c) =>
-      (c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue))) &&
-      !(c.isBigTask && c.doneToday),
+      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || c.doneToday)),
   );
-  const priorityChoreIds = new Set(
-    [...todayChores, ...tomorrowChores].map((chore) => chore.id),
-  );
-  const bigTaskWindowEnd = addDays(startOfJstDay(now), 40).getTime();
-  const upcomingBigChores = chores
-    .filter((c) => {
-      if (!c.isBigTask || priorityChoreIds.has(c.id) || !c.dueAt) return false;
-      const dueDayTime = startOfJstDay(new Date(c.dueAt)).getTime();
-      return dueDayTime <= bigTaskWindowEnd;
-    })
-    .sort((a, b) => {
-      const aTime = a.dueAt
-        ? startOfJstDay(new Date(a.dueAt)).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      const bTime = b.dueAt
-        ? startOfJstDay(new Date(b.dueAt)).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      return aTime - bTime;
-    });
-
-  return { todayChores, tomorrowChores, upcomingBigChores };
+  return { todayChores, tomorrowChores };
 }
 
 export function getStatsRange(

@@ -1,0 +1,2211 @@
+{
+  "version": "2.8",
+  "children": [
+    {
+      "type": "frame",
+      "id": "uYmcP",
+      "x": 0,
+      "y": 0,
+      "name": "L__Foundation__TokenBoard__Base",
+      "width": 240,
+      "height": 140,
+      "fill": "$bg/base",
+      "stroke": {
+        "align": "inside",
+        "thickness": {
+          "bottom": 1
+        },
+        "fill": "$border/base"
+      },
+      "layout": "vertical",
+      "gap": 8,
+      "padding": 16,
+      "children": [
+        {
+          "type": "text",
+          "id": "n0BAe",
+          "name": "testText",
+          "fill": "$fg/primary",
+          "content": "トークン確認",
+          "fontFamily": "DM Sans",
+          "fontSize": 20,
+          "fontWeight": "700"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "iviuP",
+      "x": 0,
+      "y": 220,
+      "name": "L__Foundation__ComponentGallery__Base",
+      "width": 440,
+      "fill": "$bg/surface",
+      "stroke": {
+        "align": "inside",
+        "thickness": {
+          "bottom": 1
+        },
+        "fill": "$border/base"
+      },
+      "layout": "vertical",
+      "gap": 12,
+      "padding": 12,
+      "children": [
+        {
+          "type": "frame",
+          "id": "mXywU",
+          "name": "AppShell",
+          "reusable": true,
+          "clip": true,
+          "width": 402,
+          "height": 874,
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "text",
+              "id": "EXDzo",
+              "name": "appShellLabel",
+              "fill": "$fg/muted",
+              "content": "AppShell",
+              "fontFamily": "DM Sans",
+              "fontSize": 12,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "ZdwFi",
+          "name": "TopBar",
+          "reusable": true,
+          "width": 402,
+          "height": 64,
+          "fill": "$bg/elevated",
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "padding": [
+            0,
+            16
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "SS5DR",
+              "name": "topBarLabel",
+              "fill": "$fg/secondary",
+              "content": "トップバー",
+              "fontFamily": "DM Sans",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Y8WLw",
+          "name": "BottomNav4",
+          "reusable": true,
+          "width": 402,
+          "height": 84,
+          "fill": "$bg/elevated",
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "top": 1
+            },
+            "fill": "$border/base"
+          },
+          "padding": [
+            12,
+            16,
+            20,
+            16
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "KYmkM",
+              "name": "bottomNav4Label",
+              "fill": "$fg/secondary",
+              "content": "下部ナビ（4タブ）",
+              "fontFamily": "DM Sans",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "HEZzV",
+          "name": "TaskCard",
+          "reusable": true,
+          "width": 362,
+          "height": 88,
+          "fill": "$bg/elevated",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "layout": "vertical",
+          "gap": 6,
+          "padding": 12,
+          "children": [
+            {
+              "type": "text",
+              "id": "J92ps",
+              "name": "taskCardLabel",
+              "fill": "$fg/primary",
+              "content": "家事カード",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "KRqVl",
+          "name": "FeedPostCard",
+          "reusable": true,
+          "width": 362,
+          "height": 132,
+          "fill": "$bg/elevated",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "children": [
+            {
+              "type": "text",
+              "id": "DhRLa",
+              "name": "feedPostCardLabel",
+              "fill": "$fg/primary",
+              "content": "投稿カード",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Pc1ry",
+          "name": "ComposerBar",
+          "reusable": true,
+          "width": 362,
+          "height": 56,
+          "fill": "$bg/elevated",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "gD1ba",
+              "name": "composerBarLabel",
+              "fill": "$fg/secondary",
+              "content": "投稿入力",
+              "fontFamily": "DM Sans",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "qwllS",
+          "name": "MetricCard",
+          "reusable": true,
+          "width": 172,
+          "height": 120,
+          "fill": "$bg/elevated",
+          "cornerRadius": 16,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "layout": "vertical",
+          "gap": 6,
+          "padding": 12,
+          "children": [
+            {
+              "type": "text",
+              "id": "fixz8",
+              "name": "metricCardLabel",
+              "fill": "$fg/secondary",
+              "content": "集計カード",
+              "fontFamily": "DM Sans",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "g7YrQ",
+          "name": "CalendarDayCell",
+          "reusable": true,
+          "width": 46,
+          "height": 58,
+          "fill": "$bg/elevated",
+          "cornerRadius": 12,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "layout": "vertical",
+          "gap": 4,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "h5SEy",
+              "name": "calendarDayCellLabel",
+              "fill": "$fg/secondary",
+              "content": "日",
+              "fontFamily": "DM Sans",
+              "fontSize": 11,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "B2kLa",
+          "name": "ListRow",
+          "reusable": true,
+          "width": 362,
+          "height": 60,
+          "fill": "$bg/elevated",
+          "cornerRadius": 14,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "KMhDH",
+              "name": "listRowLabel",
+              "fill": "$fg/secondary",
+              "content": "リスト行",
+              "fontFamily": "DM Sans",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Yv19x",
+          "name": "DialogBase",
+          "reusable": true,
+          "width": 300,
+          "height": 180,
+          "fill": "$bg/elevated",
+          "cornerRadius": 18,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "layout": "vertical",
+          "gap": 10,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "bwBSl",
+              "name": "dialogBaseLabel",
+              "fill": "$fg/primary",
+              "content": "ダイアログ",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "pdIQq",
+          "name": "SheetBase",
+          "reusable": true,
+          "width": 402,
+          "height": 360,
+          "fill": "$bg/elevated",
+          "cornerRadius": [
+            20,
+            20,
+            0,
+            0
+          ],
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "top": 1
+            },
+            "fill": "$border/base"
+          },
+          "layout": "vertical",
+          "gap": 10,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "e34p9",
+              "name": "sheetBaseLabel",
+              "fill": "$fg/secondary",
+              "content": "シート",
+              "fontFamily": "DM Sans",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "l9f7k",
+          "name": "ToastBase",
+          "reusable": true,
+          "width": 362,
+          "height": 64,
+          "fill": "$bg/elevated",
+          "cornerRadius": 14,
+          "stroke": {
+            "align": "inside",
+            "thickness": {
+              "bottom": 1
+            },
+            "fill": "$border/base"
+          },
+          "padding": [
+            0,
+            12
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "KKjFx",
+              "name": "toastBaseLabel",
+              "fill": "$fg/secondary",
+              "content": "トースト",
+              "fontFamily": "DM Sans",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ds4Ku",
+      "x": 2842,
+      "y": 0,
+      "name": "L__Entry__BootLoading__Loading",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "xLPAj",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateLoadingTop"
+        },
+        {
+          "type": "frame",
+          "id": "qroYW",
+          "name": "lTemplateLoadingBody",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "6oaKi",
+              "name": "lTemplateLoadingTitle",
+              "fill": "$fg/primary",
+              "content": "読込中",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "csxGM",
+              "name": "lTemplateLoadingDesc",
+              "fill": "$fg/muted",
+              "content": "読み込み中...",
+              "fontFamily": "DM Sans",
+              "fontSize": 14,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "id": "nYxfm",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateLoadingBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "8comH",
+      "x": 3324,
+      "y": 0,
+      "name": "L__Entry__Auth__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "uvyof",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "9LMkQ",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "7DGAd",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "GTOtT",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "DyI4D",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "L3Bvt",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "HJND7",
+      "x": 4770,
+      "y": 0,
+      "name": "L__Entry__Onboarding__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "0VKZS",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "FkZyt",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "n5seS",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "LCDIY",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "J86M9",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "UcKqi",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "8cgob",
+      "x": 6698,
+      "y": 0,
+      "name": "L__Entry__OnboardingBulkSelect__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "lYdtJ",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "2H37H",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "aGSU6",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "mgaal",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "ZwOx3",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "Q33Mg",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "yZ7A2",
+      "x": 7180,
+      "y": 0,
+      "name": "L__Tab__Home__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "8xjDs",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "UcSvS",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "uIhHR",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "w1ft6",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "e8cd2",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "gPsXK",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "MidWq",
+      "x": 9108,
+      "y": 0,
+      "name": "L__Tab__Records__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "zkdr9",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "8aIyc",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "5bIrI",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "FvcJx",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "jg2XU",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "JYrEm",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "8BAty",
+      "x": 11036,
+      "y": 0,
+      "name": "L__Tab__CalendarWeek__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "cB014",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "Tt1b6",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "W1BgV",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "DnOIJ",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "fFEKM",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "MsK1U",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "unoXo",
+      "x": 12964,
+      "y": 0,
+      "name": "L__Tab__CalendarMonth__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "Y0XrG",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "ypZ4q",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "lctZ5",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "yOYy4",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "hCiCr",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "xWIwq",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "UB3VM",
+      "x": 14892,
+      "y": 0,
+      "name": "L__Tab__Stats__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "koVOY",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "rxN5U",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "IU3P2",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "ARBnE",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "wAqlF",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "PrZEo",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "svijk",
+      "x": 16820,
+      "y": 0,
+      "name": "L__SettingsDrawer__Menu__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "bKM7O",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "6UqrE",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "Agi40",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "7NVFN",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "Re9Ef",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "a38Tn",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "8E06o",
+      "x": 17302,
+      "y": 0,
+      "name": "L__SettingsDrawer__Push__NormalOff",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "ahiiZ",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "L9zLy",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "FwW66",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "ASDCr",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "cLJBK",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "FC7TA",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "PiSHP",
+      "x": 19712,
+      "y": 0,
+      "name": "L__SettingsDrawer__PushGuide__Android",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "TCd3H",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "v5Dqc",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "ibPfD",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "3nYHh",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "mMWsI",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "Cqawy",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "e9cS7",
+      "x": 20676,
+      "y": 0,
+      "name": "L__SettingsDrawer__Family__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "L7bvc",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "BP4JU",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "ZYJ7a",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "xasGQ",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "H2xCv",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "OI4Kl",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "bSiMy",
+      "x": 22604,
+      "y": 0,
+      "name": "L__SettingsDrawer__ManageList__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "oymff",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "evQ1B",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "wx546",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "KsN02",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "RBXBL",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "9bi8G",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "sHo8i",
+      "x": 24532,
+      "y": 0,
+      "name": "L__SettingsDrawer__ManageDetail__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "JwMs3",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "jDPOE",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "FuR2f",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "9W339",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "rv1x5",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "DMbP6",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "nAHRa",
+      "x": 26460,
+      "y": 0,
+      "name": "L__SettingsDrawer__MyReport__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "us3vo",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "fEsoV",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "tF2wZ",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "hhQk8",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "I1Cqo",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "jPvCi",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Zkb8V",
+      "x": 28388,
+      "y": 0,
+      "name": "L__SettingsDrawer__MyRecords__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "N8XQu",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "W0mhB",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "S7GuE",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "sBhkV",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "7cOEk",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "uczcK",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "wSkHF",
+      "x": 30316,
+      "y": 0,
+      "name": "L__SettingsDrawer__Sleep__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "JLKOv",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "JdbRQ",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "m3xgg",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "mUwFY",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "1gioh",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "tfoqC",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "HlDFy",
+      "x": 31280,
+      "y": 0,
+      "name": "L__Standalone__ManageList__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "s14bh",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "ogEpF",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "2778S",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "pcywn",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "xwLRD",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "9PoCU",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "g88I3",
+      "x": 33208,
+      "y": 0,
+      "name": "L__Standalone__ManageDetail__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "gxgGE",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "9djTI",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "6HSLr",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "oX8hH",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "tWtv7",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "23CMg",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "QMNtK",
+      "x": 35136,
+      "y": 0,
+      "name": "L__Standalone__MyReport__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "gqcF3",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "YxH5f",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "BLUv2",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "23WOI",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "wg99g",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "26SsJ",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "eDBXR",
+      "x": 37064,
+      "y": 0,
+      "name": "L__Standalone__MyRecords__Normal",
+      "clip": true,
+      "width": 402,
+      "height": 874,
+      "fill": "$bg/base",
+      "layout": "vertical",
+      "children": [
+        {
+          "id": "wsVD9",
+          "type": "ref",
+          "ref": "ZdwFi",
+          "width": "fill_container",
+          "height": 64,
+          "name": "lTemplateNormalTop"
+        },
+        {
+          "type": "frame",
+          "id": "S1wZX",
+          "name": "Body",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg/base",
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "1Avq3",
+              "name": "lTemplateNormalTitle",
+              "fill": "$fg/primary",
+              "content": "通常状態",
+              "fontFamily": "DM Sans",
+              "fontSize": 20,
+              "fontWeight": "700"
+            },
+            {
+              "id": "XavUw",
+              "type": "ref",
+              "ref": "HEZzV",
+              "width": "fill_container",
+              "height": 88,
+              "name": "lTemplateNormalTask"
+            },
+            {
+              "id": "uetx3",
+              "type": "ref",
+              "ref": "KRqVl",
+              "width": "fill_container",
+              "height": 132,
+              "name": "lTemplateNormalFeed"
+            }
+          ]
+        },
+        {
+          "id": "LHtgp",
+          "type": "ref",
+          "ref": "Y8WLw",
+          "width": "fill_container",
+          "height": 84,
+          "name": "lTemplateNormalBottom"
+        }
+      ]
+    }
+  ],
+  "themes": {
+    "theme": [
+      "light",
+      "dark"
+    ]
+  },
+  "variables": {
+    "accent/hover": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#16A34A",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#4ADE80",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "accent/main": {
+      "type": "color",
+      "value": "#22C55E"
+    },
+    "accent/soft": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#DCFCE7",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#052E16",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "bg/base": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FFFFFF",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#000000",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "bg/elevated": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FCFCFC",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#1A1A1A",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "bg/surface": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#F7F7F7",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#121212",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "border/base": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#E5E5E5",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#2A2A2A",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "danger/main": {
+      "type": "color",
+      "value": "#DC2626"
+    },
+    "danger/soft": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#FEE2E2",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#3B0A0A",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "fg/muted": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#8A8A8A",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#A3A3A3",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "fg/primary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#111111",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#F5F5F5",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "fg/secondary": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#4A4A4A",
+          "theme": {
+            "theme": "light"
+          }
+        },
+        {
+          "value": "#D4D4D4",
+          "theme": {
+            "theme": "dark"
+          }
+        }
+      ]
+    },
+    "font/body": {
+      "type": "string",
+      "value": "DM Sans"
+    },
+    "font/display": {
+      "type": "string",
+      "value": "Bricolage Grotesque"
+    },
+    "radius/lg": {
+      "type": "number",
+      "value": 20
+    },
+    "radius/md": {
+      "type": "number",
+      "value": 16
+    },
+    "radius/sm": {
+      "type": "number",
+      "value": 12
+    },
+    "space/12": {
+      "type": "number",
+      "value": 12
+    },
+    "space/16": {
+      "type": "number",
+      "value": 16
+    },
+    "space/20": {
+      "type": "number",
+      "value": 20
+    },
+    "space/24": {
+      "type": "number",
+      "value": 24
+    },
+    "space/4": {
+      "type": "number",
+      "value": 4
+    },
+    "space/8": {
+      "type": "number",
+      "value": 8
+    },
+    "task-user-color-1": {
+      "type": "color",
+      "value": "#7CB9E8"
+    },
+    "task-user-color-2": {
+      "type": "color",
+      "value": "#82D9A5"
+    },
+    "task-user-color-3": {
+      "type": "color",
+      "value": "#B8A9E8"
+    },
+    "task-user-color-4": {
+      "type": "color",
+      "value": "#F6D57E"
+    }
+  }
+}

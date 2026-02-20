@@ -1,7 +1,5 @@
 import webpush from "web-push";
 
-import { formatJst } from "@/lib/time";
-
 type PushPayload =
   | {
       type: "reminder";
@@ -11,6 +9,12 @@ type PushPayload =
     }
   | {
       type: "completion";
+      title: string;
+      body: string;
+      url?: string;
+    }
+  | {
+      type: "reaction";
       title: string;
       body: string;
       url?: string;
@@ -53,21 +57,17 @@ export async function sendWebPush(
 }
 
 export function buildReminderPayload(params: {
-  chores: Array<{ title: string; isOverdue: boolean; overdueDays: number }>;
+  chores: Array<{ title: string; icon?: string | null }>;
 }): PushPayload {
-  const lines = params.chores.slice(0, 5).map((c) => {
-    if (c.isOverdue) {
-      return `${c.title}（${c.overdueDays}日超過）`;
-    }
-    return `${c.title}（今日）`;
-  });
+  const lines = params.chores.slice(0, 5).map((c) => c.title);
   const remaining = params.chores.length - lines.length;
   if (remaining > 0) {
     lines.push(`ほか${remaining}件`);
   }
+
   return {
     type: "reminder",
-    title: `家事リマインド（${params.chores.length}件）`,
+    title: `今日 ${params.chores.length}件`,
     body: lines.join("\n"),
     url: "/",
   };
@@ -75,17 +75,33 @@ export function buildReminderPayload(params: {
 
 export function buildCompletionPayload(params: {
   choreTitle: string;
+  choreIcon?: string | null;
   userName: string;
   memo?: string | null;
 }): PushPayload {
-  const lines = [`${params.userName} が ${params.choreTitle} を完了しました`];
+  const lines = [`${params.userName}さんがやってくれたよ`];
   if (params.memo?.trim()) {
     lines.push(params.memo.trim());
   }
+
   return {
     type: "completion",
-    title: lines[0],
-    body: lines.slice(1).join("\n"),
+    title: params.choreTitle,
+    body: lines.join("\n"),
+    url: "/",
+  };
+}
+
+export function buildReactionPayload(params: {
+  reactorName: string;
+  emoji: string;
+  choreTitle: string;
+  choreIcon?: string | null;
+}): PushPayload {
+  return {
+    type: "reaction",
+    title: `${params.reactorName}がリアクション`,
+    body: `${params.choreTitle} にリアクションしました`,
     url: "/",
   };
 }

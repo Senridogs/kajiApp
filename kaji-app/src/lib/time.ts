@@ -1,4 +1,5 @@
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function toJstDateKey(date: Date): string {
   const jst = new Date(date.getTime() + JST_OFFSET_MS);
@@ -18,6 +19,43 @@ export function startOfJstDay(date: Date): Date {
 
 export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+export function parseDateKey(dateKey: string): Date | null {
+  const match = DATE_KEY_PATTERN.exec(dateKey);
+  if (!match) return null;
+
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const parsed = new Date(Date.UTC(year, month - 1, day) - JST_OFFSET_MS);
+  return toJstDateKey(parsed) === dateKey ? parsed : null;
+}
+
+export function formatDateKey(date: Date): string {
+  return toJstDateKey(startOfJstDay(date));
+}
+
+export function addDateKeyDays(dateKey: string, days: number): string | null {
+  const baseDate = parseDateKey(dateKey);
+  if (!baseDate) return null;
+  return formatDateKey(addDays(baseDate, days));
+}
+
+export function compareDateKey(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
+export function buildHomeDateKeys(now = new Date()) {
+  const todayStart = startOfJstDay(now);
+  const yesterdayStart = addDays(todayStart, -1);
+  const tomorrowStart = addDays(todayStart, 1);
+  return {
+    today: toJstDateKey(todayStart),
+    yesterday: toJstDateKey(yesterdayStart),
+    tomorrow: toJstDateKey(tomorrowStart),
+  };
 }
 
 export function diffDaysFloor(from: Date, to: Date): number {
@@ -52,4 +90,3 @@ export function nowJstHourMinute(now = new Date()): string {
 
   return `${parts.hour ?? "00"}:${parts.minute ?? "00"}`;
 }
-

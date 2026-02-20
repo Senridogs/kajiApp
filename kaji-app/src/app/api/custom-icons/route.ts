@@ -7,7 +7,7 @@ import { touchHousehold } from "@/lib/sync";
 export async function GET() {
     const session = await getSession();
     if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return NextResponse.json({ error: "認証情報がありません。" }, { status: 401 });
     }
 
     const icons = await prisma.customIcon.findMany({
@@ -22,7 +22,7 @@ export async function GET() {
 export async function POST(request: Request) {
     const session = await getSession();
     if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return NextResponse.json({ error: "認証情報がありません。" }, { status: 401 });
     }
 
     const body = (await request.json()) as {
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     };
 
     if (!body.label || !body.icon || !body.iconColor || !body.bgColor) {
-        return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+        return NextResponse.json({ error: "必須項目が不足しています。" }, { status: 400 });
     }
 
     const created = await prisma.customIcon.create({

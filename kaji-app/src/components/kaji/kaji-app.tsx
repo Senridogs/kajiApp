@@ -1,16 +1,19 @@
 ﻿"use client";
 
-import { FormEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { type CSSProperties, FormEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  Copy,
   ChevronDown,
   ChevronLeft,
-  ChevronUp,
+  ChevronRight,
   Loader2,
+  Minus,
   Plus,
+  Share2,
   User,
-  Users,
 } from "lucide-react";
 
+import { ActionButton } from "@/components/kaji/action-button";
 import { BottomSheet } from "@/components/kaji/bottom-sheet";
 import {
   ChoreEditor,
@@ -18,25 +21,31 @@ import {
   type ChoreForm,
   type CustomIconOption,
 } from "@/components/kaji/chore-editor";
+import { ConfirmDialog } from "@/components/kaji/confirm-dialog";
 import { PRIMARY_COLOR, QUICK_ICON_PRESETS, USER_COLOR_PALETTE } from "@/components/kaji/constants";
 import {
+  deleteChoreDialogCopy,
+  infoDialogCopy,
+  recordDateChoiceDialogCopy,
+  rescheduleConfirmDialogCopy,
+  undoRecordDialogCopy,
+} from "@/components/kaji/dialog-copy";
+import {
   apiFetch,
+  darkenColor,
   dueInDaysLabel,
   formatJpDate,
   formatMonthDay,
-  formatTopDate,
+  iconByName,
   relativeLastPerformed,
   urlBase64ToUint8Array,
   lightenColor,
 } from "@/components/kaji/helpers";
-import { StatsView } from "@/components/kaji/stats-view";
 import { useEdgeSwipeBack } from "@/components/kaji/use-edge-swipe-back";
 import { useSwipeTab } from "@/components/kaji/use-swipe-tab";
 import {
-  FamilyCodeCard,
   HomeSectionTitle,
   HomeTaskRow,
-  JoinHouseholdCard,
   ScreenTitle,
   SegmentedFilter,
   SettingToggleRow,
@@ -46,13 +55,33 @@ import {
 import { AnimatedList } from "@/components/ui/animated-list";
 import {
   BootstrapResponse,
+  CalendarMonthSummaryResponse,
+  ChoreRecordItem,
   ChoreAssignmentEntry,
+  ChoreScheduleOverride,
   ChoreWithComputed,
+  HomeProgressEntry,
+  HouseholdReportResponse,
+  MyStatsResponse,
   NotificationSettings,
   StatsPeriodKey,
   StatsResponse,
 } from "@/lib/types";
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
+import {
+  applyHomeStoredOrder,
+  sanitizeHomeOrderByDate,
+  moveAcrossDates,
+  reorderWithinDate,
+  type HomeOrderByDate,
+  type DropPosition,
+} from "@/lib/home-order";
+import {
+  buildHomeRowsByDate,
+} from "@/lib/home-occurrence";
+import { addDateKeyDays, addDays, buildHomeDateKeys, compareDateKey, formatDateKey, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { countScheduledOccurrencesOnDate as countScheduledOccurrencesOnDateByReadModel } from "@/lib/occurrence-read-model";
+import { normalizeThemeMode, resolveTheme, THEME_MODE_STORAGE_KEY, type ThemeMode } from "@/lib/theme-mode";
+import { normalizeThemeColor, THEME_COLOR_STORAGE_KEY, type ThemeColor } from "@/lib/theme-color";
 
 const JA_COLLATOR = new Intl.Collator("ja");
 type ListSortKey = "kana" | "due" | "icon";
@@ -62,22 +91,178 @@ const LIST_SORT_ITEMS: Array<{ key: ListSortKey; label: string }> = [
   { key: "kana", label: "かな順" },
 ];
 
-const HOME_SECTION_STICKY_FALLBACK_TOP = 72;
+const HOME_SECTION_STICKY_FALLBACK_TOP = 60;
+const TAB_HEADER_HEIGHT_FALLBACK = 72;
 const ASSIGNMENT_SHEET_SLIDE_MS = 240;
 const ASSIGNMENT_BACK_SWIPE_EDGE_PX = 72;
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PULL_REFRESH_TRIGGER_PX = 74;
 const PULL_REFRESH_MAX_PX = 128;
 const PULL_REFRESH_HOLD_PX = 28;
+const PULL_START_DIRECTION_RATIO = 1.05;
+const PULL_START_MIN_MOVEMENT_PX = 5;
+const PULL_HORIZONTAL_CANCEL_RATIO = 1.1;
+const PULL_SCROLL_TOP_EPSILON = 1;
+const REMINDER_HOUR_CHOICES = Array.from({ length: 18 }, (_, idx) => `${String(6 + idx).padStart(2, "0")}:00`);
+const REACTION_CHOICES = ["👏", "❤️", "✨", "🎉"] as const;
+const REACTION_ICON_MAP: Record<(typeof REACTION_CHOICES)[number], { icon: string; color: string }> = {
+  "👏": { icon: "thumb_up", color: PRIMARY_COLOR },
+  "❤️": { icon: "favorite", color: PRIMARY_COLOR },
+  "✨": { icon: "celebration", color: PRIMARY_COLOR },
+  "🎉": { icon: "star", color: PRIMARY_COLOR },
+};
+const WEEKDAY_SHORT = ["日", "月", "火", "水", "木", "金", "土"] as const;
+const REPORT_MONTH_OFFSETS = [2, 1, 0] as const;
+const REPORT_MONTH_LABELS: Record<(typeof REPORT_MONTH_OFFSETS)[number], string> = {
+  0: "今月",
+  1: "先月",
+  2: "2ヶ月前",
+};
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const CALENDAR_WEEK_DAYS = 7;
+const MAX_DAY_DOT_SLOTS = 6;
+const DAY_DOT_VISIBLE_WHEN_OVERFLOW = 5;
+const TAP_PRIORITY_ZONE_SELECTOR = "[data-tap-priority-zone='true']";
 
-type TabKey = "home" | "list" | "stats" | "settings";
-const TAB_ORDER: readonly TabKey[] = ["home", "list", "stats", "settings"] as const;
-type AssignmentTabKey = "daily" | "big";
-const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily", "big"] as const;
+type TabKey = "home" | "list" | "records" | "stats" | "settings";
+const TAB_HEADER_MIN_HEIGHT_BY_TAB: Record<TabKey, number> = {
+  home: TAB_HEADER_HEIGHT_FALLBACK,
+  list: TAB_HEADER_HEIGHT_FALLBACK,
+  records: 88,
+  stats: 132,
+  settings: TAB_HEADER_HEIGHT_FALLBACK,
+};
+const TAB_ORDER: readonly TabKey[] = ["home", "records", "list", "stats"] as const;
+type AssignmentTabKey = "daily";
+const ASSIGNMENT_TAB_ORDER: readonly AssignmentTabKey[] = ["daily"] as const;
 type StatsQueryOptions = { from: string; to: string };
 type CustomDateRange = { from: string; to: string };
+type SettingsViewKey = "menu" | "my-report" | "my-records" | "push" | "push-guide" | "family" | "manage" | "sleep" | "theme";
+type PushGuidePlatform = "android" | "iphone";
+type PushGuideContent = {
+  setupTitle: string;
+  setupSteps: string[];
+  troubleTitle: string;
+  troubleSteps: string[];
+};
+type RescheduleChoice = "tomorrow" | "next_same_weekday" | "custom";
+type RescheduleConfirmOrigin = "sheet" | "drag" | "future-record" | "future-skip";
+type HomeDropInsert = {
+  targetDateKey: string;
+  targetChoreId: string;
+  position: DropPosition;
+};
+type PendingRescheduleConfirm = {
+  origin: RescheduleConfirmOrigin;
+  choreId: string;
+  choreTitle: string;
+  sourceDateKey: string;
+  targetDateKey: string;
+  mergeIfDuplicate: boolean;
+  sourceRecordId?: string;
+  homeDropInsert?: HomeDropInsert;
+};
+type PendingRecordDateChoice = {
+  choreId: string;
+  choreTitle: string;
+  sourceDateKey: string;
+};
+type PerformedAtMode = "today" | "source";
+type MemoFlowMode = "default" | "calendar-quick";
+type CalendarBlankActionMode = "choice" | "record";
+type StandaloneScreenKey = "manage" | "my-report" | "my-records";
+type StandaloneOriginKey = "settings" | "list" | "stats" | "records";
+type HomeRowUiState = "pending" | "done" | "skipped";
+type TimelineRecordGroup = {
+  dateKey: string;
+  label: string;
+  items: ChoreRecordItem[];
+};
+type CalendarScheduleItem = {
+  chore: ChoreWithComputed;
+  scheduled: number;
+  completed: number;
+  skipped: number;
+  pending: number;
+};
 const APP_UPDATE_NOTICE_STORAGE_KEY = "kaji_app_update_notice";
 const APP_UPDATE_TARGET_TAB_STORAGE_KEY = "kaji_app_update_target_tab";
+const ONBOARDING_PENDING_STORAGE_KEY = "kaji_onboarding_pending";
+const HOME_ORDER_STORAGE_KEY_PREFIX = "kaji_home_order_v1";
+const HOME_ORDER_RETENTION_DAYS = 7;
+const THEME_COLOR_LIGHT = "#f7f7f8";
+const THEME_COLOR_DARK = "#0f0f10";
+const THEME_MODE_ITEMS: Array<{ key: ThemeMode; label: string }> = [
+  { key: "system", label: "システム" },
+  { key: "light", label: "ライト" },
+  { key: "dark", label: "ダーク" },
+];
+const THEME_COLOR_ITEMS: Array<{
+  key: ThemeColor;
+  label: string;
+  preview: string;
+}> = [
+  { key: "orange", label: "オレンジ", preview: "#f97316" },
+  { key: "blue", label: "ブルー", preview: "#2563eb" },
+  { key: "emerald", label: "エメラルド", preview: "#059669" },
+  { key: "rose", label: "ローズ", preview: "#e11d48" },
+];
+const ONBOARDING_PRESET_CHORES = [
+  { title: "食器洗い", icon: "cooking-pot", iconColor: "#33C28A", bgColor: "#EAF7EF", intervalDays: 1 },
+  { title: "洗濯", icon: "shirt", iconColor: "#7A6FF0", bgColor: "#EFEAFE", intervalDays: 2 },
+  { title: "ゴミ出し", icon: "recycle", iconColor: "#B97700", bgColor: "#FFF6E3", intervalDays: 3 },
+  { title: "水まわり掃除", icon: "droplets", iconColor: "#4D8BFF", bgColor: "#EEF3FF", intervalDays: 7 },
+] as const;
+const PUSH_GUIDE_CONFIRM_STEPS = [
+  "・「いま通知を送信」で通知が来たらOK",
+  "・届かない時だけ、アプリ再起動後に再テスト",
+  "・さらに届かない時は、端末通知設定を確認",
+] as const;
+const PUSH_GUIDE_CONTENT: Record<PushGuidePlatform, PushGuideContent> = {
+  android: {
+    setupTitle: "Android（ホーム追加からの手順）",
+    setupSteps: [
+      "1. Chromeで家事アプリを開く。",
+      "2. 右上メニューから「ホーム画面に追加」。",
+      "3. 追加したホーム画面アイコンから開く。",
+      "4. ログイン画面が出たらログイン。",
+      "5. 左上ユーザーアイコン→設定→プッシュ通知。",
+      "6. 通知をON（すでにONならそのまま）。",
+      "7. 「いま通知を送信」をタップ（確認用）。",
+      "8. 許可確認が出たら許可。通知が来たらOK。",
+    ],
+    troubleTitle: "届かないとき（Android）",
+    troubleSteps: [
+      "1. 設定 > 通知 > 家事アプリ（またはChrome）を開く。",
+      "2. 「通知を許可」「ロック画面」「音」をONにする。",
+      "3. 設定 > 電池で最適化対象から外す。",
+      "4. アプリに戻り、通知をOFF→ONし直す。",
+      "5. 「いま通知を送信」を押し、1分待つ。",
+      "6. 届けばOK。届かなければ端末再起動後に再テスト。",
+    ],
+  },
+  iphone: {
+    setupTitle: "iPhone（ホーム追加からの手順）",
+    setupSteps: [
+      "1. Safariで家事アプリを開く。",
+      "2. 共有ボタン→「ホーム画面に追加」。",
+      "3. 追加したホーム画面アイコンから開く。",
+      "4. ログイン画面が出たらログイン。",
+      "5. 左上ユーザーアイコン→設定→プッシュ通知。",
+      "6. 通知をON（すでにONならそのまま）。",
+      "7. 「いま通知を送信」をタップ（確認用）。",
+      "8. 許可確認が出たら許可。通知が来たらOK。",
+    ],
+    troubleTitle: "届かないとき（iPhone）",
+    troubleSteps: [
+      "1. 設定 > 通知 > 家事アプリを開く。",
+      "2. 「通知を許可」「ロック画面」「バナー」「サウンド」をON。",
+      "3. 集中モード/おやすみモードで通知が止まっていないか確認。",
+      "4. アプリに戻り、通知をOFF→ONし直す。",
+      "5. 「いま通知を送信」を押し、1分待つ。",
+      "6. 届けばOK。届かなければ端末再起動後に再テスト。",
+    ],
+  },
+};
 type PendingSwipeDelete = {
   toastId: string;
   chore: ChoreWithComputed;
@@ -96,101 +281,140 @@ function defaultCustomDateRange(now = new Date()): CustomDateRange {
 }
 
 function defaultLastPerformedAt(now = new Date()) {
-  const previousDay = addDays(now, -1);
-  return previousDay.toISOString();
+  const todayStart = startOfJstDay(now);
+  return todayStart.toISOString();
+}
+
+function onboardingPresetStartDate(now = new Date()) {
+  const todayStart = startOfJstDay(now);
+  return todayStart.toISOString();
 }
 
 function applyPullResistance(distance: number) {
   return Math.min(PULL_REFRESH_MAX_PX, Math.max(0, distance) * 0.5);
 }
 
-function scheduledDayOffset(
-  chore: Pick<ChoreWithComputed, "dueAt">,
-  targetDate: Date,
-) {
-  if (!chore.dueAt) return null;
-  const dueStart = startOfJstDay(new Date(chore.dueAt));
-  if (Number.isNaN(dueStart.getTime())) return null;
-  const targetStart = startOfJstDay(targetDate);
-  return Math.floor((targetStart.getTime() - dueStart.getTime()) / DAY_IN_MS);
+function isAtPullTop(scrollTop: number) {
+  return scrollTop <= PULL_SCROLL_TOP_EPSILON;
 }
 
-function isScheduledOnDate(
-  chore: Pick<ChoreWithComputed, "dueAt" | "intervalDays">,
-  targetDate: Date,
-) {
-  const diffDays = scheduledDayOffset(chore, targetDate);
-  if (diffDays === null || diffDays < 0) return false;
-  return diffDays % Math.max(1, chore.intervalDays) === 0;
+function resolveDateKeyTimestamp(dateKey: string, now = new Date()) {
+  const parsedDate = parseDateKey(dateKey);
+  if (!parsedDate) {
+    return { parsedDate: null, scheduledDateKey: formatDateKey(now), performedAt: now, hasFutureScheduledDate: false };
+  }
+
+  const scheduledDateKey = formatDateKey(parsedDate);
+  const todayKey = formatDateKey(now);
+  if (compareDateKey(scheduledDateKey, todayKey) > 0) {
+    return { parsedDate, scheduledDateKey, performedAt: now, hasFutureScheduledDate: true };
+  }
+
+  const jstOffsetMs = 9 * 60 * 60 * 1000;
+  const nowJst = new Date(now.getTime() + jstOffsetMs);
+  const elapsedMs =
+    ((nowJst.getUTCHours() * 60 + nowJst.getUTCMinutes()) * 60 + nowJst.getUTCSeconds()) * 1000 +
+    nowJst.getUTCMilliseconds();
+  return {
+    parsedDate,
+    scheduledDateKey,
+    performedAt: new Date(parsedDate.getTime() + elapsedMs),
+    hasFutureScheduledDate: false,
+  };
+}
+
+
+function buildGroupedTimelineRecords(items: ChoreRecordItem[]): TimelineRecordGroup[] {
+  const todayKey = toJstDateKey(startOfJstDay(new Date()));
+  const yesterdayKey = toJstDateKey(addDays(startOfJstDay(new Date()), -1));
+  const filtered = items
+    .filter((record) => !record.isInitial && !record.isSkipped)
+    .slice(0, 60);
+  const groups = new Map<string, ChoreRecordItem[]>();
+  filtered.forEach((record) => {
+    const key = toJstDateKey(startOfJstDay(new Date(record.performedAt)));
+    const list = groups.get(key) ?? [];
+    list.push(record);
+    groups.set(key, list);
+  });
+  return [...groups.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([dateKey, groupedItems]) => ({
+      dateKey,
+      label: isSameDateKey(dateKey, todayKey)
+        ? "今日"
+        : isSameDateKey(dateKey, yesterdayKey)
+          ? "昨日"
+          : (() => {
+            const [, m, d] = dateKey.split("-").map(Number);
+            return `${m}/${d}`;
+          })(),
+      items: groupedItems.sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime()),
+    }));
+}
+
+function toMonthKey(date: Date) {
+  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return `${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthKeyWithOffset(base: string, offset: number) {
+  const [year, month] = base.split("-").map(Number);
+  const target = new Date(Date.UTC(year, month - 1 - offset, 1));
+  return `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function startOfJstWeekMonday(date: Date) {
+  const day = new Date(date);
+  const jstDay = new Date(day.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
+  const diff = jstDay === 0 ? -6 : 1 - jstDay;
+  return startOfJstDay(addDays(day, diff));
+}
+
+function isSameDateKey(a: string, b: string) {
+  return a === b;
+}
+
+function formatDateKeyMonthDayWeekday(dateKey: string) {
+  const date = parseDateKey(dateKey);
+  if (!date) return dateKey;
+  const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const month = jstDate.getUTCMonth() + 1;
+  const day = jstDate.getUTCDate();
+  const weekday = WEEKDAY_SHORT[jstDate.getUTCDay()];
+  return `${month}/${day}(${weekday})`;
 }
 
 function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
   const todayChores = chores.filter((c) => c.isDueToday || c.isOverdue || c.doneToday);
   const tomorrowChores = chores.filter(
     (c) =>
-      (c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue))) &&
-      !(c.isBigTask && c.doneToday),
+      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || c.doneToday)),
   );
-  const priorityChoreIds = new Set([...todayChores, ...tomorrowChores].map((chore) => chore.id));
-  const bigTaskWindowEnd = addDays(startOfJstDay(new Date()), 40).getTime();
-  const upcomingBigChores = chores
-    .filter((c) => {
-      if (!c.isBigTask || priorityChoreIds.has(c.id) || !c.dueAt) return false;
-      const dueDayTime = startOfJstDay(new Date(c.dueAt)).getTime();
-      return dueDayTime <= bigTaskWindowEnd;
-    })
-    .sort((a, b) => {
-      const aTime = a.dueAt
-        ? startOfJstDay(new Date(a.dueAt)).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      const bTime = b.dueAt
-        ? startOfJstDay(new Date(b.dueAt)).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      return aTime - bTime;
-    });
-
-  return { todayChores, tomorrowChores, upcomingBigChores };
-}
-
-/** Assignee priority: self=0 > partner=1 > none=2 */
-function assigneePriority(assigneeId: string | null, sessionUserId: string | null): number {
-  if (!assigneeId) return 2;
-  if (sessionUserId && assigneeId === sessionUserId) return 0;
-  return 1;
+  return { todayChores, tomorrowChores };
 }
 
 function sortHomeSectionChores(
-  sectionKey: "today" | "tomorrow" | "big",
+  sectionKey: "today" | "yesterday" | "tomorrow" | "big",
   chores: ChoreWithComputed[],
-  sessionUserId: string | null,
-  resolveAssigneeId: (choreId: string) => string | null,
+  resolveHomeState: (choreId: string) => HomeRowUiState,
   customIcons: CustomIconOption[],
 ) {
   return [...chores].sort((a, b) => {
-    const aIsSkipped = !!a.lastRecordSkipped && a.doneToday;
-    const bIsSkipped = !!b.lastRecordSkipped && b.doneToday;
-
-    // doneState: 0=not done, 1=done, 2=skipped
-    const getDoneState = (done: boolean, skipped: boolean) => {
-      if (sectionKey === "tomorrow") return 0; // Tomorrow section doesn't show done state sorting in the same way usually
-      if (!done) return 0;
-      return skipped ? 2 : 1;
+    const getDoneStateRank = (state: HomeRowUiState) => {
+      if (sectionKey === "tomorrow") return 0;
+      if (state === "pending") return 0;
+      if (state === "done") return 1;
+      return 2;
     };
 
-    const aState = getDoneState(a.doneToday, aIsSkipped);
-    const bState = getDoneState(b.doneToday, bIsSkipped);
+    const aStateRank = getDoneStateRank(resolveHomeState(a.id));
+    const bStateRank = getDoneStateRank(resolveHomeState(b.id));
 
     // 1. Sort by done state (Not Done -> Done -> Skipped)
-    if (aState !== bState) return aState - bState;
+    if (aStateRank !== bStateRank) return aStateRank - bStateRank;
 
-    // 2. assignee priority: self > partner > none
-    const aAssignee = resolveAssigneeId(a.id);
-    const bAssignee = resolveAssigneeId(b.id);
-    const aPri = assigneePriority(aAssignee, sessionUserId);
-    const bPri = assigneePriority(bAssignee, sessionUserId);
-    if (aPri !== bPri) return aPri - bPri;
-
-    // 3. icon label order
+    // 2. icon label order
     const getLabel = (c: ChoreWithComputed) => {
       const custom = customIcons.find(
         (ci) =>
@@ -209,11 +433,11 @@ function sortHomeSectionChores(
     const labelDiff = JA_COLLATOR.compare(labelA, labelB);
     if (labelDiff !== 0) return labelDiff;
 
-    // 4. kama order (50-on)
+    // 3. kama order (50-on)
     const titleDiff = a.title.localeCompare(b.title, "ja");
     if (titleDiff !== 0) return titleDiff;
 
-    // 5. ID fallback for stability
+    // 4. ID fallback for stability
     return a.id.localeCompare(b.id);
   });
 }
@@ -233,7 +457,6 @@ function removeChoreFromBootstrap(
     chores: nextChores,
     todayChores: split.todayChores,
     tomorrowChores: split.tomorrowChores,
-    upcomingBigChores: split.upcomingBigChores,
   };
 }
 
@@ -251,7 +474,6 @@ function restoreChoreToBootstrap(
     chores: nextChores,
     todayChores: split.todayChores,
     tomorrowChores: split.tomorrowChores,
-    upcomingBigChores: split.upcomingBigChores,
   };
 }
 
@@ -272,6 +494,21 @@ function mergeAssignments(
   return merged;
 }
 
+function sameHomeOrderByDate(a: HomeOrderByDate, b: HomeOrderByDate) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    const left = a[key] ?? [];
+    const right = b[key] ?? [];
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) return false;
+    }
+  }
+  return true;
+}
+
 export function KajiApp() {
   const [boot, setBoot] = useState<BootstrapResponse | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -287,6 +524,7 @@ export function KajiApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
+  const [taskBanner, setTaskBanner] = useState<{ message: string; tone: "green" | "blue" } | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window === "undefined") return "home";
     const storedTab = window.sessionStorage.getItem(APP_UPDATE_TARGET_TAB_STORAGE_KEY);
@@ -296,34 +534,125 @@ export function KajiApp() {
     }
     return "home";
   });
+  const [themeMode, setThemeMode] = useState<ThemeMode>("system");
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+  const [themeColor, setThemeColor] = useState<ThemeColor>("orange");
+  const themeModeRef = useRef<ThemeMode>("system");
 
-  const [records, setRecords] = useState<
-    Array<{
-      id: string;
-      performedAt: string;
-      memo: string | null;
-      chore: { id: string; title: string };
-      user: { id: string; name: string };
-      isInitial?: boolean;
-      isSkipped?: boolean;
-    }>
-  >([]);
+  const [records, setRecords] = useState<ChoreRecordItem[]>([]);
+  const [householdReport, setHouseholdReport] = useState<HouseholdReportResponse | null>(null);
+  const [myReport, setMyReport] = useState<MyStatsResponse | null>(null);
+  const [myReportPreviousTotal, setMyReportPreviousTotal] = useState<number | null>(null);
+  const [reportMonthOffset, setReportMonthOffset] = useState<(typeof REPORT_MONTH_OFFSETS)[number]>(0);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [myReportLoading, setMyReportLoading] = useState(false);
+  const [settingsView, setSettingsView] = useState<SettingsViewKey>("menu");
+  const [pushGuidePlatform, setPushGuidePlatform] = useState<PushGuidePlatform>("android");
+  const [standaloneScreen, setStandaloneScreen] = useState<StandaloneScreenKey | null>(null);
+  const [standaloneOrigin, setStandaloneOrigin] = useState<StandaloneOriginKey>("settings");
+  const [sleepModeEnabled, setSleepModeEnabled] = useState(false);
+  const [sleepModeStart, setSleepModeStart] = useState("22:00");
+  const [sleepModeEnd, setSleepModeEnd] = useState("07:00");
+  const [calendarExpanded, setCalendarExpanded] = useState(false);
+  const [calendarWeekStart, setCalendarWeekStart] = useState<Date>(() =>
+    startOfJstWeekMonday(startOfJstDay(new Date())),
+  );
+  const [calendarMonthCursor, setCalendarMonthCursor] = useState<Date>(() =>
+    startOfJstDay(new Date()),
+  );
+  const [calendarMonthSummary, setCalendarMonthSummary] = useState<CalendarMonthSummaryResponse | null>(null);
+  const [calendarSelectedDateKey, setCalendarSelectedDateKey] = useState<string>(() =>
+    toJstDateKey(startOfJstDay(new Date())),
+  );
+  const [rescheduleTarget, setRescheduleTarget] = useState<ChoreWithComputed | null>(null);
+  const [rescheduleTargetCompleted, setRescheduleTargetCompleted] = useState(false);
+  const [rescheduleChoice, setRescheduleChoice] = useState<RescheduleChoice>("tomorrow");
+  const [rescheduleBaseDateKey, setRescheduleBaseDateKey] = useState<string>(() =>
+    toJstDateKey(startOfJstDay(new Date())),
+  );
+  const [rescheduleCustomDate, setRescheduleCustomDate] = useState<string>(() =>
+    toJstDateKey(addDays(startOfJstDay(new Date()), 1)),
+  );
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [pendingRescheduleConfirm, setPendingRescheduleConfirm] = useState<PendingRescheduleConfirm | null>(null);
+  const [rescheduleConfirmLoading, setRescheduleConfirmLoading] = useState(false);
+  const [draggingChore, setDraggingChore] = useState<ChoreWithComputed | null>(null);
+  const [dragSourceDateKey, setDragSourceDateKey] = useState<string | null>(null);
+  const [dragTargetDateKey, setDragTargetDateKey] = useState<string | null>(null);
+  const [homeDropTarget, setHomeDropTarget] = useState<HomeDropInsert | null>(null);
+  const [touchDragging, setTouchDragging] = useState(false);
+  const [touchDragPos, setTouchDragPos] = useState({ x: 0, y: 0 });
+  const touchDragInfoRef = useRef<{
+    active: boolean;
+    chore: ChoreWithComputed;
+    sourceDateKey: string;
+    startX: number;
+    startY: number;
+  } | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const suppressChipClickRef = useRef(false);
+  const dragNavTimerRef = useRef<number | null>(null);
+  const dragNavHoveringRef = useRef<string | null>(null);
+  const dragScrollRafRef = useRef<number | null>(null);
+  const dragScrollSpeedRef = useRef<number>(0);
+  const calendarWeekStartRef = useRef<Date>(new Date());
+  const calendarMonthKeyRef = useRef<string>(toMonthKey(startOfJstDay(new Date())));
+  const calendarSummaryEnabledRef = useRef(false);
+  const calendarSwipeStartXRef = useRef<number | null>(null);
+  const calendarSwipeStartYRef = useRef<number | null>(null);
+  const dropDraggedChoreToDateRef = useRef<
+    (targetDateKey: string, options?: { homeDropInsert?: HomeDropInsert }) => Promise<void>
+  >(async () => { });
+  const handleHomeDropRef = useRef<(drop: HomeDropInsert) => void>(() => { });
+  const homeSectionChoreIdsRef = useRef<Record<string, string[]>>({});
+  const [homeOrderByDate, setHomeOrderByDate] = useState<HomeOrderByDate>({});
+  const [reactionPickerRecordId, setReactionPickerRecordId] = useState<string | null>(null);
 
   const [registerName, setRegisterName] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
   const [registerInviteCode, setRegisterInviteCode] = useState("");
   const [registerColor, setRegisterColor] = useState(USER_COLOR_PALETTE[0]);
   const [registerLoading, setRegisterLoading] = useState(false);
+  const [postRegisterRoutingPending, setPostRegisterRoutingPending] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem(ONBOARDING_PENDING_STORAGE_KEY) === "1";
+  });
+  const [onboardingSubmitting, setOnboardingSubmitting] = useState(false);
+  const [onboardingBulkSelectOpen, setOnboardingBulkSelectOpen] = useState(false);
+  const [onboardingPresetSelections, setOnboardingPresetSelections] = useState<string[]>(
+    ONBOARDING_PRESET_CHORES.map((preset) => preset.title),
+  );
 
   const [choreEditorOpen, setChoreEditorOpen] = useState(false);
   const [customIconOpen, setCustomIconOpen] = useState(false);
   const [customIcons, setCustomIcons] = useState<CustomIconOption[]>([]);
   const [editingChore, setEditingChore] = useState<ChoreForm | null>(null);
   const [memoTarget, setMemoTarget] = useState<ChoreWithComputed | null>(null);
+  const [memoBaseDateKey, setMemoBaseDateKey] = useState<string | null>(null);
   const [memo, setMemo] = useState("");
   const [memoOpen, setMemoOpen] = useState(false);
+  const [pendingRecordDateChoice, setPendingRecordDateChoice] =
+    useState<PendingRecordDateChoice | null>(null);
+  const [memoFlowMode, setMemoFlowMode] = useState<MemoFlowMode>("default");
+  const [memoQuickDateKey, setMemoQuickDateKey] = useState<string | null>(null);
+  const [skipCountDialogOpen, setSkipCountDialogOpen] = useState(false);
+  const [skipCountValue, setSkipCountValue] = useState(1);
+  const [skipCountMax, setSkipCountMax] = useState(1);
+  const [completeCountDialogOpen, setCompleteCountDialogOpen] = useState(false);
+  const [completeCountValue, setCompleteCountValue] = useState(1);
+  const [completeCountMax, setCompleteCountMax] = useState(1);
+  const [pendingCompletePerformedAtMode, setPendingCompletePerformedAtMode] =
+    useState<PerformedAtMode>("today");
+  const [calendarBlankActionOpen, setCalendarBlankActionOpen] = useState(false);
+  const [calendarBlankActionDateKey, setCalendarBlankActionDateKey] = useState<string | null>(null);
+  const [calendarBlankActionMode, setCalendarBlankActionMode] = useState<CalendarBlankActionMode>("choice");
+  const [undoConfirmTarget, setUndoConfirmTarget] = useState<ChoreWithComputed | null>(null);
   const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyTarget, setHistoryTarget] = useState<ChoreWithComputed | null>(null);
+  const recordMutationSequenceRef = useRef(0);
+  const latestRecordMutationByKeyRef = useRef<Record<string, number>>({});
+  const [reactionUpdatingId, setReactionUpdatingId] = useState<string | null>(null);
+  const [manageDetailChoreId, setManageDetailChoreId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState("all");
   const [pendingSwipeDeletes, setPendingSwipeDeletes] = useState<PendingSwipeDelete[]>([]);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -333,17 +662,78 @@ export function KajiApp() {
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(
     null,
   );
+  const [reminderTimePickerOpen, setReminderTimePickerOpen] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [appUpdateLoading, setAppUpdateLoading] = useState(false);
   const [appUpdateAvailable, setAppUpdateAvailable] = useState(false);
   const [appReloading, setAppReloading] = useState(false);
   const startupUpdateCheckedRef = useRef(false);
+  const missionBannerReadyRef = useRef(false);
+  const previousTodayMissionCompletedRef = useRef(false);
+  const applyResolvedTheme = useCallback((nextResolved: "light" | "dark") => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.classList.toggle("dark", nextResolved === "dark");
+    root.style.colorScheme = nextResolved;
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta instanceof HTMLMetaElement) {
+      themeColorMeta.content = nextResolved === "dark" ? THEME_COLOR_DARK : THEME_COLOR_LIGHT;
+    }
+  }, []);
+  const applyThemeColor = useCallback((nextColor: ThemeColor) => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.dataset.themeColor = nextColor;
+    setThemeColor(nextColor);
+  }, []);
+  const applyThemeMode = useCallback((mode: ThemeMode) => {
+    if (typeof window === "undefined") return;
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const nextResolved = resolveTheme(mode, prefersDark);
+    themeModeRef.current = mode;
+    setThemeMode(mode);
+    setResolvedTheme(nextResolved);
+    applyResolvedTheme(nextResolved);
+  }, [applyResolvedTheme]);
+  const handleThemeModeChange = useCallback((nextMode: ThemeMode) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(THEME_MODE_STORAGE_KEY, nextMode);
+    applyThemeMode(nextMode);
+  }, [applyThemeMode]);
+  const handleThemeColorChange = useCallback((nextColor: ThemeColor) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(THEME_COLOR_STORAGE_KEY, nextColor);
+    applyThemeColor(nextColor);
+  }, [applyThemeColor]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const initialColor = normalizeThemeColor(window.localStorage.getItem(THEME_COLOR_STORAGE_KEY));
+    applyThemeColor(initialColor);
+    const initialMode = normalizeThemeMode(window.localStorage.getItem(THEME_MODE_STORAGE_KEY));
+    applyThemeMode(initialMode);
+
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleSystemThemeChange = (event: MediaQueryListEvent) => {
+      if (themeModeRef.current !== "system") return;
+      const nextResolved = resolveTheme("system", event.matches);
+      setResolvedTheme(nextResolved);
+      applyResolvedTheme(nextResolved);
+    };
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", handleSystemThemeChange);
+      return () => media.removeEventListener("change", handleSystemThemeChange);
+    }
+    media.addListener(handleSystemThemeChange);
+    return () => media.removeListener(handleSystemThemeChange);
+  }, [applyResolvedTheme, applyThemeColor, applyThemeMode]);
 
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [assignmentMounted, setAssignmentMounted] = useState(false);
   const [assignmentSlideIn, setAssignmentSlideIn] = useState(false);
   const assignmentCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [listDeleteSwipeActive, setListDeleteSwipeActive] = useState(false);
   const [balanceSwipeActive, setBalanceSwipeActive] = useState(false);
   const clearAssignmentCloseTimer = useCallback(() => {
@@ -357,17 +747,6 @@ export function KajiApp() {
     },
     [clearAssignmentCloseTimer],
   );
-  const openAssignment = useCallback(() => {
-    clearAssignmentCloseTimer();
-    setAssignmentOpen(true);
-    setAssignmentMounted(true);
-    setAssignmentSlideIn(false);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setAssignmentSlideIn(true);
-      });
-    });
-  }, [clearAssignmentCloseTimer]);
   const closeAssignment = useCallback(() => {
     if (!assignmentOpen && !assignmentMounted) return;
     clearAssignmentCloseTimer();
@@ -378,11 +757,68 @@ export function KajiApp() {
       setAssignmentOpen(false);
     }, ASSIGNMENT_SHEET_SLIDE_MS);
   }, [assignmentMounted, assignmentOpen, clearAssignmentCloseTimer]);
+  const openSettings = useCallback(() => {
+    setSettingsView("menu");
+    setSettingsOpen(true);
+  }, []);
+  const openSettingsView = useCallback((view: SettingsViewKey) => {
+    if (view !== "manage") {
+      setManageDetailChoreId(null);
+    }
+    setSettingsView(view);
+    setSettingsOpen(true);
+  }, []);
+  const closeSettings = useCallback(() => {
+    setSettingsView("menu");
+    setSettingsOpen(false);
+  }, []);
+  const toggleSettingsFromHeader = useCallback(() => {
+    closeAssignment();
+    if (settingsOpen) {
+      closeSettings();
+      return;
+    }
+    openSettings();
+  }, [closeAssignment, closeSettings, openSettings, settingsOpen]);
+  const openStandaloneScreen = useCallback(
+    (screen: StandaloneScreenKey, origin: StandaloneOriginKey = "settings") => {
+      if (screen === "manage") {
+        setManageDetailChoreId(null);
+      }
+      setStandaloneOrigin(origin);
+      setSettingsOpen(false);
+      setSettingsView(screen);
+      setStandaloneScreen(screen);
+    },
+    [],
+  );
+  const closeStandaloneScreen = useCallback(() => {
+    setStandaloneScreen(null);
+    setStandaloneOrigin("settings");
+  }, []);
+  const returnFromStandaloneScreen = useCallback(() => {
+    const origin = standaloneOrigin;
+    closeStandaloneScreen();
+    if (origin === "settings") {
+      setSettingsView("menu");
+      setSettingsOpen(true);
+      return;
+    }
+    if (origin === "list") {
+      setActiveTab("list");
+      return;
+    }
+    if (origin === "records") {
+      setActiveTab("records");
+      return;
+    }
+    setActiveTab("stats");
+  }, [closeStandaloneScreen, standaloneOrigin]);
   const swipe = useSwipeTab({
     tabs: TAB_ORDER,
     activeTab,
-    onChangeTab: (tab) => { closeAssignment(); setActiveTab(tab); if (tab === "home") setRefreshAnimationSeed((p) => p + 1); },
-    disabled: assignmentOpen || listDeleteSwipeActive || balanceSwipeActive,
+    onChangeTab: (tab) => { closeAssignment(); closeSettings(); setActiveTab(tab); if (tab === "home") setRefreshAnimationSeed((p) => p + 1); },
+    disabled: assignmentOpen || settingsOpen || standaloneScreen !== null || listDeleteSwipeActive || balanceSwipeActive || !!draggingChore,
     threshold: 78,
     dominanceRatio: 1.4,
     lockDistance: 14,
@@ -427,12 +863,17 @@ export function KajiApp() {
   const [homeHeaderHeight, setHomeHeaderHeight] = useState(HOME_SECTION_STICKY_FALLBACK_TOP);
   const homeHeaderRef = useRef<HTMLDivElement | null>(null);
   const listHeaderRef = useRef<HTMLDivElement | null>(null);
+  const recordsHeaderRef = useRef<HTMLDivElement | null>(null);
   const statsHeaderRef = useRef<HTMLDivElement | null>(null);
   const settingsHeaderRef = useRef<HTMLDivElement | null>(null);
-  const [listHeaderHeight, setListHeaderHeight] = useState(0);
-  const [statsHeaderHeight, setStatsHeaderHeight] = useState(0);
-  const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(0);
+  const [listHeaderHeight, setListHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.list);
+  const [recordsHeaderHeight, setRecordsHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.records);
+  const [statsHeaderHeight, setStatsHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.stats);
+  const [settingsHeaderHeight, setSettingsHeaderHeight] = useState(TAB_HEADER_MIN_HEIGHT_BY_TAB.settings);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
+  const sectionTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const sectionSwipeSuppressedRef = useRef(false);
+  const tapPriorityZoneActiveRef = useRef(false);
   const pullStartYRef = useRef(0);
   const pullStartXRef = useRef(0);
   const pullStartScrollTopRef = useRef(0);
@@ -442,9 +883,162 @@ export function KajiApp() {
   const [pullDragging, setPullDragging] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshAnimationSeed, setRefreshAnimationSeed] = useState(0);
+  const pullRefreshEnabled = true;
 
   const sessionUser = boot?.sessionUser ?? null;
   const chores = boot?.chores ?? [];
+
+  const getTabHeaderHeight = useCallback((tab: TabKey) => {
+    if (tab === "home") return homeHeaderHeight;
+    const measuredHeight =
+      tab === "list"
+        ? listHeaderHeight
+        : tab === "records"
+          ? recordsHeaderHeight
+          : tab === "stats"
+            ? statsHeaderHeight
+            : settingsHeaderHeight;
+    return Math.max(measuredHeight, TAB_HEADER_MIN_HEIGHT_BY_TAB[tab]);
+  }, [homeHeaderHeight, listHeaderHeight, recordsHeaderHeight, settingsHeaderHeight, statsHeaderHeight]);
+
+  const isTapPriorityTarget = useCallback((target: EventTarget | null) => {
+    return Boolean((target as HTMLElement | null)?.closest(TAP_PRIORITY_ZONE_SELECTOR));
+  }, []);
+  const calendarQuickRecordChores = useMemo(
+    () =>
+      [...chores]
+        .filter((chore) => !chore.archived)
+        .sort((left, right) => {
+          const titleDiff = JA_COLLATOR.compare(left.title, right.title);
+          if (titleDiff !== 0) return titleDiff;
+          return JA_COLLATOR.compare(left.id, right.id);
+        }),
+    [chores],
+  );
+  const homeDateKeys = buildHomeDateKeys();
+  const homeSectionDateKeySet = useMemo(
+    () => new Set([homeDateKeys.yesterday, homeDateKeys.today, homeDateKeys.tomorrow]),
+    [homeDateKeys.today, homeDateKeys.tomorrow, homeDateKeys.yesterday],
+  );
+  const homeOrderSanitizeOptions = useMemo(
+    () => ({
+      todayDateKey: homeDateKeys.today,
+      rollingWindowDays: HOME_ORDER_RETENTION_DAYS,
+    }),
+    [homeDateKeys.today],
+  );
+  const homeOrderStorageKey = useMemo(
+    () => (sessionUser?.id ? `${HOME_ORDER_STORAGE_KEY_PREFIX}:${sessionUser.id}` : null),
+    [sessionUser?.id],
+  );
+
+  useEffect(() => {
+    if (!homeOrderStorageKey) {
+      setHomeOrderByDate({});
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(homeOrderStorageKey);
+      if (!raw) {
+        setHomeOrderByDate({});
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setHomeOrderByDate(sanitizeHomeOrderByDate(parsed, homeOrderSanitizeOptions));
+    } catch {
+      setHomeOrderByDate({});
+    }
+  }, [homeOrderSanitizeOptions, homeOrderStorageKey]);
+
+  useEffect(() => {
+    setHomeOrderByDate((previous) => {
+      const sanitized = sanitizeHomeOrderByDate(previous, homeOrderSanitizeOptions);
+      return sameHomeOrderByDate(previous, sanitized) ? previous : sanitized;
+    });
+  }, [homeOrderSanitizeOptions]);
+
+  useEffect(() => {
+    if (!homeOrderStorageKey) return;
+    const sanitized = sanitizeHomeOrderByDate(homeOrderByDate, homeOrderSanitizeOptions);
+    try {
+      if (Object.keys(sanitized).length === 0) {
+        window.localStorage.removeItem(homeOrderStorageKey);
+      } else {
+        window.localStorage.setItem(homeOrderStorageKey, JSON.stringify(sanitized));
+      }
+    } catch {
+      // ignore storage errors (private mode / quota)
+    }
+  }, [homeOrderByDate, homeOrderSanitizeOptions, homeOrderStorageKey]);
+
+  useEffect(() => {
+    const targetDateKeys = [homeDateKeys.yesterday, homeDateKeys.today, homeDateKeys.tomorrow];
+    const sectionIdsByDate = homeSectionChoreIdsRef.current;
+    setHomeOrderByDate((previous) => {
+      const next: HomeOrderByDate = { ...previous };
+
+      targetDateKeys.forEach((dateKey) => {
+        const baseIds = sectionIdsByDate[dateKey] ?? [];
+        if (baseIds.length === 0) {
+          delete next[dateKey];
+          return;
+        }
+
+        const storedIds = previous[dateKey] ?? [];
+        const orderedIds = applyHomeStoredOrder(baseIds, storedIds);
+        if (orderedIds.length === 0) {
+          delete next[dateKey];
+        } else {
+          next[dateKey] = orderedIds;
+        }
+      });
+
+      const sanitized = sanitizeHomeOrderByDate(next, homeOrderSanitizeOptions);
+      return sameHomeOrderByDate(previous, sanitized) ? previous : sanitized;
+    });
+  }, [homeOrderSanitizeOptions, boot, homeDateKeys.yesterday, homeDateKeys.today, homeDateKeys.tomorrow]);
+
+  useEffect(() => {
+    if (!manageDetailChoreId) return;
+    if (chores.some((chore) => chore.id === manageDetailChoreId)) return;
+    setManageDetailChoreId(null);
+  }, [chores, manageDetailChoreId]);
+  const todayMissionCompletedForBanner = useMemo(() => {
+    if (!boot || boot.needsRegistration) return false;
+    if (!boot.todayChores || boot.todayChores.length === 0) return false;
+    return boot.todayChores.every((chore) => chore.doneToday);
+  }, [boot]);
+
+  const showTaskBanner = useCallback((message: string, tone: "green" | "blue" = "green") => {
+    setTaskBanner({ message, tone });
+  }, []);
+
+  useEffect(() => {
+    if (!taskBanner) return;
+    const timer = window.setTimeout(() => {
+      setTaskBanner(null);
+    }, 2600);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [taskBanner]);
+
+  useEffect(() => {
+    if (!boot || boot.needsRegistration || !sessionUser || onboardingOpen) {
+      missionBannerReadyRef.current = false;
+      previousTodayMissionCompletedRef.current = false;
+      return;
+    }
+    if (!missionBannerReadyRef.current) {
+      missionBannerReadyRef.current = true;
+      previousTodayMissionCompletedRef.current = todayMissionCompletedForBanner;
+      return;
+    }
+    if (todayMissionCompletedForBanner && !previousTodayMissionCompletedRef.current) {
+      showTaskBanner("今日のにんむ ぜんぶおわり！おつかれさま！", "green");
+    }
+    previousTodayMissionCompletedRef.current = todayMissionCompletedForBanner;
+  }, [boot, onboardingOpen, sessionUser, showTaskBanner, todayMissionCompletedForBanner]);
 
   const listChores = useMemo(() => {
     const now = startOfJstDay(new Date());
@@ -495,6 +1089,41 @@ export function KajiApp() {
     [boot?.todayChores, boot?.tomorrowChores],
   );
 
+  const scheduleOverrides = boot?.scheduleOverrides ?? [];
+  const scheduleOverridesByChore = useMemo(() => {
+    const map = new Map<string, ChoreScheduleOverride[]>();
+    for (const override of scheduleOverrides) {
+      const list = map.get(override.choreId) ?? [];
+      list.push(override);
+      map.set(override.choreId, list);
+    }
+    return map;
+  }, [scheduleOverrides]);
+
+  const countScheduledOccurrencesOnDate = useCallback((choreId: string, dateKey: string) => {
+    const monthEntry = calendarMonthSummary?.occurrenceByDate?.[dateKey]?.[choreId];
+    if (monthEntry) {
+      return monthEntry.scheduled;
+    }
+    const homeEntry = boot?.homeProgressByDate?.[dateKey]?.[choreId];
+    if (homeEntry) {
+      return homeEntry.total;
+    }
+
+    const chore = chores.find((item) => item.id === choreId);
+    if (!chore) return 0;
+    return countScheduledOccurrencesOnDateByReadModel({
+      dateKey,
+      chore: {
+        id: chore.id,
+        intervalDays: chore.intervalDays,
+        dailyTargetCount: chore.dailyTargetCount,
+        dueAt: chore.dueAt ? new Date(chore.dueAt) : null,
+        scheduleOverrides: (scheduleOverridesByChore.get(chore.id) ?? []).map((override) => ({ date: override.date })),
+      },
+    });
+  }, [boot?.homeProgressByDate, calendarMonthSummary?.occurrenceByDate, chores, scheduleOverridesByChore]);
+
   const assignmentDaysByTab = useMemo(() => {
     const today = startOfJstDay(new Date());
     const todayKey = toJstDateKey(today);
@@ -505,7 +1134,7 @@ export function KajiApp() {
     const mapDays = (filtered: typeof chores, mergeOverdueToToday: boolean) =>
       days
         .map(({ date, key: dateKey }) => {
-          const scheduled = filtered.filter((c) => isScheduledOnDate(c, date));
+          const scheduled = filtered.filter((c) => countScheduledOccurrencesOnDate(c.id, dateKey) > 0);
           // 今日の日付なら期限超過タスクもまとめて含める
           if (mergeOverdueToToday && dateKey === todayKey) {
             const overdueChores = filtered.filter((c) => c.isOverdue && !scheduled.some((s) => s.id === c.id));
@@ -518,18 +1147,101 @@ export function KajiApp() {
         })
         .filter(Boolean) as Array<{ date: Date; dateKey: string; dayChores: typeof chores }>;
 
-    const dailyFiltered = chores.filter((c) => !c.isBigTask);
-    const bigFiltered = chores.filter((c) => c.isBigTask);
-
     return {
-      daily: mapDays(dailyFiltered, true),
-      big: mapDays(bigFiltered, true),
+      daily: mapDays(chores, true),
     };
-  }, [chores, priorityHomeChoreIds]);
+  }, [chores, priorityHomeChoreIds, countScheduledOccurrencesOnDate]);
 
   useEffect(() => {
     customDateRangeRef.current = customDateRange;
   }, [customDateRange]);
+
+  const manageDetailTarget = useMemo(() => {
+    if (!manageDetailChoreId) return null;
+    return chores.find((chore) => chore.id === manageDetailChoreId) ?? null;
+  }, [chores, manageDetailChoreId]);
+
+  const manageUpcomingDateKeys = useMemo(() => {
+    if (!manageDetailTarget) return [];
+
+    const today = startOfJstDay(new Date());
+    const todayKey = toJstDateKey(today);
+    const overrideDateKeys = (scheduleOverridesByChore.get(manageDetailTarget.id) ?? [])
+      .map((override) => override.date)
+      .filter((dateKey) => dateKey >= todayKey)
+      .sort((a, b) => a.localeCompare(b));
+
+    if (overrideDateKeys.length > 0) {
+      return overrideDateKeys.slice(0, 5);
+    }
+
+    const intervalDays = Math.max(1, manageDetailTarget.intervalDays);
+    let cursor = manageDetailTarget.dueAt
+      ? startOfJstDay(new Date(manageDetailTarget.dueAt))
+      : null;
+
+    if (!cursor || Number.isNaN(cursor.getTime())) return [];
+
+    while (cursor.getTime() < today.getTime()) {
+      cursor = addDays(cursor, intervalDays);
+    }
+
+    const items: string[] = [];
+    let guard = 0;
+    while (items.length < 5 && guard < 400) {
+      items.push(toJstDateKey(cursor));
+      cursor = addDays(cursor, intervalDays);
+      guard += 1;
+    }
+    return items;
+  }, [manageDetailTarget, scheduleOverridesByChore]);
+
+  const calendarMonthKey = useMemo(
+    () => toMonthKey(calendarMonthCursor),
+    [calendarMonthCursor],
+  );
+  const calendarScheduleMap = useMemo(() => {
+    const map = new Map<string, CalendarScheduleItem[]>();
+    const choreById = new Map(chores.map((chore) => [chore.id, chore]));
+    const occurrenceByDate = calendarMonthSummary?.occurrenceByDate ?? {};
+
+    Object.entries(occurrenceByDate).forEach(([dateKey, byChore]) => {
+      const items: CalendarScheduleItem[] = [];
+      Object.entries(byChore).forEach(([choreId, entry]) => {
+        const chore = choreById.get(choreId);
+        if (!chore) return;
+        items.push({
+          chore,
+          scheduled: entry.scheduled,
+          completed: entry.completed,
+          skipped: entry.skipped,
+          pending: entry.pending,
+        });
+      });
+      items.sort((a, b) => {
+        const titleDiff = JA_COLLATOR.compare(a.chore.title, b.chore.title);
+        if (titleDiff !== 0) return titleDiff;
+        return JA_COLLATOR.compare(a.chore.id, b.chore.id);
+      });
+      if (items.length > 0) {
+        map.set(dateKey, items);
+      }
+    });
+
+    return map;
+  }, [calendarMonthSummary?.occurrenceByDate, chores]);
+
+  const calendarMonthGridDates = useMemo(() => {
+    const monthStart = startOfJstDay(new Date(calendarMonthCursor));
+    const firstOfMonth = parseDateKey(`${toJstDateKey(monthStart).slice(0, 8)}01`) ?? monthStart;
+    const gridStart = startOfJstWeekMonday(firstOfMonth);
+    return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
+  }, [calendarMonthCursor]);
+
+  const calendarSelectedWeekDates = useMemo(
+    () => Array.from({ length: CALENDAR_WEEK_DAYS }, (_, index) => addDays(calendarWeekStart, index)),
+    [calendarWeekStart],
+  );
 
   const loadBootstrap = useCallback(async () => {
     const data = await apiFetch<BootstrapResponse>("/api/bootstrap", { cache: "no-store" });
@@ -540,46 +1252,76 @@ export function KajiApp() {
     return data;
   }, []);
 
-  const loadStats = useCallback(async (period: StatsPeriodKey, options?: StatsQueryOptions) => {
-    const requestId = ++statsRequestIdRef.current;
-    setStatsPeriod(period);
-    setStatsLoading(true);
+  const loadCalendarMonthSummary = useCallback(async (month: string) => {
+    const data = await apiFetch<CalendarMonthSummaryResponse>(
+      `/api/calendar-month-summary?month=${encodeURIComponent(month)}`,
+      { cache: "no-store" },
+    );
+    setCalendarMonthSummary(data);
+    return data;
+  }, []);
 
-    const params = new URLSearchParams({ period });
-    if (period === "custom") {
-      const from = options?.from ?? customDateRangeRef.current.from;
-      const to = options?.to ?? customDateRangeRef.current.to;
-      params.set("from", from);
-      params.set("to", to);
-      const nextRange = { from, to };
-      customDateRangeRef.current = nextRange;
-      setCustomDateRange(nextRange);
-    }
+  const loadChoreMutationSnapshot = useCallback(async (choreId: string, dateKey: string) => {
+    return apiFetch<{
+      chore: ChoreWithComputed;
+      scheduleOverrides: ChoreScheduleOverride[];
+      homeProgressEntry: HomeProgressEntry | null;
+    }>(`/api/chores/${choreId}?date=${encodeURIComponent(dateKey)}`, { cache: "no-store" });
+  }, []);
 
+  const loadHouseholdReport = useCallback(async (offset: (typeof REPORT_MONTH_OFFSETS)[number]) => {
+    const currentMonth = toMonthKey(new Date());
+    const month = monthKeyWithOffset(currentMonth, offset);
+    setReportLoading(true);
     try {
-      const data = await apiFetch<StatsResponse>(`/api/stats?${params.toString()}`, { cache: "no-store" });
-      if (requestId !== statsRequestIdRef.current) return;
-      setStats(data);
-      setStatsAnimationSeed((prev) => prev + 1);
+      const data = await apiFetch<HouseholdReportResponse>(
+        `/api/household-report?month=${encodeURIComponent(month)}`,
+        { cache: "no-store" },
+      );
+      setHouseholdReport(data);
     } finally {
-      if (requestId === statsRequestIdRef.current) {
-        setStatsLoading(false);
-      }
+      setReportLoading(false);
     }
   }, []);
 
+  const loadMyReport = useCallback(async (offset: (typeof REPORT_MONTH_OFFSETS)[number]) => {
+    const currentMonth = toMonthKey(new Date());
+    const month = monthKeyWithOffset(currentMonth, offset);
+    setMyReportLoading(true);
+    try {
+      const [data, previous] = await Promise.all([
+        apiFetch<MyStatsResponse>(`/api/my-stats?month=${encodeURIComponent(month)}`, { cache: "no-store" }),
+        offset < 2
+          ? apiFetch<MyStatsResponse>(
+            `/api/my-stats?month=${encodeURIComponent(monthKeyWithOffset(currentMonth, (offset + 1) as (typeof REPORT_MONTH_OFFSETS)[number]))}`,
+            { cache: "no-store" },
+          )
+          : Promise.resolve<MyStatsResponse | null>(null),
+      ]);
+      setMyReport(data);
+      setMyReportPreviousTotal(previous?.currentMonthTotal ?? null);
+    } finally {
+      setMyReportLoading(false);
+    }
+  }, []);
+
+  const loadStats = useCallback(async (period: StatsPeriodKey, options?: StatsQueryOptions) => {
+    setStatsPeriod(period);
+    setStatsLoading(true);
+    try {
+      await Promise.all([
+        loadHouseholdReport(reportMonthOffset),
+        loadMyReport(reportMonthOffset),
+      ]);
+      setStats(null);
+      setStatsAnimationSeed((prev) => prev + 1);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [loadHouseholdReport, loadMyReport, reportMonthOffset]);
+
   const loadHistory = useCallback(async () => {
-    const data = await apiFetch<{
-      records: Array<{
-        id: string;
-        performedAt: string;
-        memo: string | null;
-        chore: { id: string; title: string };
-        user: { id: string; name: string };
-        isInitial?: boolean;
-        isSkipped?: boolean;
-      }>;
-    }>("/api/records");
+    const data = await apiFetch<{ records: ChoreRecordItem[] }>("/api/records");
     setRecords(data.records);
   }, []);
 
@@ -590,12 +1332,17 @@ export function KajiApp() {
         setStats(null);
         setStatsLoading(false);
         setRecords([]);
+        setCalendarMonthSummary(null);
         return data;
       }
-      await Promise.all([loadStats(period), loadHistory()]);
+      await Promise.all([
+        loadStats(period),
+        loadHistory(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
       return data;
     },
-    [loadBootstrap, loadHistory, loadStats],
+    [loadBootstrap, loadCalendarMonthSummary, loadHistory, loadStats],
   );
 
   // ── Real-time sync polling ──────────────────────────────────
@@ -606,8 +1353,15 @@ export function KajiApp() {
   const activeTabRef = useRef(activeTab);
   useEffect(() => { statsPeriodRef.current = statsPeriod; }, [statsPeriod]);
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  useEffect(() => {
+    if (activeTab === "records" && sessionUser) {
+      void loadHistory();
+    }
+  }, [activeTab, sessionUser, loadHistory]);
 
   const syncCheck = useCallback(async () => {
+    if (!boot || boot.needsRegistration || !sessionUser) return;
+
     // Don't start another poll while one is in-flight
     if (syncPollingRef.current) return;
     syncPollingRef.current = true;
@@ -635,13 +1389,16 @@ export function KajiApp() {
       syncRefreshingRef.current = true;
 
       // Fire bootstrap (critical) plus stats/history (secondary) in parallel
-      const refreshPromises: Promise<unknown>[] = [loadBootstrap()];
+      const refreshPromises: Promise<unknown>[] = [
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current).catch(() => { }),
+      ];
       // Only refresh stats/history when user is on those tabs
       const tab = activeTabRef.current;
       if (tab === "stats") {
         refreshPromises.push(loadStats(statsPeriodRef.current).catch(() => { }));
       }
-      if (tab === "stats" || tab === "home") {
+      if (tab === "stats" || tab === "home" || tab === "records") {
         refreshPromises.push(loadHistory().catch(() => { }));
       }
       // Don't await — let polling continue while refresh runs in background
@@ -653,9 +1410,11 @@ export function KajiApp() {
     } finally {
       syncPollingRef.current = false;
     }
-  }, [loadBootstrap, loadStats, loadHistory]);
+  }, [boot, loadBootstrap, loadCalendarMonthSummary, loadHistory, loadStats, sessionUser]);
 
   useEffect(() => {
+    if (!boot || boot.needsRegistration || !sessionUser) return;
+
     const SYNC_INTERVAL_MS = 1_000;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -685,7 +1444,7 @@ export function KajiApp() {
       stopPolling();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [syncCheck]);
+  }, [boot, sessionUser, syncCheck]);
   // ── End real-time sync ─────────────────────────────────────
 
   const reloadAppForLatestUpdate = useCallback((options?: { showNotice?: boolean; targetTab?: TabKey }) => {
@@ -753,7 +1512,7 @@ export function KajiApp() {
         }
 
         // 常にリロードして最新のアプリコードを取得する
-        reloadAppForLatestUpdate({ showNotice: true, targetTab: "settings" });
+        reloadAppForLatestUpdate({ showNotice: true, targetTab: "home" });
       } catch (err: unknown) {
         setError((err as Error).message ?? "最新化に失敗しました。");
         setAppUpdateLoading(false);
@@ -773,10 +1532,67 @@ export function KajiApp() {
     })();
   }, [refreshAll]);
 
+  useEffect(() => {
+    if (!boot || boot.needsRegistration || !sessionUser) return;
+    void (async () => {
+      try {
+        await Promise.all([
+          loadHouseholdReport(reportMonthOffset),
+          loadMyReport(reportMonthOffset),
+        ]);
+      } catch (err: unknown) {
+        setError((err as Error).message ?? "レポートの取得に失敗しました。");
+      }
+    })();
+  }, [boot, loadHouseholdReport, loadMyReport, reportMonthOffset, sessionUser]);
+
+  useEffect(() => {
+    const enabled = !!boot && !boot.needsRegistration && !!sessionUser;
+    calendarSummaryEnabledRef.current = enabled;
+    if (!enabled) {
+      setCalendarMonthSummary(null);
+    }
+  }, [boot?.needsRegistration, sessionUser?.id]);
+
+  useEffect(() => {
+    if (!calendarSummaryEnabledRef.current) return;
+    void loadCalendarMonthSummary(calendarMonthKey).catch((err: unknown) => {
+      setError((err as Error).message ?? "カレンダー情報の取得に失敗しました。");
+    });
+  }, [calendarMonthKey, loadCalendarMonthSummary]);
+
+  useEffect(() => {
+    const selected = parseDateKey(calendarSelectedDateKey);
+    if (!selected) return;
+    setCalendarWeekStart(startOfJstWeekMonday(selected));
+  }, [calendarSelectedDateKey]);
+
+  useEffect(() => {
+    calendarWeekStartRef.current = calendarWeekStart;
+  }, [calendarWeekStart]);
+
+  useEffect(() => {
+    calendarMonthKeyRef.current = calendarMonthKey;
+  }, [calendarMonthKey]);
+
+  useEffect(() => {
+    if (activeTab !== "home" && activeTab !== "list") {
+      // Cancel any in-flight drag state when leaving drag-capable tabs (M-2)
+      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+      if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+      touchDragInfoRef.current = null;
+      setDraggingChore(null);
+      setDragSourceDateKey(null);
+      setDragTargetDateKey(null);
+      setHomeDropTarget(null);
+      setTouchDragging(false);
+    }
+  }, [activeTab]);
+
   const handleDeleteCustomIcon = useCallback((customIconId: string) => {
     setCustomIcons((prev) => prev.filter((icon) => icon.id !== customIconId));
-    apiFetch(`/api/custom-icons/${customIconId}`, { method: "DELETE" }).catch(() => {
-      // Reload on failure to restore state
+    apiFetch(`/api/custom-icons/${customIconId}`, { method: "DELETE" }).catch((err: unknown) => {
+      setError((err as Error).message ?? "カスタムアイコンの削除に失敗しました。");
       void loadBootstrap();
     });
   }, [loadBootstrap]);
@@ -855,18 +1671,22 @@ export function KajiApp() {
   useEffect(() => {
     const entries: Array<[React.RefObject<HTMLDivElement | null>, React.Dispatch<React.SetStateAction<number>>]> = [
       [listHeaderRef, setListHeaderHeight],
+      [recordsHeaderRef, setRecordsHeaderHeight],
       [statsHeaderRef, setStatsHeaderHeight],
       [settingsHeaderRef, setSettingsHeaderHeight],
     ];
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
+    const updateHeaderHeights = () => {
       for (const [ref, setter] of entries) {
         const el = ref.current;
         if (!el) continue;
         const h = Math.ceil(el.getBoundingClientRect().height);
         if (Number.isFinite(h) && h > 0) setter((prev) => (prev === h ? prev : h));
       }
-    });
+    };
+
+    updateHeaderHeights();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateHeaderHeights);
     for (const [ref] of entries) {
       if (ref.current) observer.observe(ref.current);
     }
@@ -885,20 +1705,24 @@ export function KajiApp() {
 
   useEffect(() => {
     if (typeof document === "undefined") return;
+    if (!pullRefreshEnabled || assignmentOpen || settingsOpen) return;
+
     const html = document.documentElement;
     const body = document.body;
     const previousHtmlOverscrollY = html.style.overscrollBehaviorY;
     const previousBodyOverscrollY = body.style.overscrollBehaviorY;
     const previousBodyOverflow = body.style.overflow;
+
     html.style.overscrollBehaviorY = "none";
     body.style.overscrollBehaviorY = "none";
     body.style.overflow = "hidden";
+
     return () => {
       html.style.overscrollBehaviorY = previousHtmlOverscrollY;
       body.style.overscrollBehaviorY = previousBodyOverscrollY;
       body.style.overflow = previousBodyOverflow;
     };
-  }, []);
+  }, [assignmentOpen, pullRefreshEnabled, settingsOpen]);
 
   useEffect(() => {
     const scroller = mainScrollRef.current;
@@ -906,16 +1730,17 @@ export function KajiApp() {
 
     const handleNativeTouchMove = (event: globalThis.TouchEvent) => {
       if (assignmentOpen || pullRefreshing) return;
-      if (!pullEligibleRef.current) return;
+      if (!pullEligibleRef.current || tapPriorityZoneActiveRef.current) return;
+      if (isTapPriorityTarget(event.target)) return;
 
       const touch = event.touches[0];
       if (!touch) return;
 
       const dx = touch.clientX - pullStartXRef.current;
       const dy = touch.clientY - pullStartYRef.current;
-      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * 1.2;
+      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * PULL_START_DIRECTION_RATIO;
       const canRefreshBySwipe =
-        pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
+        isAtPullTop(pullStartScrollTopRef.current) && isAtPullTop(scroller.scrollTop);
 
       if (dy > 0 && isMostlyVertical && canRefreshBySwipe) {
         event.preventDefault();
@@ -928,17 +1753,75 @@ export function KajiApp() {
     return () => {
       scroller.removeEventListener("touchmove", handleNativeTouchMove);
     };
-  }, [assignmentOpen, pullRefreshing]);
+  }, [assignmentOpen, isTapPriorityTarget, pullRefreshing]);
 
+  const buildRecordMutationKey = useCallback((choreId: string, dateKey: string) => `${choreId}:${dateKey}`, []);
 
+  const beginRecordMutation = useCallback((mutationKey: string) => {
+    const mutationId = recordMutationSequenceRef.current + 1;
+    recordMutationSequenceRef.current = mutationId;
+    latestRecordMutationByKeyRef.current[mutationKey] = mutationId;
+    return mutationId;
+  }, []);
 
+  const isLatestRecordMutation = useCallback((mutationKey: string, mutationId: number) => {
+    return latestRecordMutationByKeyRef.current[mutationKey] === mutationId;
+  }, []);
 
-  const setRecordUpdating = useCallback((choreId: string, isUpdating: boolean) => {
+  const setRecordUpdating = useCallback((choreId: string, dateKey: string, isUpdating: boolean) => {
+    const updatingKey = `${choreId}:${dateKey}`;
     setRecordUpdatingIds((prev) => {
       if (isUpdating) {
-        return prev.includes(choreId) ? prev : [...prev, choreId];
+        return prev.includes(updatingKey) ? prev : [...prev, updatingKey];
       }
-      return prev.filter((id) => id !== choreId);
+      return prev.filter((id) => id !== updatingKey);
+    });
+  }, []);
+
+  const patchBootForRecordMutation = useCallback((
+    choreId: string,
+    dateKey: string,
+    patch: {
+      chore?: ChoreWithComputed;
+      homeProgressEntry?: HomeProgressEntry | null;
+      scheduleOverrides?: ChoreScheduleOverride[];
+    },
+  ) => {
+    setBoot((prev) => {
+      if (!prev || prev.needsRegistration) return prev;
+      const nextChores = patch.chore
+        ? prev.chores.map((chore) => (chore.id === choreId ? patch.chore! : chore))
+        : prev.chores;
+      const split = patch.chore ? splitComputedChoresForHome(nextChores) : null;
+      const nextHomeProgressByDate = { ...prev.homeProgressByDate };
+      if (patch.homeProgressEntry !== undefined) {
+        const currentDateProgress = { ...(nextHomeProgressByDate[dateKey] ?? {}) };
+        if (patch.homeProgressEntry === null) {
+          delete currentDateProgress[choreId];
+        } else {
+          currentDateProgress[choreId] = patch.homeProgressEntry;
+        }
+        if (Object.keys(currentDateProgress).length > 0) {
+          nextHomeProgressByDate[dateKey] = currentDateProgress;
+        } else {
+          delete nextHomeProgressByDate[dateKey];
+        }
+      }
+      const nextScheduleOverrides = patch.scheduleOverrides
+        ? [
+          ...prev.scheduleOverrides.filter((override) => override.choreId !== choreId),
+          ...patch.scheduleOverrides,
+        ]
+        : prev.scheduleOverrides;
+
+      return {
+        ...prev,
+        chores: nextChores,
+        todayChores: split ? split.todayChores : prev.todayChores,
+        tomorrowChores: split ? split.tomorrowChores : prev.tomorrowChores,
+        homeProgressByDate: nextHomeProgressByDate,
+        scheduleOverrides: nextScheduleOverrides,
+      };
     });
   }, []);
 
@@ -953,12 +1836,16 @@ export function KajiApp() {
           chores: nextChores,
           todayChores: split.todayChores,
           tomorrowChores: split.tomorrowChores,
-          upcomingBigChores: split.upcomingBigChores,
         };
       });
     },
     [],
   );
+
+  const clearOnboardingPending = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.removeItem(ONBOARDING_PENDING_STORAGE_KEY);
+  }, []);
 
   const registerUser = async (e: FormEvent) => {
     e.preventDefault();
@@ -966,84 +1853,206 @@ export function KajiApp() {
     try {
       setRegisterLoading(true);
       setError("");
-      await apiFetch("/api/register", {
+      const inviteCode = registerInviteCode.trim();
+      const registerResponse = await apiFetch<{ isExistingUser?: boolean; onboardingRequired?: boolean }>("/api/register", {
         method: "POST",
         body: JSON.stringify({
           name: registerName,
+          password: registerPassword,
           color: registerColor,
-          ...(registerInviteCode.trim() ? { inviteCode: registerInviteCode.trim() } : {}),
+          ...(inviteCode ? { inviteCode } : {}),
         }),
       });
+      const shouldStartOnboarding =
+        registerResponse?.onboardingRequired ??
+        (!registerResponse?.isExistingUser && inviteCode.length === 0);
+      if (typeof window !== "undefined") {
+        if (shouldStartOnboarding) {
+          window.sessionStorage.setItem(ONBOARDING_PENDING_STORAGE_KEY, "1");
+        } else {
+          window.sessionStorage.removeItem(ONBOARDING_PENDING_STORAGE_KEY);
+        }
+      }
+      setPostRegisterRoutingPending(true);
+      setOnboardingOpen(shouldStartOnboarding);
+      if (shouldStartOnboarding) {
+        setOnboardingBulkSelectOpen(false);
+        setOnboardingPresetSelections(ONBOARDING_PRESET_CHORES.map((preset) => preset.title));
+      } else {
+        setOnboardingOpen(false);
+        setActiveTab("home");
+        setRefreshAnimationSeed((prev) => prev + 1);
+      }
       await refreshAll("week");
     } catch (err: unknown) {
       setError((err as Error).message ?? "登録に失敗しました。");
     } finally {
+      setPostRegisterRoutingPending(false);
       setRegisterLoading(false);
     }
   };
+
+  const finishOnboarding = useCallback(() => {
+    clearOnboardingPending();
+    setOnboardingOpen(false);
+    setOnboardingSubmitting(false);
+    setOnboardingBulkSelectOpen(false);
+    setOnboardingPresetSelections(ONBOARDING_PRESET_CHORES.map((preset) => preset.title));
+    setActiveTab("home");
+    setRefreshAnimationSeed((prev) => prev + 1);
+  }, [clearOnboardingPending]);
+
+  const handleOnboardingAddPreset = useCallback(async () => {
+    if (onboardingSubmitting) return;
+    const selectedPresets = ONBOARDING_PRESET_CHORES.filter((preset) =>
+      onboardingPresetSelections.includes(preset.title),
+    );
+    if (selectedPresets.length === 0) {
+      setError("少なくとも1つ選択してください。");
+      return;
+    }
+    try {
+      setOnboardingSubmitting(true);
+      setError("");
+      for (const preset of selectedPresets) {
+        const startDate = onboardingPresetStartDate();
+        await apiFetch("/api/chores", {
+          method: "POST",
+          body: JSON.stringify({
+            title: preset.title,
+            icon: preset.icon,
+            iconColor: preset.iconColor,
+            bgColor: preset.bgColor,
+            intervalDays: preset.intervalDays,
+            startDate,
+          }),
+        });
+      }
+      await refreshAll("week");
+      setOnboardingBulkSelectOpen(false);
+      setInfoMessage("家事をまとめて追加しました。");
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "初期タスクの追加に失敗しました。");
+    } finally {
+      setOnboardingSubmitting(false);
+    }
+  }, [onboardingPresetSelections, onboardingSubmitting, refreshAll]);
 
   const openAddChore = () => {
     setEditingChore({
       title: "",
       intervalDays: 7,
-      isBigTask: false,
+      dailyTargetCount: 1,
       icon: "sparkles",
-      iconColor: "#1A9BE8",
-      bgColor: "#EAF5FF",
+      iconColor: PRIMARY_COLOR,
+      bgColor: "#FFF1E8",
       lastPerformedAt: defaultLastPerformedAt(),
     });
     setChoreEditorOpen(true);
   };
 
-  const openEditChore = (chore: ChoreWithComputed) => {
+  const openAddChoreForDate = (dateKey: string) => {
+    const resolved = resolveDateKeyTimestamp(dateKey);
+    const initialPerformedAt = resolved.parsedDate
+      ? resolved.parsedDate.toISOString()
+      : defaultLastPerformedAt();
+    closeSettings();
+    closeStandaloneScreen();
+    setEditingChore({
+      title: "",
+      intervalDays: 7,
+      dailyTargetCount: 1,
+      icon: "sparkles",
+      iconColor: PRIMARY_COLOR,
+      bgColor: "#FFF1E8",
+      lastPerformedAt: initialPerformedAt,
+    });
+    setChoreEditorOpen(true);
+  };
+
+  const closeCalendarBlankActionSheet = useCallback(() => {
+    setCalendarBlankActionOpen(false);
+    setCalendarBlankActionDateKey(null);
+    setCalendarBlankActionMode("choice");
+  }, []);
+
+  const handleCalendarSurfaceTap = (event: MouseEvent<HTMLElement>, dateKey: string) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button, a, input, textarea, select, [role='button']")) return;
+    setCalendarBlankActionDateKey(dateKey);
+    setCalendarBlankActionMode("choice");
+    setCalendarBlankActionOpen(true);
+  };
+
+  const openEditChore = (chore: ChoreWithComputed, scheduleAnchorDateKey?: string) => {
     setEditingChore({
       id: chore.id,
       title: chore.title,
       intervalDays: chore.intervalDays,
-      isBigTask: chore.isBigTask,
+      dailyTargetCount: chore.dailyTargetCount,
       icon: chore.icon,
       iconColor: chore.iconColor,
       bgColor: chore.bgColor,
       lastPerformedAt: chore.lastPerformedAt,
-      defaultAssigneeId: chore.defaultAssigneeId,
+      scheduleAnchorDateKey,
     });
     setChoreEditorOpen(true);
   };
 
   const saveChore = async () => {
     if (!editingChore || saveChoreLoading || deleteChoreLoading) return;
+    const editingChoreId = editingChore.id ?? null;
     setError("");
     if (!editingChore.lastPerformedAt) {
-      setError("前回実施日時は必須です。");
+      setError("開始日は必須です。");
       return;
     }
     if (Number.isNaN(new Date(editingChore.lastPerformedAt).getTime())) {
-      setError("前回実施日時が不正です。");
+      setError("開始日が不正です。");
       return;
     }
 
-    const payload = {
+    const commonPayload = {
       title: editingChore.title,
       intervalDays: Number(editingChore.intervalDays),
-      isBigTask: editingChore.isBigTask,
+      dailyTargetCount: Number(editingChore.dailyTargetCount),
       icon: editingChore.icon,
       iconColor: editingChore.iconColor,
       bgColor: editingChore.bgColor,
-      lastPerformedAt: editingChore.lastPerformedAt ?? undefined,
-      defaultAssigneeId: editingChore.defaultAssigneeId ?? undefined,
     };
     try {
       setSaveChoreLoading(true);
       if (editingChore.id) {
-        await apiFetch(`/api/chores/${editingChore.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+        const updatePayload = {
+          ...commonPayload,
+          lastPerformedAt: editingChore.lastPerformedAt ?? undefined,
+          scheduleAnchorDate: editingChore.scheduleAnchorDateKey ?? undefined,
+        };
+        await apiFetch(`/api/chores/${editingChore.id}`, { method: "PATCH", body: JSON.stringify(updatePayload) });
       } else {
-        await apiFetch("/api/chores", { method: "POST", body: JSON.stringify(payload) });
+        const createPayload = {
+          ...commonPayload,
+          startDate: editingChore.lastPerformedAt ?? undefined,
+        };
+        await apiFetch("/api/chores", { method: "POST", body: JSON.stringify(createPayload) });
       }
       await refreshAll(statsPeriod);
+      if (editingChoreId && manageDetailChoreId === editingChoreId) {
+        setManageDetailChoreId(editingChoreId);
+      }
       setDeleteConfirmOpen(false);
       setChoreEditorOpen(false);
     } catch (err: unknown) {
-      setError((err as Error).message ?? "家事の保存に失敗しました。");
+      const rawMessage = (err as Error).message ?? "家事の保存に失敗しました。";
+      if (
+        rawMessage.includes("DB_SCHEMA_MISSING") ||
+        rawMessage.includes("db:init:current-env") ||
+        rawMessage.includes("dailyTargetCount")
+      ) {
+        setError("1日回数を保存するためのDBスキーマが不足しています。npm run db:init:current-env 実行後に再試行してください。");
+      } else {
+        setError(rawMessage);
+      }
     } finally {
       setSaveChoreLoading(false);
     }
@@ -1056,10 +2065,14 @@ export function KajiApp() {
 
   const confirmDeleteChore = async () => {
     if (!editingChore?.id || deleteChoreLoading || saveChoreLoading) return;
+    const deletingChoreId = editingChore.id;
     try {
       setDeleteChoreLoading(true);
-      await apiFetch(`/api/chores/${editingChore.id}`, { method: "DELETE" });
+      await apiFetch(`/api/chores/${deletingChoreId}`, { method: "DELETE" });
       await refreshAll(statsPeriod);
+      if (manageDetailChoreId === deletingChoreId) {
+        setManageDetailChoreId(null);
+      }
       setDeleteConfirmOpen(false);
       setChoreEditorOpen(false);
     } catch (err: unknown) {
@@ -1115,125 +2128,1141 @@ export function KajiApp() {
     void finalizeSwipeDeleteChore(toastId);
   }, [finalizeSwipeDeleteChore]);
 
-  const openMemo = (chore: ChoreWithComputed) => {
+  const openMemo = (chore: ChoreWithComputed, baseDateKey?: string) => {
     setMemoTarget(chore);
+    setMemoBaseDateKey(baseDateKey ?? null);
+    setPendingRecordDateChoice(null);
+    setMemoFlowMode("default");
+    setMemoQuickDateKey(null);
+    setSkipCountDialogOpen(false);
+    setSkipCountValue(1);
+    setSkipCountMax(1);
+    setCompleteCountDialogOpen(false);
+    setCompleteCountValue(1);
+    setCompleteCountMax(1);
+    setPendingCompletePerformedAtMode("today");
     setMemo("");
     setMemoOpen(true);
   };
 
-  const submitRecord = async () => {
-    if (!memoTarget) return;
-    const targetId = memoTarget.id;
-    const previousBoot = boot;
+  const openCalendarQuickMemo = useCallback((chore: ChoreWithComputed, dateKey: string) => {
+    setMemoTarget(chore);
+    setMemoBaseDateKey(null);
+    setPendingRecordDateChoice(null);
+    setMemoFlowMode("calendar-quick");
+    setMemoQuickDateKey(dateKey);
+    setSkipCountDialogOpen(false);
+    setSkipCountValue(1);
+    setSkipCountMax(1);
+    setCompleteCountDialogOpen(false);
+    setCompleteCountValue(1);
+    setCompleteCountMax(1);
+    setPendingCompletePerformedAtMode("today");
+    setMemo("");
+    setMemoOpen(true);
+  }, []);
+
+  const memoPendingCount = useMemo(() => {
+    if (!memoTarget) return 1;
+    const sourceDateKey = memoBaseDateKey ?? toJstDateKey(startOfJstDay(new Date()));
+    const pendingFromProgress = boot?.homeProgressByDate?.[sourceDateKey]?.[memoTarget.id]?.pending;
+    if (typeof pendingFromProgress === "number") {
+      return Math.max(1, pendingFromProgress);
+    }
+    const fallbackScheduled = countScheduledOccurrencesOnDate(memoTarget.id, sourceDateKey);
+    return Math.max(1, fallbackScheduled);
+  }, [boot?.homeProgressByDate, countScheduledOccurrencesOnDate, memoBaseDateKey, memoTarget]);
+
+  const shiftDateKey = useCallback((dateKey: string, days: number) => {
+    const shifted = addDateKeyDays(dateKey, days);
+    if (!shifted) {
+      return toJstDateKey(addDays(startOfJstDay(new Date()), days));
+    }
+    return shifted;
+  }, []);
+
+  const openReschedule = (chore: ChoreWithComputed, baseDateKey?: string, isCompleted = false) => {
+    const baseKey = baseDateKey ?? toJstDateKey(startOfJstDay(new Date()));
+    setRescheduleTarget(chore);
+    setRescheduleTargetCompleted(isCompleted);
+    setRescheduleBaseDateKey(baseKey);
+    setRescheduleChoice("tomorrow");
+    setRescheduleCustomDate(shiftDateKey(baseKey, 1));
+    setPendingRescheduleConfirm(null);
+    setRescheduleOpen(true);
+  };
+
+  const openRescheduleEditChore = () => {
+    if (!rescheduleTarget) return;
+    const target = rescheduleTarget;
+    setRescheduleOpen(false);
+    setRescheduleTarget(null);
+    setRescheduleTargetCompleted(false);
+    openEditChore(target, rescheduleBaseDateKey);
+  };
+
+  const resolveRescheduleDateKey = useCallback((choice: RescheduleChoice, customDate: string, baseDateKey: string) => {
+    if (choice === "tomorrow") {
+      return shiftDateKey(baseDateKey, 1);
+    }
+    if (choice === "next_same_weekday") {
+      return shiftDateKey(baseDateKey, 7);
+    }
+    return customDate;
+  }, [shiftDateKey]);
+
+  const resolveSourceRecordIdForDate = useCallback(
+    (chore: ChoreWithComputed, sourceDateKey: string | null | undefined) => {
+      if (!sourceDateKey) return undefined;
+      if (!chore.lastRecordId || !chore.lastPerformedAt || chore.lastRecordSkipped) return undefined;
+      const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
+      if (performedDateKey !== sourceDateKey) return undefined;
+      return chore.lastRecordId;
+    },
+    [],
+  );
+
+  const openRescheduleConfirmWithCollisionCheck = useCallback(
+    (payload: Omit<PendingRescheduleConfirm, "mergeIfDuplicate">) => {
+      setPendingRescheduleConfirm({ ...payload, mergeIfDuplicate: true });
+    },
+    [],
+  );
+
+  const rescheduleChoreToDate = useCallback(
+    async ({
+      choreId,
+      targetDateKey,
+      sourceDateKey,
+      recalculateFuture,
+      mergeIfDuplicate,
+      sourceRecordId,
+    }: {
+      choreId: string;
+      targetDateKey: string;
+      sourceDateKey?: string;
+      recalculateFuture?: boolean;
+      mergeIfDuplicate?: boolean;
+      sourceRecordId?: string;
+    }) => {
+      await apiFetch("/api/schedule-override", {
+        method: "POST",
+        body: JSON.stringify({
+          choreId,
+          date: targetDateKey,
+          ...(sourceDateKey ? { sourceDate: sourceDateKey } : {}),
+          ...(typeof recalculateFuture === "boolean" ? { recalculateFuture } : {}),
+          ...(typeof mergeIfDuplicate === "boolean" ? { mergeIfDuplicate } : {}),
+          ...(sourceRecordId ? { sourceRecordId } : {}),
+        }),
+      });
+      await Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
+    },
+    [loadBootstrap, loadCalendarMonthSummary],
+  );
+
+  const focusCalendarDate = useCallback((dateKey: string) => {
+    const nextDate = parseDateKey(dateKey);
+    if (!nextDate) return;
+    // Cancel any pending week-nav timer so it doesn't fire after this explicit navigation.
+    if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+    dragNavHoveringRef.current = null;
+    setCalendarSelectedDateKey(dateKey);
+    setCalendarMonthCursor(nextDate);
+  }, []);
+
+  const applyReschedule = useCallback(() => {
+    if (!rescheduleTarget) return;
+    const nextDate = resolveRescheduleDateKey(rescheduleChoice, rescheduleCustomDate, rescheduleBaseDateKey);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) {
+      setError("日付を指定してください。");
+      return;
+    }
+    const sourceRecordId = resolveSourceRecordIdForDate(rescheduleTarget, rescheduleBaseDateKey);
+    openRescheduleConfirmWithCollisionCheck({
+      origin: "sheet",
+      choreId: rescheduleTarget.id,
+      choreTitle: rescheduleTarget.title,
+      sourceDateKey: rescheduleBaseDateKey,
+      targetDateKey: nextDate,
+      sourceRecordId,
+    });
+  }, [
+    openRescheduleConfirmWithCollisionCheck,
+    resolveSourceRecordIdForDate,
+    rescheduleBaseDateKey,
+    rescheduleChoice,
+    rescheduleCustomDate,
+    rescheduleTarget,
+    resolveRescheduleDateKey,
+  ]);
+
+  const closePendingRescheduleConfirm = useCallback(() => {
+    if (rescheduleConfirmLoading) return;
+    setPendingRescheduleConfirm(null);
+  }, [rescheduleConfirmLoading]);
+
+  const clearDragState = useCallback(() => {
+    setDraggingChore(null);
+    setDragSourceDateKey(null);
+    setDragTargetDateKey(null);
+    setHomeDropTarget(null);
+    setTouchDragging(false);
+    if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+    dragNavHoveringRef.current = null;
+    if (dragScrollRafRef.current !== null) { cancelAnimationFrame(dragScrollRafRef.current); dragScrollRafRef.current = null; }
+    dragScrollSpeedRef.current = 0;
+  }, []);
+
+  const beginChoreDrag = useCallback((chore: ChoreWithComputed, sourceDateKey: string) => {
+    setDraggingChore(chore);
+    setDragSourceDateKey(sourceDateKey);
+    setDragTargetDateKey(null);
+    setHomeDropTarget(null);
+  }, []);
+
+  const resolveDropPosition = useCallback((clientY: number, element: HTMLElement): DropPosition => {
+    const rect = element.getBoundingClientRect();
+    const centerY = rect.top + rect.height / 2;
+    return clientY < centerY ? "before" : "after";
+  }, []);
+
+  const reorderHomeWithinDate = useCallback(({
+    dateKey,
+    dragChoreId,
+    targetChoreId,
+    position,
+  }: {
+    dateKey: string;
+    dragChoreId: string;
+    targetChoreId: string;
+    position: DropPosition;
+  }) => {
+    if (!homeSectionDateKeySet.has(dateKey)) return;
+    setHomeOrderByDate((previous) => {
+      const baseIds = [
+        ...(homeSectionChoreIdsRef.current[dateKey] ?? previous[dateKey] ?? []),
+      ];
+      const reordered = reorderWithinDate(baseIds, dragChoreId, targetChoreId, position);
+      const next: HomeOrderByDate = { ...previous };
+      if (reordered.length === 0) {
+        delete next[dateKey];
+      } else {
+        next[dateKey] = reordered;
+      }
+      return sanitizeHomeOrderByDate(next, homeOrderSanitizeOptions);
+    });
+  }, [homeOrderSanitizeOptions, homeSectionDateKeySet]);
+
+  const applyHomeOrderAfterCrossDateMove = useCallback(({
+    sourceDateKey,
+    targetDateKey,
+    choreId,
+    homeDropInsert,
+  }: {
+    sourceDateKey: string;
+    targetDateKey: string;
+    choreId: string;
+    homeDropInsert?: HomeDropInsert;
+  }) => {
+    if (!homeSectionDateKeySet.has(sourceDateKey) || !homeSectionDateKeySet.has(targetDateKey)) return;
+    setHomeOrderByDate((previous) => {
+      const sourceIds = [
+        ...(homeSectionChoreIdsRef.current[sourceDateKey] ?? previous[sourceDateKey] ?? []),
+      ];
+      const targetIds = [
+        ...(homeSectionChoreIdsRef.current[targetDateKey] ?? previous[targetDateKey] ?? []),
+      ];
+      const next: HomeOrderByDate = { ...previous };
+
+      if (
+        homeDropInsert &&
+        homeDropInsert.targetDateKey === targetDateKey &&
+        homeDropInsert.targetChoreId !== choreId &&
+        targetIds.includes(homeDropInsert.targetChoreId)
+      ) {
+        const moved = moveAcrossDates(
+          sourceIds,
+          targetIds,
+          choreId,
+          homeDropInsert.targetChoreId,
+          homeDropInsert.position,
+        );
+        if (moved.sourceIds.length > 0) {
+          next[sourceDateKey] = moved.sourceIds;
+        } else {
+          delete next[sourceDateKey];
+        }
+        if (moved.targetIds.length > 0) {
+          next[targetDateKey] = moved.targetIds;
+        } else {
+          delete next[targetDateKey];
+        }
+      } else {
+        const filteredSource = sourceIds.filter((id) => id !== choreId);
+        if (filteredSource.length > 0) {
+          next[sourceDateKey] = filteredSource;
+        } else {
+          delete next[sourceDateKey];
+        }
+        if (targetIds.length > 0) {
+          next[targetDateKey] = targetIds;
+        } else {
+          delete next[targetDateKey];
+        }
+      }
+
+      return sanitizeHomeOrderByDate(next, homeOrderSanitizeOptions);
+    });
+  }, [homeOrderSanitizeOptions, homeSectionDateKeySet]);
+
+  const handleChorePointerDown = useCallback(
+    (chore: ChoreWithComputed, sourceDateKey: string, event: React.PointerEvent<HTMLElement>) => {
+      if (!event.isPrimary) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const { clientX: startX, clientY: startY } = event;
+      touchDragInfoRef.current = { active: false, chore, sourceDateKey, startX, startY };
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (event.pointerType === "mouse") {
+        touchDragInfoRef.current.active = true;
+        suppressChipClickRef.current = true;
+        beginChoreDrag(chore, sourceDateKey);
+        setTouchDragging(true);
+        setTouchDragPos({ x: startX, y: startY });
+        return;
+      }
+      longPressTimerRef.current = window.setTimeout(() => {
+        if (!touchDragInfoRef.current) return;
+        touchDragInfoRef.current.active = true;
+        suppressChipClickRef.current = true;
+        beginChoreDrag(touchDragInfoRef.current.chore, touchDragInfoRef.current.sourceDateKey);
+        setTouchDragging(true);
+        setTouchDragPos({ x: startX, y: startY });
+        longPressTimerRef.current = null;
+      }, 350);
+    },
+    [beginChoreDrag],
+  );
+
+  const dropDraggedChoreToDate = useCallback(async (
+    targetDateKey: string,
+    options?: { homeDropInsert?: HomeDropInsert },
+  ) => {
+    if (!draggingChore) return;
+    if (dragSourceDateKey === targetDateKey) {
+      clearDragState();
+      return;
+    }
+    try {
+      setError("");
+      if (!dragSourceDateKey) {
+        setError("移動元の日付が取得できません。");
+        return;
+      }
+      const sourceRecordId = resolveSourceRecordIdForDate(draggingChore, dragSourceDateKey);
+      openRescheduleConfirmWithCollisionCheck({
+        origin: "drag",
+        choreId: draggingChore.id,
+        choreTitle: draggingChore.title,
+        sourceDateKey: dragSourceDateKey,
+        targetDateKey,
+        sourceRecordId,
+        homeDropInsert: options?.homeDropInsert,
+      });
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "日にち変更に失敗しました。");
+    } finally {
+      clearDragState();
+    }
+  }, [
+    clearDragState,
+    dragSourceDateKey,
+    draggingChore,
+    openRescheduleConfirmWithCollisionCheck,
+    resolveSourceRecordIdForDate,
+  ]);
+
+  const handleHomeDrop = useCallback((drop: HomeDropInsert) => {
+    if (!draggingChore) return;
+    if (dragSourceDateKey === drop.targetDateKey) {
+      reorderHomeWithinDate({
+        dateKey: drop.targetDateKey,
+        dragChoreId: draggingChore.id,
+        targetChoreId: drop.targetChoreId,
+        position: drop.position,
+      });
+      clearDragState();
+      return;
+    }
+    void dropDraggedChoreToDate(drop.targetDateKey, { homeDropInsert: drop });
+  }, [clearDragState, dragSourceDateKey, draggingChore, dropDraggedChoreToDate, reorderHomeWithinDate]);
+
+  handleHomeDropRef.current = handleHomeDrop;
+
+  // ref を常に最新の関数に同期。useEffect 内のクロージャが古いスナップショットを
+  // 参照しないよう、render 時点で更新しておく。
+  dropDraggedChoreToDateRef.current = dropDraggedChoreToDate;
+
+  // グローバルポインターイベント — タッチデバイスでのドラッグ&ドロップ対応
+  // 週ナビゲーションホバー・自動スクロールも含む
+  useEffect(() => {
+    const SCROLL_ZONE = 100;   // 端からこのpx内でスクロール発動
+    const MAX_SCROLL_SPEED = 12; // px/frame
+
+    const startScrollLoop = () => {
+      if (dragScrollRafRef.current !== null) return;
+      const loop = () => {
+        const speed = dragScrollSpeedRef.current;
+        const el = mainScrollRef.current;
+        if (speed === 0 || !el) { dragScrollRafRef.current = null; return; }
+        el.scrollTop += speed;
+        dragScrollRafRef.current = requestAnimationFrame(loop);
+      };
+      dragScrollRafRef.current = requestAnimationFrame(loop);
+    };
+
+    const stopScrollLoop = () => {
+      if (dragScrollRafRef.current !== null) { cancelAnimationFrame(dragScrollRafRef.current); dragScrollRafRef.current = null; }
+      dragScrollSpeedRef.current = 0;
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const info = touchDragInfoRef.current;
+      if (!info) return;
+      if (!info.active) {
+        const dx = Math.abs(event.clientX - info.startX);
+        const dy = Math.abs(event.clientY - info.startY);
+        if (dx > 8 || dy > 8) {
+          if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+          touchDragInfoRef.current = null;
+        }
+        return;
+      }
+      event.preventDefault();
+      setTouchDragPos({ x: event.clientX, y: event.clientY });
+
+      const els = document.elementsFromPoint(event.clientX, event.clientY);
+
+      // ドロップ先の判定
+      const homeDropEl = els.find(
+        (el) =>
+          el instanceof HTMLElement &&
+          (el as HTMLElement).dataset.homeDropDate &&
+          (el as HTMLElement).dataset.homeDropChoreId,
+      ) as HTMLElement | undefined;
+      if (homeDropEl?.dataset.homeDropDate && homeDropEl.dataset.homeDropChoreId) {
+        const position = resolveDropPosition(event.clientY, homeDropEl);
+        setHomeDropTarget({
+          targetDateKey: homeDropEl.dataset.homeDropDate,
+          targetChoreId: homeDropEl.dataset.homeDropChoreId,
+          position,
+        });
+        setDragTargetDateKey(homeDropEl.dataset.homeDropDate);
+      } else {
+        setHomeDropTarget(null);
+        const dropEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dropDate) as HTMLElement | undefined;
+        setDragTargetDateKey(dropEl?.dataset.dropDate ?? null);
+      }
+
+      // 週ナビゲーションゾーンのホバー検出 — 600ms滞在で週移動
+      const navEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dragNavigate) as HTMLElement | undefined;
+      const navDir = navEl?.dataset.dragNavigate ?? null;
+      if (navDir !== dragNavHoveringRef.current) {
+        dragNavHoveringRef.current = navDir;
+        if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+        if (navDir === "next-week" || navDir === "prev-week") {
+          dragNavTimerRef.current = window.setTimeout(() => {
+            dragNavTimerRef.current = null;
+            const delta = navDir === "next-week" ? 7 : -7;
+            focusCalendarDate(toJstDateKey(addDays(calendarWeekStartRef.current, delta)));
+          }, 600);
+        }
+      }
+
+      // 画面端の自動スクロール
+      const { clientY } = event;
+      const h = window.innerHeight;
+      if (clientY < SCROLL_ZONE) {
+        dragScrollSpeedRef.current = -MAX_SCROLL_SPEED * (1 - clientY / SCROLL_ZONE);
+        startScrollLoop();
+      } else if (clientY > h - SCROLL_ZONE) {
+        dragScrollSpeedRef.current = MAX_SCROLL_SPEED * (1 - (h - clientY) / SCROLL_ZONE);
+        startScrollLoop();
+      } else {
+        dragScrollSpeedRef.current = 0;
+        // speed=0 になったら loop が自然に止まる
+      }
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+      if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+      dragNavHoveringRef.current = null;
+      stopScrollLoop();
+      const info = touchDragInfoRef.current;
+      touchDragInfoRef.current = null;
+      if (!info?.active) return;
+      const els = document.elementsFromPoint(event.clientX, event.clientY);
+      const homeDropEl = els.find(
+        (el) =>
+          el instanceof HTMLElement &&
+          (el as HTMLElement).dataset.homeDropDate &&
+          (el as HTMLElement).dataset.homeDropChoreId,
+      ) as HTMLElement | undefined;
+      if (homeDropEl?.dataset.homeDropDate && homeDropEl.dataset.homeDropChoreId) {
+        const position = resolveDropPosition(event.clientY, homeDropEl);
+        handleHomeDropRef.current({
+          targetDateKey: homeDropEl.dataset.homeDropDate,
+          targetChoreId: homeDropEl.dataset.homeDropChoreId,
+          position,
+        });
+        return;
+      }
+      const dropEl = els.find((el) => el instanceof HTMLElement && (el as HTMLElement).dataset.dropDate) as HTMLElement | undefined;
+      if (dropEl?.dataset.dropDate) {
+        void dropDraggedChoreToDateRef.current(dropEl.dataset.dropDate);
+        return;
+      }
+      clearDragState();
+    };
+
+    const handlePointerCancel = () => {
+      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+      if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+      dragNavHoveringRef.current = null;
+      stopScrollLoop();
+      touchDragInfoRef.current = null;
+      clearDragState();
+    };
+
+    document.addEventListener("pointermove", handlePointerMove, { passive: false });
+    document.addEventListener("pointerup", handlePointerUp);
+    document.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", handlePointerUp);
+      document.removeEventListener("pointercancel", handlePointerCancel);
+      stopScrollLoop();
+      if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+      if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
+    };
+  }, [clearDragState, focusCalendarDate, resolveDropPosition]);
+
+  const shiftCalendarMonth = useCallback((direction: -1 | 1) => {
+    const nextMonthKey = monthKeyWithOffset(toMonthKey(calendarMonthCursor), direction === 1 ? -1 : 1);
+    const nextDateKey = `${nextMonthKey}-01`;
+    focusCalendarDate(nextDateKey);
+    setCalendarExpanded(true);
+  }, [calendarMonthCursor, focusCalendarDate]);
+
+  const shiftCalendarWeek = useCallback((direction: -1 | 1) => {
+    focusCalendarDate(toJstDateKey(addDays(calendarWeekStart, direction * CALENDAR_WEEK_DAYS)));
+    setCalendarExpanded(false);
+  }, [calendarWeekStart, focusCalendarDate]);
+
+  const handleCalendarTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    calendarSwipeStartXRef.current = touch.clientX;
+    calendarSwipeStartYRef.current = touch.clientY;
+  }, []);
+
+  const handleCalendarTouchEnd = useCallback((e: React.TouchEvent) => {
+    const startX = calendarSwipeStartXRef.current;
+    const startY = calendarSwipeStartYRef.current;
+    calendarSwipeStartXRef.current = null;
+    calendarSwipeStartYRef.current = null;
+    const touch = e.changedTouches[0];
+    if (!touch || startX === null || startY === null) return;
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+    const direction = dx < 0 ? 1 : -1;  // left = next (1), right = prev (-1)
+    if (calendarExpanded) {
+      shiftCalendarMonth(direction);
+    } else {
+      shiftCalendarWeek(direction);
+    }
+  }, [calendarExpanded, shiftCalendarMonth, shiftCalendarWeek]);
+
+  const shiftTargetDateByWeek = useCallback((direction: -1 | 1) => {
+    const source = dragSourceDateKey ?? toJstDateKey(startOfJstDay(new Date()));
+    const sourceDate = parseDateKey(source);
+    if (!sourceDate) return source;
+    const jstDay = new Date(sourceDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
+    const weekDayIndex = jstDay === 0 ? 6 : jstDay - 1;
+    // Use the source date's own week start (not calendarWeekStart) so that week-nav buttons
+    // always move relative to the drag source even when the month calendar cursor diverges.
+    const sourceWeekStart = startOfJstWeekMonday(sourceDate);
+    const target = addDays(sourceWeekStart, direction * 7 + weekDayIndex);
+    return toJstDateKey(target);
+  }, [dragSourceDateKey]);
+
+  const submitCalendarQuickCompletion = useCallback(async ({
+    chore,
+    dateKey,
+    memoText,
+  }: {
+    chore: ChoreWithComputed;
+    dateKey: string;
+    memoText: string;
+  }) => {
+    const targetId = chore.id;
+    const mutationKey = buildRecordMutationKey(targetId, dateKey);
+    const mutationId = beginRecordMutation(mutationKey);
+    const previousChore = chores.find((item) => item.id === targetId) ?? null;
+    const previousHomeProgressEntry = boot?.homeProgressByDate?.[dateKey]?.[targetId] ?? null;
+    const previousOverrides = scheduleOverridesByChore.get(targetId) ?? [];
     const now = new Date();
-    const nowIso = now.toISOString();
+    const todayStart = startOfJstDay(now);
+    const tomorrowStart = addDays(todayStart, 1);
+    const dayAfterTomorrow = addDays(todayStart, 2);
+    const resolved = resolveDateKeyTimestamp(dateKey, now);
+    const performedAt = resolved.performedAt;
+    const performedAtIso = performedAt.toISOString();
+    const performedAtDateKey = resolved.scheduledDateKey;
+    const completedTomorrowTask = chore.isDueTomorrow;
 
     setMemoOpen(false);
-    setRecordUpdating(targetId, true);
+    setRecordUpdating(targetId, dateKey, true);
 
     if (sessionUser) {
-      updateBootChoreOptimistically(targetId, (chore) => ({
-        ...chore,
-        doneToday: true,
-        lastPerformedAt: nowIso,
-        lastPerformerName: sessionUser.name,
-        lastPerformerId: sessionUser.id,
-        lastRecordSkipped: false,
-        lastRecordId: chore.lastRecordId ?? `optimistic-${now.getTime()}`,
-        dueAt: addDays(now, chore.intervalDays).toISOString(),
-        isDueToday: false,
-        isDueTomorrow: chore.intervalDays === 1,
-        isOverdue: false,
-        overdueDays: 0,
-        daysSinceLast: 0,
-      }));
+      let optimisticChore: ChoreWithComputed | null = null;
+      updateBootChoreOptimistically(targetId, (current) => {
+        const nextDueAt = addDays(performedAt, current.intervalDays);
+        const nextDueAtTime = nextDueAt.getTime();
+        optimisticChore = {
+          ...current,
+          doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
+          lastPerformedAt: performedAtIso,
+          lastPerformerName: sessionUser.name,
+          lastPerformerId: sessionUser.id,
+          lastRecordIsInitial: false,
+          lastRecordSkipped: false,
+          lastRecordId: current.lastRecordId ?? `optimistic-${now.getTime()}`,
+          dueAt: nextDueAt.toISOString(),
+          isDueToday: nextDueAt >= todayStart && nextDueAt < tomorrowStart,
+          isDueTomorrow: nextDueAt >= tomorrowStart && nextDueAt < dayAfterTomorrow,
+          isOverdue: nextDueAt < todayStart,
+          overdueDays:
+            nextDueAt < todayStart
+              ? Math.floor((todayStart.getTime() - nextDueAtTime) / DAY_IN_MS)
+              : 0,
+          daysSinceLast: 0,
+        };
+        return optimisticChore;
+      });
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, dateKey);
+      const currentProgress = boot?.homeProgressByDate?.[dateKey]?.[targetId] ?? null;
+      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseCompleted = currentProgress?.completed ?? 0;
+      const baseSkipped = currentProgress?.skipped ?? 0;
+      const nextCompleted = Math.min(baseTotal, baseCompleted + 1);
+      const nextPending = Math.max(0, baseTotal - nextCompleted - baseSkipped);
+      if (optimisticChore) {
+        patchBootForRecordMutation(targetId, dateKey, {
+          chore: optimisticChore,
+          homeProgressEntry: {
+            total: baseTotal,
+            completed: nextCompleted,
+            skipped: baseSkipped,
+            pending: nextPending,
+            latestState: "done",
+          },
+        });
+      }
     }
 
     try {
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, dateKey);
+      const body: Record<string, unknown> = {
+        memo: memoText,
+        skipped: false,
+        performedAt: performedAtIso,
+        scheduledDate: performedAtDateKey,
+      };
+      if (scheduledCount > 0) {
+        body.sourceDate = dateKey;
+        body.recalculateFuture = false;
+        body.mergeIfDuplicate = false;
+      }
       const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
         method: "POST",
-        body: JSON.stringify({ memo }),
+        body: JSON.stringify(body),
       });
-      // Replace the optimistic lastRecordId with the real one from the server
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
+      if (result?.record?.id) {
+        updateBootChoreOptimistically(targetId, (current) => ({
+          ...current,
+          lastRecordId: result.record.id,
+        }));
+      }
+
+      const snapshot = await loadChoreMutationSnapshot(targetId, dateKey);
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
+      patchBootForRecordMutation(targetId, dateKey, {
+        chore: snapshot.chore,
+        homeProgressEntry: snapshot.homeProgressEntry,
+        scheduleOverrides: snapshot.scheduleOverrides,
+      });
+      void Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
+
+      if (!chore.doneToday && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
+        showTaskBanner("明日のものをやってえらい！", "blue");
+      }
+
+      void Promise.all([loadStats(statsPeriod), loadHistory()]);
+    } catch (err: unknown) {
+      if (isLatestRecordMutation(mutationKey, mutationId) && previousChore) {
+        patchBootForRecordMutation(targetId, dateKey, {
+          chore: previousChore,
+          homeProgressEntry: previousHomeProgressEntry,
+          scheduleOverrides: previousOverrides,
+        });
+      }
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setError((err as Error).message ?? "記録に失敗しました。");
+      }
+    } finally {
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setRecordUpdating(targetId, dateKey, false);
+      }
+      setMemoTarget(null);
+      setMemoBaseDateKey(null);
+      setMemo("");
+      setMemoFlowMode("default");
+      setMemoQuickDateKey(null);
+    }
+  }, [
+    beginRecordMutation,
+    boot?.homeProgressByDate,
+    buildRecordMutationKey,
+    chores,
+    countScheduledOccurrencesOnDate,
+    isLatestRecordMutation,
+    loadBootstrap,
+    loadCalendarMonthSummary,
+    loadChoreMutationSnapshot,
+    loadHistory,
+    loadStats,
+    patchBootForRecordMutation,
+    scheduleOverridesByChore,
+    sessionUser,
+    setRecordUpdating,
+    showTaskBanner,
+    statsPeriod,
+    updateBootChoreOptimistically,
+  ]);
+
+  const addCalendarPlannedOccurrence = useCallback(async (
+    chore: ChoreWithComputed,
+    dateKey: string,
+  ) => {
+    const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+    if (compareDateKey(dateKey, todayDateKey) < 0) {
+      setError("過去の日付には予定登録できません。");
+      return;
+    }
+
+    setError("");
+    setRecordUpdating(chore.id, dateKey, true);
+    try {
+      await apiFetch("/api/schedule-override", {
+        method: "POST",
+        body: JSON.stringify({
+          choreId: chore.id,
+          date: dateKey,
+          mode: "add",
+        }),
+      });
+      await Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
+      setInfoMessage(`「${chore.title}」を${dateKey}に予定登録しました。`);
+      closeCalendarBlankActionSheet();
+    } catch (err: unknown) {
+      const message = (err as Error).message ?? "予定登録に失敗しました。";
+      setError(message);
+    } finally {
+      setRecordUpdating(chore.id, dateKey, false);
+    }
+  }, [
+    closeCalendarBlankActionSheet,
+    loadBootstrap,
+    loadCalendarMonthSummary,
+    setRecordUpdating,
+  ]);
+
+  const handleCalendarBlankComplete = useCallback((chore: ChoreWithComputed, dateKey: string) => {
+    const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+    if (compareDateKey(dateKey, todayDateKey) < 0) {
+      closeCalendarBlankActionSheet();
+      openCalendarQuickMemo(chore, dateKey);
+      return;
+    }
+    closeCalendarBlankActionSheet();
+    void submitCalendarQuickCompletion({ chore, dateKey, memoText: "" });
+  }, [closeCalendarBlankActionSheet, openCalendarQuickMemo, submitCalendarQuickCompletion]);
+
+  const handleCalendarBlankPlanned = useCallback((chore: ChoreWithComputed, dateKey: string) => {
+    void addCalendarPlannedOccurrence(chore, dateKey);
+  }, [addCalendarPlannedOccurrence]);
+
+  const submitMemoAction = useCallback(async ({
+    skipped,
+    skipCount,
+    completeCount,
+    recalculateFuture,
+    bypassFutureConfirm = false,
+    mergeIfDuplicate = true,
+    performedAtMode = "today",
+  }: {
+    skipped: boolean;
+    skipCount?: number;
+    completeCount?: number;
+    recalculateFuture?: boolean;
+    bypassFutureConfirm?: boolean;
+    mergeIfDuplicate?: boolean;
+    performedAtMode?: PerformedAtMode;
+  }) => {
+    if (!memoTarget) return;
+    const targetId = memoTarget.id;
+    const now = new Date();
+    const todayStart = startOfJstDay(now);
+    const tomorrowStart = addDays(todayStart, 1);
+    const dayAfterTomorrow = addDays(todayStart, 2);
+    const sourceDateKey = memoBaseDateKey ?? undefined;
+    const shouldSendSourceDate = Boolean(sourceDateKey);
+    const resolvedSourceDate = sourceDateKey ? resolveDateKeyTimestamp(sourceDateKey, now) : null;
+    const hasFutureMemoBase = resolvedSourceDate?.hasFutureScheduledDate ?? false;
+    if (performedAtMode === "today" && hasFutureMemoBase && !bypassFutureConfirm && sourceDateKey) {
+      openRescheduleConfirmWithCollisionCheck({
+        origin: skipped ? "future-skip" : "future-record",
+        choreId: memoTarget.id,
+        choreTitle: memoTarget.title,
+        sourceDateKey,
+        targetDateKey: toJstDateKey(todayStart),
+      });
+      return;
+    }
+
+    const resolvedPerformedAt =
+      performedAtMode === "source" && sourceDateKey
+        ? resolveDateKeyTimestamp(sourceDateKey, now)
+        : { performedAt: now, scheduledDateKey: formatDateKey(now) };
+    const performedAt = resolvedPerformedAt.performedAt;
+    const performedAtIso = performedAt.toISOString();
+    const performedAtDateKey = resolvedPerformedAt.scheduledDateKey;
+    const mutationDateKey = sourceDateKey ?? performedAtDateKey;
+    const mutationKey = buildRecordMutationKey(targetId, mutationDateKey);
+    const mutationId = beginRecordMutation(mutationKey);
+    const previousChore = chores.find((item) => item.id === targetId) ?? null;
+    const previousHomeProgressEntry = boot?.homeProgressByDate?.[mutationDateKey]?.[targetId] ?? null;
+    const previousOverrides = scheduleOverridesByChore.get(targetId) ?? [];
+    const completedTomorrowTask = memoTarget.isDueTomorrow;
+
+    setMemoOpen(false);
+    setRecordUpdating(targetId, mutationDateKey, true);
+
+    if (sessionUser) {
+      let optimisticChore: ChoreWithComputed | null = null;
+      updateBootChoreOptimistically(targetId, (chore) => {
+        const nextDueAt = addDays(performedAt, chore.intervalDays);
+        const nextDueAtTime = nextDueAt.getTime();
+        optimisticChore = {
+          ...chore,
+          doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
+          lastPerformedAt: performedAtIso,
+          lastPerformerName: skipped ? "スキップ" : sessionUser.name,
+          lastPerformerId: sessionUser.id,
+          lastRecordIsInitial: false,
+          lastRecordSkipped: skipped,
+          lastRecordId: skipped
+            ? chore.lastRecordId ?? `optimistic-skip-${now.getTime()}`
+            : chore.lastRecordId ?? `optimistic-${now.getTime()}`,
+          dueAt: nextDueAt.toISOString(),
+          isDueToday: nextDueAt >= todayStart && nextDueAt < tomorrowStart,
+          isDueTomorrow: nextDueAt >= tomorrowStart && nextDueAt < dayAfterTomorrow,
+          isOverdue: nextDueAt < todayStart,
+          overdueDays:
+            nextDueAt < todayStart
+              ? Math.floor((todayStart.getTime() - nextDueAtTime) / DAY_IN_MS)
+              : 0,
+          daysSinceLast: 0,
+        };
+        return optimisticChore;
+      });
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, mutationDateKey);
+      const currentProgress = boot?.homeProgressByDate?.[mutationDateKey]?.[targetId] ?? null;
+      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseCompleted = currentProgress?.completed ?? 0;
+      const baseSkipped = currentProgress?.skipped ?? 0;
+      const consume = skipped
+        ? Math.max(1, Math.min(skipCount ?? 1, skipCountMax))
+        : Math.max(1, Math.min(completeCount ?? 1, completeCountMax));
+      const nextCompleted = skipped ? baseCompleted : Math.min(baseTotal, baseCompleted + consume);
+      const nextSkipped = skipped ? Math.min(baseTotal, baseSkipped + consume) : baseSkipped;
+      const nextPending = Math.max(0, baseTotal - nextCompleted - nextSkipped);
+      if (optimisticChore) {
+        patchBootForRecordMutation(targetId, mutationDateKey, {
+          chore: optimisticChore,
+          homeProgressEntry: {
+            total: baseTotal,
+            completed: nextCompleted,
+            skipped: nextSkipped,
+            pending: nextPending,
+            latestState: skipped ? "skipped" : "done",
+          },
+        });
+      }
+    }
+
+    try {
+      const body: Record<string, unknown> = {
+        memo,
+        skipped,
+        performedAt: performedAtIso,
+        scheduledDate: performedAtDateKey,
+      };
+      if (skipped && typeof skipCount === "number") {
+        body.skipCount = skipCount;
+      }
+      if (!skipped && typeof completeCount === "number") {
+        body.completeCount = completeCount;
+      }
+      if (shouldSendSourceDate && sourceDateKey) {
+        const targetMatchesSource = sourceDateKey === performedAtDateKey;
+        const effectiveMergeIfDuplicate =
+          hasFutureMemoBase && !targetMatchesSource ? mergeIfDuplicate : false;
+        body.sourceDate = sourceDateKey;
+        body.recalculateFuture = recalculateFuture === true;
+        body.mergeIfDuplicate = effectiveMergeIfDuplicate;
+      }
+      const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
       if (result?.record?.id) {
         updateBootChoreOptimistically(targetId, (chore) => ({
           ...chore,
           lastRecordId: result.record.id,
         }));
       }
-      void Promise.all([loadStats(statsPeriod), loadHistory()]);
-    } catch (err: unknown) {
-      if (previousBoot) {
-        setBoot(previousBoot);
-      }
-      setError((err as Error).message ?? "スキップに失敗しました。");
-    } finally {
-      setRecordUpdating(targetId, false);
-      setMemoTarget(null);
-    }
-  };
-
-  const submitSkip = async () => {
-    if (!memoTarget) return;
-    const targetId = memoTarget.id;
-    const previousBoot = boot;
-    const now = new Date();
-    const nowIso = now.toISOString();
-
-    setMemoOpen(false);
-    setRecordUpdating(targetId, true);
-
-    if (sessionUser) {
-      updateBootChoreOptimistically(targetId, (chore) => ({
-        ...chore,
-        doneToday: true,
-        lastPerformedAt: nowIso,
-        lastPerformerName: "スキップ",
-        lastPerformerId: sessionUser.id,
-        lastRecordSkipped: true,
-        lastRecordId: chore.lastRecordId ?? `optimistic-skip-${now.getTime()}`,
-        dueAt: addDays(now, chore.intervalDays).toISOString(),
-        isDueToday: false,
-        isDueTomorrow: chore.intervalDays === 1,
-        isOverdue: false,
-        overdueDays: 0,
-        daysSinceLast: 0,
-      }));
-    }
-
-    try {
-      const result = await apiFetch<{ record: { id: string } }>(`/api/chores/${targetId}/record`, {
-        method: "POST",
-        body: JSON.stringify({ memo, skipped: true }),
+      const snapshot = await loadChoreMutationSnapshot(targetId, mutationDateKey);
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
+      patchBootForRecordMutation(targetId, mutationDateKey, {
+        chore: snapshot.chore,
+        homeProgressEntry: snapshot.homeProgressEntry,
+        scheduleOverrides: snapshot.scheduleOverrides,
       });
-      if (result?.record?.id) {
-        updateBootChoreOptimistically(targetId, (chore) => ({
-          ...chore,
-          lastRecordId: result.record.id,
-        }));
+      void Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
+      if (!skipped && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
+        showTaskBanner("明日のものをやってえらい！", "blue");
       }
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
-      if (previousBoot) {
-        setBoot(previousBoot);
+      if (isLatestRecordMutation(mutationKey, mutationId) && previousChore) {
+        patchBootForRecordMutation(targetId, mutationDateKey, {
+          chore: previousChore,
+          homeProgressEntry: previousHomeProgressEntry,
+          scheduleOverrides: previousOverrides,
+        });
       }
-      setError((err as Error).message ?? "スキップに失敗しました。");
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setError((err as Error).message ?? (skipped ? "スキップに失敗しました。" : "記録に失敗しました。"));
+      }
     } finally {
-      setRecordUpdating(targetId, false);
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setRecordUpdating(targetId, mutationDateKey, false);
+      }
       setMemoTarget(null);
+      setMemoBaseDateKey(null);
+      setMemoFlowMode("default");
+      setMemoQuickDateKey(null);
+      setSkipCountDialogOpen(false);
+      setSkipCountValue(1);
+      setSkipCountMax(1);
+      setCompleteCountDialogOpen(false);
+      setCompleteCountValue(1);
+      setCompleteCountMax(1);
+      setPendingCompletePerformedAtMode("today");
     }
-  };
+  }, [
+    beginRecordMutation,
+    boot?.homeProgressByDate,
+    buildRecordMutationKey,
+    chores,
+    completeCountMax,
+    countScheduledOccurrencesOnDate,
+    isLatestRecordMutation,
+    loadBootstrap,
+    loadCalendarMonthSummary,
+    loadChoreMutationSnapshot,
+    loadHistory,
+    loadStats,
+    memo,
+    memoBaseDateKey,
+    memoTarget,
+    openRescheduleConfirmWithCollisionCheck,
+    patchBootForRecordMutation,
+    scheduleOverridesByChore,
+    sessionUser,
+    setRecordUpdating,
+    showTaskBanner,
+    skipCountMax,
+    statsPeriod,
+    updateBootChoreOptimistically,
+  ]);
+
+  const submitRecordWithCountChoice = useCallback((performedAtMode: PerformedAtMode) => {
+    const canChooseCount = Boolean(memoBaseDateKey) && memoPendingCount > 1;
+    if (!canChooseCount) {
+      void submitMemoAction({ skipped: false, performedAtMode });
+      return;
+    }
+    setPendingRecordDateChoice(null);
+    setPendingCompletePerformedAtMode(performedAtMode);
+    setCompleteCountMax(memoPendingCount);
+    setCompleteCountValue(memoPendingCount);
+    setCompleteCountDialogOpen(true);
+  }, [memoBaseDateKey, memoPendingCount, submitMemoAction]);
+
+  const submitRecord = useCallback(() => {
+    if (memoFlowMode === "calendar-quick" && memoTarget && memoQuickDateKey) {
+      void submitCalendarQuickCompletion({
+        chore: memoTarget,
+        dateKey: memoQuickDateKey,
+        memoText: memo,
+      });
+      return;
+    }
+    const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+    if (memoTarget && memoBaseDateKey && memoBaseDateKey !== todayDateKey) {
+      setPendingRecordDateChoice({
+        choreId: memoTarget.id,
+        choreTitle: memoTarget.title,
+        sourceDateKey: memoBaseDateKey,
+      });
+      return;
+    }
+    setPendingRecordDateChoice(null);
+    submitRecordWithCountChoice("today");
+  }, [
+    memo,
+    memoBaseDateKey,
+    memoFlowMode,
+    memoQuickDateKey,
+    memoTarget,
+    submitRecordWithCountChoice,
+    submitCalendarQuickCompletion,
+  ]);
+
+  const submitSkip = useCallback(() => {
+    if (!memoTarget) return;
+    const defaultCount = Math.max(1, memoPendingCount);
+    setPendingRecordDateChoice(null);
+    if (defaultCount <= 1) {
+      void submitMemoAction({ skipped: true, skipCount: 1 });
+      return;
+    }
+    setSkipCountMax(defaultCount);
+    setSkipCountValue(defaultCount);
+    setSkipCountDialogOpen(true);
+  }, [memoPendingCount, memoTarget, submitMemoAction]);
+
+  const confirmCompleteWithCount = useCallback(() => {
+    const completeCount = Math.max(1, Math.min(completeCountValue, completeCountMax));
+    setPendingRecordDateChoice(null);
+    setCompleteCountDialogOpen(false);
+    void submitMemoAction({
+      skipped: false,
+      completeCount,
+      performedAtMode: pendingCompletePerformedAtMode,
+    });
+  }, [
+    completeCountMax,
+    completeCountValue,
+    pendingCompletePerformedAtMode,
+    submitMemoAction,
+  ]);
+
+  const confirmSkipWithCount = useCallback(() => {
+    const skipCount = Math.max(1, Math.min(skipCountValue, skipCountMax));
+    setPendingRecordDateChoice(null);
+    setSkipCountDialogOpen(false);
+    void submitMemoAction({ skipped: true, skipCount });
+  }, [skipCountMax, skipCountValue, submitMemoAction]);
+
+  const confirmPendingReschedule = useCallback(async (recalculateFuture: boolean) => {
+    if (!pendingRescheduleConfirm || rescheduleConfirmLoading) return;
+    try {
+      setError("");
+      setRescheduleConfirmLoading(true);
+      if (
+        pendingRescheduleConfirm.origin === "future-record" ||
+        pendingRescheduleConfirm.origin === "future-skip"
+      ) {
+        await submitMemoAction({
+          skipped: pendingRescheduleConfirm.origin === "future-skip",
+          recalculateFuture,
+          bypassFutureConfirm: true,
+          mergeIfDuplicate: pendingRescheduleConfirm.mergeIfDuplicate,
+        });
+        setPendingRescheduleConfirm(null);
+        return;
+      }
+      await rescheduleChoreToDate({
+        choreId: pendingRescheduleConfirm.choreId,
+        targetDateKey: pendingRescheduleConfirm.targetDateKey,
+        sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
+        recalculateFuture,
+        mergeIfDuplicate: pendingRescheduleConfirm.mergeIfDuplicate,
+        sourceRecordId: pendingRescheduleConfirm.sourceRecordId,
+      });
+      if (pendingRescheduleConfirm.origin === "drag") {
+        applyHomeOrderAfterCrossDateMove({
+          sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
+          targetDateKey: pendingRescheduleConfirm.targetDateKey,
+          choreId: pendingRescheduleConfirm.choreId,
+          homeDropInsert: pendingRescheduleConfirm.homeDropInsert,
+        });
+      }
+      focusCalendarDate(pendingRescheduleConfirm.targetDateKey);
+      if (pendingRescheduleConfirm.origin === "sheet") {
+        setRescheduleOpen(false);
+        setRescheduleTarget(null);
+        setRescheduleTargetCompleted(false);
+      }
+      setPendingRescheduleConfirm(null);
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "日にち変更に失敗しました。");
+    } finally {
+      setRescheduleConfirmLoading(false);
+    }
+  }, [applyHomeOrderAfterCrossDateMove, focusCalendarDate, pendingRescheduleConfirm, rescheduleChoreToDate, rescheduleConfirmLoading, submitMemoAction]);
 
   const undoRecord = async (chore: ChoreWithComputed) => {
     if (!chore.lastRecordId) return;
     const previousBoot = boot;
-    setRecordUpdating(chore.id, true);
+    const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+    setRecordUpdating(chore.id, todayDateKey, true);
 
     // Recalculate due-date flags from the pre-check dueAt.
     // submitRecord shifted dueAt forward by intervalDays, so we reverse it.
-    const origDueAt = chore.lastPerformedAt
-      ? addDays(new Date(chore.lastPerformedAt), chore.intervalDays).toISOString()
-      : chore.dueAt;
+    const origDueAt = chore.dueAt
+      ? addDays(new Date(chore.dueAt), -chore.intervalDays).toISOString()
+      : null;
     const todayStart = startOfJstDay(new Date());
     const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrow = addDays(todayStart, 2);
@@ -1261,22 +3290,75 @@ export function KajiApp() {
 
     try {
       await apiFetch(`/api/records/${chore.lastRecordId}`, { method: "DELETE", body: "{}" });
+      // Refresh authoritative state from server to ensure dueAt, lastPerformedAt etc. are correct.
+      await Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
       if (previousBoot) {
         setBoot(previousBoot);
       }
-      setError((err as Error).message ?? "Failed to undo record.");
+      setError((err as Error).message ?? "元に戻す処理に失敗しました。");
     } finally {
-      setRecordUpdating(chore.id, false);
+      setRecordUpdating(chore.id, todayDateKey, false);
     }
   };
 
-  const openHistory = (chore: ChoreWithComputed) => {
-    setHistoryTarget(chore);
-    setHistoryFilter("all");
-    setHistoryOpen(true);
+  const canUndoChoreRecord = useCallback((chore: ChoreWithComputed) => {
+    return Boolean(chore.lastRecordId) && !chore.lastRecordSkipped && !chore.lastRecordIsInitial;
+  }, []);
+
+  const requestUndoRecord = (chore: ChoreWithComputed) => {
+    if (!canUndoChoreRecord(chore)) {
+      setError("この完了は未完了に戻せません。");
+      return;
+    }
+    if (recordUpdatingIds.includes(buildRecordMutationKey(chore.id, toJstDateKey(startOfJstDay(new Date()))))) return;
+    setUndoConfirmTarget(chore);
   };
+
+  const confirmUndoRecord = async () => {
+    const target = undoConfirmTarget;
+    if (!target) return;
+    setUndoConfirmTarget(null);
+    await undoRecord(target);
+  };
+
+  const openManageDetail = (choreId: string) => {
+    setManageDetailChoreId(choreId);
+    setHistoryFilter("all");
+  };
+
+  const toggleReaction = useCallback(
+    async (record: ChoreRecordItem, emoji: (typeof REACTION_CHOICES)[number]) => {
+      if (!sessionUser) return;
+      if (reactionUpdatingId === record.id) return;
+      const current = (record.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
+      try {
+        setReactionUpdatingId(record.id);
+        setError("");
+        if (current?.emoji === emoji) {
+          await apiFetch(`/api/records/${record.id}/reaction`, {
+            method: "DELETE",
+            body: "{}",
+          });
+        } else {
+          await apiFetch(`/api/records/${record.id}/reaction`, {
+            method: "PUT",
+            body: JSON.stringify({ emoji }),
+          });
+        }
+        await loadHistory();
+      } catch (err: unknown) {
+        setError((err as Error).message ?? "リアクションの更新に失敗しました。");
+      } finally {
+        setReactionUpdatingId(null);
+      }
+    },
+    [loadHistory, reactionUpdatingId, sessionUser],
+  );
 
   const updateNotificationSettings = async (next: NotificationSettings) => {
     const previous = notificationSettings;
@@ -1294,6 +3376,60 @@ export function KajiApp() {
       setNotificationSettings(previous);
       setError((err as Error).message ?? "通知設定の保存に失敗しました。");
     }
+  };
+
+  const handleTogglePush = async (next: boolean) => {
+    if (pushLoading) return;
+    if (next) {
+      const enabled = await subscribePush();
+      if (!enabled) {
+        setPushEnabled(false);
+        return;
+      }
+      setPushEnabled(true);
+      return;
+    }
+
+    try {
+      setPushLoading(true);
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = await registration?.pushManager.getSubscription();
+      if (subscription?.endpoint) {
+        await apiFetch("/api/subscriptions", {
+          method: "DELETE",
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        });
+      }
+      await subscription?.unsubscribe();
+      setPushEnabled(false);
+      setReminderTimePickerOpen(false);
+    } catch (err: unknown) {
+      setError((err as Error).message ?? "通知設定の変更に失敗しました。");
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const removeReminderTime = (time: string) => {
+    if (!notificationSettings) return;
+    if (notificationSettings.reminderTimes.length <= 1) {
+      setError("通知時刻は1件以上必要です。");
+      return;
+    }
+    const nextTimes = notificationSettings.reminderTimes.filter((value) => value !== time);
+    void updateNotificationSettings({ ...notificationSettings, reminderTimes: nextTimes });
+  };
+
+  const addReminderTime = (time: string) => {
+    if (!notificationSettings) return;
+    if (notificationSettings.reminderTimes.includes(time)) return;
+    if (notificationSettings.reminderTimes.length >= 4) {
+      setError("通知時刻は最大4件までです。");
+      return;
+    }
+    const nextTimes = [...notificationSettings.reminderTimes, time].sort((a, b) => a.localeCompare(b));
+    void updateNotificationSettings({ ...notificationSettings, reminderTimes: nextTimes });
+    setReminderTimePickerOpen(false);
   };
 
   const subscribePush = async () => {
@@ -1352,11 +3488,18 @@ export function KajiApp() {
       setError("");
       await loadStats("custom", range);
     } catch (err: unknown) {
-      setError((err as Error).message ?? "統計の読み込みに失敗しました。");
+      setError((err as Error).message ?? "月間レポートの読み込みに失敗しました。");
     }
   };
 
-  const pullRefreshEnabled = true;
+  const logPullGuard = useCallback((stage: string, reason: string, details: Record<string, unknown> = {}) => {
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem("kaji_pull_debug") !== "1") return;
+    console.info("[kaji:pull-guard]", { stage, reason, ...details });
+  }, []);
+
+  // Safari/Chrome 実機回帰観点: 「スクロールのみ」「更新のみ」「横スワイプのみ」。
+
   const executePullRefresh = useCallback(async () => {
     if (!pullRefreshEnabled) return;
     if (pullRefreshing) return;
@@ -1379,13 +3522,24 @@ export function KajiApp() {
 
   const handleMainScrollTouchStart = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
-      if (pullRefreshing || assignmentOpen || activeTab === "settings") return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchstart", "disabled");
+        return;
+      }
+      if (pullRefreshing) {
+        logPullGuard("touchstart", "refreshing");
+        return;
+      }
+      if (assignmentOpen || settingsOpen) {
+        logPullGuard("touchstart", "blocked_by_sheet", { assignmentOpen, settingsOpen });
+        return;
+      }
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
       if (!touch || !scroller) return;
+      tapPriorityZoneActiveRef.current = isTapPriorityTarget(event.target);
       pullStartScrollTopRef.current = scroller.scrollTop;
-      if (scroller.scrollTop > 0) {
+      if (tapPriorityZoneActiveRef.current || !isAtPullTop(scroller.scrollTop)) {
         pullEligibleRef.current = false;
         pullDraggingRef.current = false;
         setPullDragging(false);
@@ -1393,23 +3547,28 @@ export function KajiApp() {
       }
 
       pullEligibleRef.current = true;
+      logPullGuard("touchstart", "eligible");
       pullDraggingRef.current = false;
       setPullDragging(false);
       pullStartYRef.current = touch.clientY;
       pullStartXRef.current = touch.clientX;
     },
-    [activeTab, assignmentOpen, pullRefreshing],
+    [assignmentOpen, isTapPriorityTarget, pullRefreshing, settingsOpen],
   );
 
   const handleMainScrollTouchMove = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
       if (!pullRefreshEnabled) return;
-      if (!pullEligibleRef.current || pullRefreshing) return;
+      if (!pullEligibleRef.current || pullRefreshing || tapPriorityZoneActiveRef.current) return;
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
-      if (!touch || !scroller) return;
+      if (!touch || !scroller) {
+        logPullGuard("touchmove", "missing_touch_or_scroller", { hasTouch: Boolean(touch), hasScroller: Boolean(scroller) });
+        return;
+      }
 
-      if (scroller.scrollTop > 0) {
+      if (!isAtPullTop(scroller.scrollTop)) {
+        logPullGuard("touchmove", "lost_top_position", { scrollTop: scroller.scrollTop });
         pullEligibleRef.current = false;
         pullDraggingRef.current = false;
         setPullDragging(false);
@@ -1419,16 +3578,18 @@ export function KajiApp() {
 
       const dx = touch.clientX - pullStartXRef.current;
       const dy = touch.clientY - pullStartYRef.current;
-      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * 1.2;
-      const canRefreshBySwipe = pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
+      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * PULL_START_DIRECTION_RATIO;
+      const canRefreshBySwipe =
+        isAtPullTop(pullStartScrollTopRef.current) && isAtPullTop(scroller.scrollTop);
 
       if (dy > 0 && isMostlyVertical && canRefreshBySwipe) {
         event.preventDefault();
       }
 
       if (!pullDraggingRef.current) {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * 0.9) {
+        if (Math.abs(dx) < PULL_START_MIN_MOVEMENT_PX && Math.abs(dy) < PULL_START_MIN_MOVEMENT_PX) return;
+        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * PULL_HORIZONTAL_CANCEL_RATIO) {
+          logPullGuard("touchmove", "direction_rejected", { dx, dy });
           pullEligibleRef.current = false;
           pullDraggingRef.current = false;
           setPullDragging(false);
@@ -1437,6 +3598,7 @@ export function KajiApp() {
         }
         pullDraggingRef.current = true;
         setPullDragging(true);
+        logPullGuard("touchmove", "drag_started", { dx, dy });
       }
 
       if (dy <= 0) {
@@ -1448,15 +3610,28 @@ export function KajiApp() {
       event.preventDefault();
       event.stopPropagation();
     },
-    [pullRefreshing],
+    [logPullGuard, pullRefreshEnabled, pullRefreshing],
   );
+
+  // React 17+ registers onTouchMove as passive, preventing preventDefault().
+  // Register directly with { passive: false } so pull-to-refresh can cancel scroll.
+  useEffect(() => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+    const handler = (e: Event) => handleMainScrollTouchMove(e as unknown as TouchEvent<HTMLDivElement>);
+    el.addEventListener("touchmove", handler, { passive: false });
+    return () => el.removeEventListener("touchmove", handler);
+  }, [handleMainScrollTouchMove]);
 
   const endMainScrollPullGesture = useCallback(() => {
     if (!pullRefreshEnabled) return;
     const shouldHandle = pullDraggingRef.current || pullDistance > 0;
     pullEligibleRef.current = false;
 
-    if (!shouldHandle) return;
+    if (!shouldHandle) {
+      logPullGuard("touchend", "no_pull_state", { pullDistance, pullDragging: pullDraggingRef.current });
+      return;
+    }
 
     pullDraggingRef.current = false;
     setPullDragging(false);
@@ -1467,28 +3642,38 @@ export function KajiApp() {
     }
 
     setPullDistance(0);
-  }, [executePullRefresh, pullDistance, pullRefreshEnabled]);
+  }, [executePullRefresh, logPullGuard, pullDistance, pullRefreshEnabled]);
 
   const handleMainScrollTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchend", "disabled");
+        return;
+      }
       if (pullDraggingRef.current || pullDistance > 0) {
+        logPullGuard("touchend", "gesture_end", { pullDistance });
         event.stopPropagation();
       }
+      tapPriorityZoneActiveRef.current = false;
       endMainScrollPullGesture();
     },
-    [endMainScrollPullGesture, pullDistance],
+    [endMainScrollPullGesture, logPullGuard, pullDistance, pullRefreshEnabled],
   );
 
   const handleMainScrollTouchCancel = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchcancel", "disabled");
+        return;
+      }
       if (pullDraggingRef.current || pullDistance > 0) {
+        logPullGuard("touchcancel", "gesture_cancel", { pullDistance });
         event.stopPropagation();
       }
+      tapPriorityZoneActiveRef.current = false;
       endMainScrollPullGesture();
     },
-    [endMainScrollPullGesture, pullDistance],
+    [endMainScrollPullGesture, logPullGuard, pullDistance, pullRefreshEnabled],
   );
 
   const historyUsers = useMemo(() => boot?.users ?? [], [boot?.users]);
@@ -1499,164 +3684,538 @@ export function KajiApp() {
   }, [historyUsers]);
 
   const historyRecords = useMemo(() => {
-    if (!historyTarget) return [];
+    if (!manageDetailTarget) return [];
     return records.filter((record) => {
-      if (record.chore.id !== historyTarget.id) return false;
+      if (record.chore.id !== manageDetailTarget.id) return false;
       if (historyFilter === "all") return true;
       return record.user.id === historyFilter;
     });
-  }, [historyFilter, historyTarget, records]);
+  }, [historyFilter, manageDetailTarget, records]);
 
   const historyCountLast30 = useMemo(() => {
-    if (!historyTarget) return 0;
+    if (!manageDetailTarget) return 0;
     const cutoff = addDays(startOfJstDay(new Date()), -30);
     return records.filter(
-      (record) => record.chore.id === historyTarget.id && new Date(record.performedAt) >= cutoff,
+      (record) => record.chore.id === manageDetailTarget.id && new Date(record.performedAt) >= cutoff,
     ).length;
-  }, [historyTarget, records]);
+  }, [manageDetailTarget, records]);
+  const latestRecordItem = useMemo(() => {
+    return records
+      .filter((record) => !record.isInitial && !record.isSkipped)
+      .sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime())[0] ?? null;
+  }, [records]);
+  const groupedTimelineRecords = useMemo(() => buildGroupedTimelineRecords(records), [records]);
+  const myTimelineRecords = useMemo(() => {
+    if (!sessionUser?.id) return [];
+    return records.filter(
+      (record) => !record.isInitial && !record.isSkipped && record.user.id === sessionUser.id,
+    );
+  }, [records, sessionUser?.id]);
+  const myGroupedTimelineRecords = useMemo(
+    () => buildGroupedTimelineRecords(myTimelineRecords),
+    [myTimelineRecords],
+  );
+
+  const orderCalendarItemsByHomePreference = useCallback(
+    (items: CalendarScheduleItem[], dateKey: string) => {
+      const baseIds = items.map((item) => item.chore.id);
+      if (new Set(baseIds).size !== baseIds.length) {
+        return items;
+      }
+      const orderedIds = applyHomeStoredOrder(baseIds, homeOrderByDate[dateKey] ?? []);
+      const itemById = new Map(items.map((item) => [item.chore.id, item]));
+      return orderedIds
+        .map((id) => itemById.get(id))
+        .filter((item): item is CalendarScheduleItem => Boolean(item));
+    },
+    [homeOrderByDate],
+  );
+
+  const calendarSelectedWeekEntries = useMemo(() => {
+    return calendarSelectedWeekDates.map((date) => {
+      const dateKey = toJstDateKey(date);
+      const items = calendarScheduleMap.get(dateKey) ?? [];
+      const orderedItems = orderCalendarItemsByHomePreference(items, dateKey);
+      return {
+        date,
+        dateKey,
+        items: orderedItems,
+      };
+    });
+  }, [calendarScheduleMap, calendarSelectedWeekDates, orderCalendarItemsByHomePreference]);
+  const calendarSelectedDayEntries = useMemo(() => {
+    const items = calendarScheduleMap.get(calendarSelectedDateKey) ?? [];
+    return orderCalendarItemsByHomePreference(items, calendarSelectedDateKey);
+  }, [calendarScheduleMap, calendarSelectedDateKey, orderCalendarItemsByHomePreference]);
+  const reportMonthKey = useMemo(
+    () => monthKeyWithOffset(toMonthKey(new Date()), reportMonthOffset),
+    [reportMonthOffset],
+  );
+  const householdReportDiff = useMemo(() => {
+    if (!householdReport) return 0;
+    return householdReport.currentMonthTotal - householdReport.previousMonthTotal;
+  }, [householdReport]);
+
+  const renderDayDots = useCallback((dateKey: string) => {
+    const count = calendarMonthSummary?.countsByDate[dateKey] ?? 0;
+    if (count <= 0) return <span className="h-1 w-1 rounded-full bg-transparent" />;
+    if (count <= 3) {
+      return (
+        <span className="mt-0.5 inline-flex items-center gap-0.5">
+          {Array.from({ length: count }).map((_, index) => (
+            <span
+              key={`${dateKey}-dot-${index}`}
+              className="h-1 w-1 rounded-full bg-[var(--primary)]"
+            />
+          ))}
+        </span>
+      );
+    }
+
+    const hasOverflow = count > DAY_DOT_VISIBLE_WHEN_OVERFLOW;
+    const dotCount = hasOverflow
+      ? DAY_DOT_VISIBLE_WHEN_OVERFLOW
+      : Math.min(MAX_DAY_DOT_SLOTS, count);
+    const tokens = [
+      ...Array.from({ length: dotCount }, (_, idx) => `dot-${idx}`),
+      ...(hasOverflow ? ["plus"] : []),
+    ];
+
+    return (
+      <span className="mt-0.5 inline-grid grid-cols-3 place-items-center gap-0.5">
+        {tokens.map((token, index) => (
+          token === "plus" ? (
+            <span
+              key={`${dateKey}-dot-plus-${index}`}
+              className="inline-flex h-1 w-1 items-center justify-center text-[5px] font-bold leading-none text-[var(--primary)]"
+            >
+              +
+            </span>
+          ) : (
+            <span
+              key={`${dateKey}-${token}`}
+              className="h-1 w-1 rounded-full bg-[var(--primary)]"
+            />
+          )
+        ))}
+      </span>
+    );
+  }, [calendarMonthSummary]);
+
+  const renderChoreEditorSheets = () => (
+    <>
+      <BottomSheet
+        open={choreEditorOpen && !customIconOpen}
+        onClose={() => {
+          if (saveChoreLoading || deleteChoreLoading) return;
+          setChoreEditorOpen(false);
+        }}
+        title=""
+        maxHeightClassName="max-h-[92vh]"
+        containerClassName="px-0 pb-4 pt-[10px]"
+        scrollable={true}
+      >
+        <div className="space-y-[14px] px-5 pb-1">
+          <p className="text-center text-[24px] font-bold text-[var(--foreground)]">
+            {editingChore?.id ? "編集" : "登録"}
+          </p>
+          {editingChore ? (
+            <ChoreEditor
+              mode={editingChore.id ? "edit" : "create"}
+              value={editingChore}
+              customIcons={customIcons}
+              isSaving={saveChoreLoading}
+              isDeleting={deleteChoreLoading}
+              onChange={setEditingChore}
+              onSave={saveChore}
+              onDelete={requestDeleteChore}
+              onDeleteCustomIcon={handleDeleteCustomIcon}
+              onOpenCustomIcon={() => setCustomIconOpen(true)}
+            />
+          ) : null}
+        </div>
+      </BottomSheet>
+
+      <BottomSheet open={customIconOpen} onClose={() => setCustomIconOpen(false)} title="" maxHeightClassName="max-h-[92vh]">
+        {editingChore ? (
+          <CustomIconPicker
+            value={editingChore}
+            onChange={setEditingChore}
+            onApply={async (iconData) => {
+              const saved = await handleAddCustomIcon(iconData);
+              if (saved) {
+                setEditingChore((prev) =>
+                  prev
+                    ? {
+                      ...prev,
+                      icon: saved.icon,
+                      iconColor: saved.iconColor,
+                      bgColor: saved.bgColor,
+                    }
+                    : prev,
+                );
+              }
+              setCustomIconOpen(false);
+            }}
+          />
+        ) : null}
+      </BottomSheet>
+    </>
+  );
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#F8F9FA]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#5F6368]" />
+      <main className="flex min-h-screen items-center justify-center bg-[var(--app-canvas)]">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--muted-foreground)]" />
       </main>
     );
   }
 
-  if (!boot || boot.needsRegistration || !sessionUser) {
+  if (postRegisterRoutingPending || !boot || boot.needsRegistration || !sessionUser) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-[#F8F9FA] to-[#EEF3FD]">
-        <form onSubmit={registerUser} className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col items-center justify-center gap-4 px-5 py-8">
-          <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M22 2L27 17L22 22L17 17L22 2Z" fill="#1A9BE8" />
-            <path d="M22 42L27 27L22 22L17 27L22 42Z" fill="#1A9BE8" />
-            <path d="M2 22L17 17L22 22L17 27L2 22Z" fill="#1A9BE8" />
-            <path d="M42 22L27 17L22 22L27 27L42 22Z" fill="#1A9BE8" />
-            <path d="M42 6L44 11L42 13L40 11L42 6Z" fill="#4FC3F7" />
-            <path d="M42 13L44 11L46 13L44 15L42 13Z" fill="#4FC3F7" />
-            <path d="M38 10L40 11L42 13L40 15L38 10Z" fill="#4FC3F7" />
-            <circle cx="48" cy="4" r="2.5" fill="#4FC3F7" />
-          </svg>
-          <p className="text-[26px] font-bold text-[#202124]">さあ、始めましょう</p>
-          <div className="w-full space-y-3 rounded-[20px] border border-[#DADCE0] bg-white px-[18px] py-4">
+      <main className="min-h-screen overflow-y-auto bg-gradient-to-b from-[var(--background)] to-[var(--app-surface-soft)]">
+        <form
+          onSubmit={registerUser}
+          className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col items-center justify-center gap-4 px-5 py-8"
+        >
+          <div className="rounded-[20px] bg-[var(--app-surface-soft)] p-5">
+            <span className="material-symbols-rounded text-[44px] text-[var(--primary)]">auto_awesome</span>
+          </div>
+          <p className="text-[42px] font-bold leading-none text-[var(--foreground)]">さあ、始めましょう</p>
+
+          <div className="flex items-center justify-center gap-2">
+            <span className="rounded-full bg-[var(--primary)] px-4 py-2 text-[13px] font-bold text-white">はじめての方</span>
+            <span className="rounded-full border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-[13px] font-semibold text-[var(--muted-foreground)]">招待された方</span>
+          </div>
+
+          <div className="w-full space-y-3 rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-[18px] py-4">
             <div className="flex items-center gap-2">
-              <User size={22} className="text-[#1A9BE8]" aria-hidden="true" />
-              <p className="text-[24px] font-bold text-[#202124]">あなたの名前は？</p>
+              <User size={22} className="text-[var(--primary)]" aria-hidden="true" />
+              <p className="text-[24px] font-bold text-[var(--foreground)]">ログイン / 新規登録</p>
             </div>
-            <input
-              value={registerName}
-              onChange={(e) => setRegisterName(e.target.value)}
-              className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none"
-            />
-            <div className="h-px bg-[#E8EAED]" />
-            <div className="space-y-2">
-              <p className="text-[15px] font-bold text-[#202124]">マイカラー</p>
-              <div className="flex flex-wrap gap-2">
-                {USER_COLOR_PALETTE.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setRegisterColor(c)}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-transform ${registerColor === c ? "scale-110 ring-2 ring-[#202124] ring-offset-2" : ""}`}
-                    style={{ backgroundColor: c }}
-                    aria-label={c}
-                  >
-                    {registerColor === c ? (
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <path d="M2.5 7L5.5 10L11.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
+            <div className="space-y-1">
+              <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">ユーザーネーム</p>
+              <input
+                value={registerName}
+                onChange={(e) => setRegisterName(e.target.value)}
+                placeholder="あなたの名前"
+                autoComplete="username"
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[16.8px] font-semibold text-[var(--foreground)] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[var(--app-text-tertiary)]"
+              />
             </div>
-            <div className="h-px bg-[#E8EAED]" />
-            <div className="space-y-2">
+            <div className="space-y-1">
+              <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">パスワード</p>
+              <input
+                type="password"
+                value={registerPassword}
+                onChange={(e) => setRegisterPassword(e.target.value)}
+                placeholder="8文字以上"
+                autoComplete="current-password"
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[16.8px] font-semibold text-[var(--foreground)] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[var(--app-text-tertiary)]"
+              />
+            </div>
+            <div className="space-y-2 pt-1">
               <div className="flex items-center gap-1.5">
-                <span className="text-[14px] text-[#5F6368]">🎟️</span>
-                <p className="text-[15px] font-bold text-[#202124]">家族コード</p>
-                <p className="text-[13px] font-medium text-[#9AA0A6]">（任意）</p>
+                <span className="material-symbols-rounded text-[16px] text-[var(--muted-foreground)]">sell</span>
+                <p className="text-[15px] font-bold text-[var(--foreground)]">家族コード</p>
+                <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">（任意）</p>
               </div>
               <input
                 value={registerInviteCode}
                 onChange={(e) => setRegisterInviteCode(e.target.value)}
                 placeholder="パートナーから届いたコード"
-                className="w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[16.8px] font-semibold text-[#202124] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[#9AA0A6]"
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[16px] font-semibold text-[var(--foreground)] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[var(--app-text-tertiary)]"
               />
-              <p className="text-[11px] font-medium text-[#9AA0A6]">パートナーが先に登録済みの場合のみ入力</p>
+              <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">パートナーが先に登録済みの場合のみ入力</p>
             </div>
           </div>
-          <div className="w-full space-y-3">
-            <div className="space-y-1.5 px-1">
-              <div className="flex items-center gap-1.5">
-                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#1A9BE8] text-[11px] font-bold text-white">1</span>
-                <p className="text-[12px] font-medium text-[#5F6368]">名前だけで登録 → 家族コードが発行されます</p>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#33C28A] text-[11px] font-bold text-white">2</span>
-                <p className="text-[12px] font-medium text-[#5F6368]">コードをもらった方は入力して参加できます</p>
-              </div>
+
+          <div className="w-full space-y-2 px-1">
+            <div className="flex items-center gap-1.5">
+              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[var(--primary)] text-[11px] font-bold text-white">1</span>
+              <p className="text-[12px] font-medium text-[var(--muted-foreground)]">はじめての方：ユーザーネームとパスワードを決めて登録</p>
             </div>
-            <button
-              type="submit"
-              disabled={registerLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#1A9BE8] px-4 py-3 text-[16.8px] font-bold text-white shadow-lg shadow-[#2A1E1730] disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {registerLoading ? <Loader2 size={18} className="animate-spin" /> : <span>→</span>}
-              {registerLoading ? "読み込み中..." : "はじめる"}
-            </button>
-            {error ? <p className="mt-3 text-center text-sm text-[#C5221F]">{error}</p> : null}
+            <div className="flex items-center gap-1.5">
+              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[var(--primary)] text-[11px] font-bold text-white">2</span>
+              <p className="text-[12px] font-medium text-[var(--muted-foreground)]">すでに登録済みの方：同じユーザーネームとパスワードでログイン</p>
+            </div>
           </div>
+
+          <button
+            type="submit"
+            disabled={registerLoading}
+            className="flex w-full items-center justify-center gap-2 rounded-[16px] bg-[var(--primary)] px-4 py-3 text-[16.8px] font-bold text-white shadow-lg shadow-black/20 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {registerLoading ? <Loader2 size={18} className="animate-spin" /> : <span className="material-symbols-rounded text-[18px] leading-none">arrow_forward</span>}
+            {registerLoading ? "読み込み中..." : "はじめる"}
+          </button>
+          <div className="flex flex-wrap justify-center gap-2">
+            {USER_COLOR_PALETTE.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setRegisterColor(c)}
+                className={`h-6 w-6 rounded-full ${registerColor === c ? "ring-2 ring-[var(--foreground)] ring-offset-2" : ""}`}
+                style={{ backgroundColor: c }}
+                aria-label={c}
+              />
+            ))}
+          </div>
+          {error ? <p className="mt-2 text-center text-sm text-[var(--destructive)]">{error}</p> : null}
         </form>
       </main>
     );
   }
 
-  const resolveAssigneeForSort = (choreId: string, sectionKey: "today" | "tomorrow" | "big", choreRef?: ChoreWithComputed) => {
-    const todayKey = toJstDateKey(startOfJstDay(new Date()));
-    const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
-    const sectionDateKey =
-      sectionKey === "tomorrow"
-        ? tomorrowKey
-        : sectionKey === "big" && choreRef?.dueAt
-          ? toJstDateKey(startOfJstDay(new Date(choreRef.dueAt)))
-          : todayKey;
-    const entry = assignments.find((x) => x.choreId === choreId && x.date === sectionDateKey);
-    const clearKey = `${choreId}:${sectionDateKey}`;
-    const isDefaultCleared = clearedDefaults.has(clearKey);
-    const chore = choreRef ?? boot.chores.find((c) => c.id === choreId);
-    if (entry) return entry.userId;
-    if (!isDefaultCleared && chore?.defaultAssigneeId) return chore.defaultAssigneeId;
-    return null;
+  if (onboardingOpen) {
+    const inviteCode = boot.householdInviteCode ?? "";
+    const inviteLink =
+      typeof window === "undefined"
+        ? `https://ietasuku.vercel.app/?invite=${inviteCode}`
+        : `${window.location.origin}/?invite=${inviteCode}`;
+
+    const hasChores = boot.chores.length > 0;
+
+    return (
+      <>
+        <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-y-auto overscroll-y-contain bg-[var(--app-canvas)] px-5 py-8">
+          <div className="mt-8 space-y-5">
+            <div className="text-center">
+              <span className="material-symbols-rounded text-[42px] text-[var(--primary)]">home</span>
+              <p className="mt-1.5 text-[42px] font-bold leading-none text-[var(--foreground)]">いえたすくへようこそ！</p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[16px] font-bold text-[var(--foreground)]">まずはパートナーを招待</p>
+              <p className="text-[13px] font-medium text-[var(--muted-foreground)]">一緒に使う家族やパートナーにこのリンクを送ってね！</p>
+              <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+                <p className="truncate rounded-[10px] bg-[var(--secondary)] px-3 py-2 text-[12px] font-medium text-[var(--muted-foreground)]">{inviteLink}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(inviteLink);
+                        setInfoMessage("招待リンクをコピーしました。");
+                      } catch {
+                        setError("リンクのコピーに失敗しました。");
+                      }
+                    }}
+                    className="inline-flex items-center justify-center gap-1 rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] font-bold text-[var(--primary)]"
+                  >
+                    <Copy size={14} />
+                    コピー
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (navigator.share) {
+                        try {
+                          await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink });
+                          return;
+                        } catch {
+                          return;
+                        }
+                      }
+                      try {
+                        await navigator.clipboard.writeText(inviteLink);
+                        setInfoMessage("招待リンクをコピーしました。");
+                      } catch {
+                        setError("リンクの共有に失敗しました。");
+                      }
+                    }}
+                    className="inline-flex items-center justify-center gap-1 rounded-[10px] bg-[var(--primary)] px-3 py-2 text-[13px] font-bold text-white"
+                  >
+                    <Share2 size={14} />
+                    送る
+                  </button>
+                </div>
+              </div>
+              <p className="text-[12px] font-medium text-[var(--app-text-tertiary)]">LINEやメッセージに貼り付けするだけで参加できるよ！</p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[16px] font-bold text-[var(--foreground)]">家事を登録しよう</p>
+              <button
+                type="button"
+                onClick={() => {
+                  openAddChore();
+                }}
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[15px] font-bold text-[var(--primary)]"
+              >
+                ＋ タスクを追加
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOnboardingBulkSelectOpen(true);
+                }}
+                disabled={onboardingSubmitting || onboardingBulkSelectOpen}
+                className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[15px] font-semibold text-[var(--foreground)] disabled:opacity-60"
+              >
+                よくある家事をまとめて追加
+              </button>
+              {onboardingBulkSelectOpen ? (
+                <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+                  <p className="text-[14px] font-bold text-[var(--foreground)]">家事まとめて追加</p>
+                  <div className="space-y-1.5">
+                    {ONBOARDING_PRESET_CHORES.map((preset) => {
+                      const checked = onboardingPresetSelections.includes(preset.title);
+                      return (
+                        <button
+                          key={`onboarding-preset-${preset.title}`}
+                          type="button"
+                          onClick={() => {
+                            setOnboardingPresetSelections((prev) =>
+                              prev.includes(preset.title)
+                                ? prev.filter((title) => title !== preset.title)
+                                : [...prev, preset.title],
+                            );
+                          }}
+                          className={`flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left ${checked ? "bg-[var(--app-surface-soft)]" : "bg-[var(--app-canvas)]"}`}
+                        >
+                          <span className="text-[13px] font-semibold text-[var(--foreground)]">{preset.title}</span>
+                          <span className="material-symbols-rounded text-[18px] text-[var(--primary)]">
+                            {checked ? "check_circle" : "radio_button_unchecked"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingBulkSelectOpen(false)}
+                      disabled={onboardingSubmitting}
+                      className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] font-bold text-[var(--muted-foreground)] disabled:opacity-60"
+                    >
+                      戻る
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleOnboardingAddPreset();
+                      }}
+                      disabled={onboardingSubmitting}
+                      className="rounded-[10px] bg-[var(--primary)] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                    >
+                      {onboardingSubmitting ? "追加中..." : "追加する"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {hasChores ? (
+                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+                  <p className="text-[13px] font-bold text-[var(--muted-foreground)]">追加したタスク（{boot.chores.length}件）</p>
+                  <div className="mt-2 space-y-1">
+                    {boot.chores.map((chore) => {
+                      const ChoreIcon = iconByName(chore.icon || "sparkles");
+                      return (
+                        <div key={`onboarding-chore-${chore.id}`} className="flex items-center gap-2 rounded-[8px] bg-[var(--app-canvas)] px-3 py-1.5">
+                          <ChoreIcon size={16} style={{ color: chore.iconColor || "var(--muted-foreground)" }} />
+                          <span className="text-[13px] font-medium text-[var(--foreground)]">{chore.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={finishOnboarding}
+              disabled={onboardingSubmitting}
+              className={
+                hasChores
+                  ? "w-full rounded-[14px] bg-[var(--primary)] px-4 py-3 text-[16px] font-bold text-white disabled:opacity-60"
+                  : "w-full rounded-[14px] bg-[var(--secondary)] px-4 py-3 text-[14px] font-semibold text-[var(--muted-foreground)] disabled:opacity-60"
+              }
+            >
+              {hasChores ? "完了してホームへ" : "あとで設定する"}
+            </button>
+            {error ? <p className="text-center text-sm text-[var(--destructive)]">{error}</p> : null}
+          </div>
+        </main>
+        {renderChoreEditorSheets()}
+      </>
+    );
+  }
+
+  const todayKey = homeDateKeys.today;
+  const yesterdayKey = homeDateKeys.yesterday;
+  const tomorrowKey = homeDateKeys.tomorrow;
+  const getHomeSectionDateKey = (sectionKey: "today" | "yesterday" | "tomorrow") => {
+    if (sectionKey === "yesterday") return yesterdayKey;
+    if (sectionKey === "tomorrow") return tomorrowKey;
+    return todayKey;
+  };
+
+  const homeProgressByDate = boot.homeProgressByDate ?? {};
+  const yesterdayRowsForHome = buildHomeRowsByDate({
+    chores,
+    dateKey: yesterdayKey,
+    scheduleOverridesByChore,
+    homeProgressByDate,
+  });
+  const todayRowsForHome = buildHomeRowsByDate({
+    chores,
+    dateKey: todayKey,
+    scheduleOverridesByChore,
+    homeProgressByDate,
+  });
+  const tomorrowRowsForHome = buildHomeRowsByDate({
+    chores,
+    dateKey: tomorrowKey,
+    scheduleOverridesByChore,
+    homeProgressByDate,
+  });
+
+  const orderHomeRows = (
+    sectionKey: "today" | "yesterday" | "tomorrow",
+    dateKey: string,
+    sectionRows: typeof todayRowsForHome,
+  ) => {
+    const rowById = new Map(sectionRows.map((row) => [row.chore.id, row]));
+    const sortedChores = sortHomeSectionChores(
+      sectionKey,
+      sectionRows.map((row) => row.chore),
+      (choreId) => rowById.get(choreId)?.state ?? "pending",
+      customIcons,
+    );
+    const orderedIds = applyHomeStoredOrder(
+      sortedChores.map((chore) => chore.id),
+      homeOrderByDate[dateKey] ?? [],
+    );
+    const rowMap = new Map(sectionRows.map((row) => [row.chore.id, row]));
+    return orderedIds
+      .map((id) => rowMap.get(id))
+      .filter((row): row is (typeof sectionRows)[number] => Boolean(row));
   };
 
   const homeSections = [
     {
+      key: "yesterday" as const,
+      title: "昨日",
+      rows: orderHomeRows("yesterday", yesterdayKey, yesterdayRowsForHome),
+    },
+    {
       key: "today" as const,
       title: "今日",
-      chores: sortHomeSectionChores("today", boot.todayChores, sessionUser?.id ?? null, (choreId) => {
-        const c = boot.todayChores.find((ch) => ch.id === choreId);
-        return resolveAssigneeForSort(choreId, "today", c);
-      }, customIcons),
+      rows: orderHomeRows("today", todayKey, todayRowsForHome),
     },
     {
       key: "tomorrow" as const,
       title: "明日",
-      chores: sortHomeSectionChores("tomorrow", boot.tomorrowChores, sessionUser?.id ?? null, (choreId) => {
-        const c = boot.tomorrowChores.find((ch) => ch.id === choreId);
-        return resolveAssigneeForSort(choreId, "tomorrow", c);
-      }, customIcons),
+      rows: orderHomeRows("tomorrow", tomorrowKey, tomorrowRowsForHome),
     },
-    {
-      key: "big" as const,
-      title: "大仕事",
-      chores: sortHomeSectionChores("big", boot.upcomingBigChores, sessionUser?.id ?? null, (choreId) => {
-        const c = boot.upcomingBigChores.find((ch) => ch.id === choreId);
-        return resolveAssigneeForSort(choreId, "big", c);
-      }, customIcons),
-    },
-  ].filter((section) => section.chores.length > 0);
-  const hasAnyUpcomingChores = homeSections.length > 0;
+  ];
+  homeSectionChoreIdsRef.current = Object.fromEntries(
+    homeSections.map((section) => [
+      getHomeSectionDateKey(section.key),
+      section.rows.map((row) => row.chore.id),
+    ]),
+  );
+  const hasAnyUpcomingChores = homeSections.some((section) => section.rows.length > 0);
   const swipeProgress = swipe.visual.progress;
   const swipeFromTabIndex = Math.max(0, TAB_ORDER.indexOf(swipe.visual.fromTab));
   const swipeTrackTranslatePercent = (-swipeFromTabIndex + swipeProgress) * 100;
@@ -1673,7 +4232,7 @@ export function KajiApp() {
       ? "指を離して読み込み"
       : "下にスワイプして読み込み";
   const getPullAnimatedContentStyle = (tab: TabKey) =>
-    pullRefreshEnabled && tab === activeTab && tab !== "settings"
+    pullRefreshEnabled && tab === activeTab
       ? {
         transform: pullDistance === 0 ? "none" : `translate3d(0, ${pullDistance}px, 0)`,
         transition:
@@ -1682,11 +4241,10 @@ export function KajiApp() {
       : undefined;
   const renderInlinePullRefreshHint = (tab: TabKey) => {
     if (!pullRefreshEnabled) return null;
-    if (tab === "settings") return null;
     if (!showPullRefreshHint || tab !== activeTab) return null;
     return (
       <div className="py-2 text-center">
-        <p className="text-[12px] font-bold text-[#5F6368]">{pullRefreshMessage}</p>
+        <p className="text-[12px] font-bold text-[var(--muted-foreground)]">{pullRefreshMessage}</p>
       </div>
     );
   };
@@ -1711,10 +4269,10 @@ export function KajiApp() {
       <div className="space-y-3">
         {days.slice(0, visibleAssignDays).map(({ date, dateKey, dayChores }) => (
           <div key={`${tab}-${dateKey}`} className="space-y-1">
-            <p className="text-[13px] font-bold text-[#5F6368]">
+            <p className="text-[13px] font-bold text-[var(--muted-foreground)]">
               {formatMonthDay(date.toISOString())}
             </p>
-            <div className="rounded-[14px] bg-white">
+            <div className="rounded-[14px] bg-[var(--card)]">
               {dayChores.map((chore, idx) => {
                 const entry = assignments.find(
                   (x) => x.choreId === chore.id && x.date === dateKey,
@@ -1723,13 +4281,12 @@ export function KajiApp() {
                 const isCleared = clearedDefaults.has(clearKey);
                 const isDefaultOnly = !entry && !!chore.defaultAssigneeId && !isCleared;
                 const effectiveUserId = entry?.userId ?? (isDefaultOnly ? chore.defaultAssigneeId : null);
-                const effectiveUserName = entry?.userName ?? (isDefaultOnly ? chore.defaultAssigneeName : null);
                 const isAssigned = assignmentUser
                   ? effectiveUserId === assignmentUser
                   : false;
                 const effectiveUser = effectiveUserId ? boot.users.find((u) => u.id === effectiveUserId) : null;
-                const effectiveColor = effectiveUser?.color || "#202124";
-                const checkboxColor = effectiveUserId ? (effectiveUser?.color || "#1A9BE8") : "#DADCE0";
+                const effectiveColor = effectiveUser?.color || "var(--foreground)";
+                const checkboxColor = effectiveUserId ? (effectiveUser?.color || PRIMARY_COLOR) : "var(--border)";
 
                 return (
                   <button
@@ -1770,7 +4327,7 @@ export function KajiApp() {
                         body: JSON.stringify({ choreId: chore.id, userId: newUserId, date: dateKey }),
                       }).catch(() => setError("担当の保存に失敗しました。"));
                     }}
-                    className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[#F1F3F4]" : ""}`}
+                    className={`flex w-full items-center gap-2 px-3 py-[7px] text-left ${idx > 0 ? "border-t border-[var(--secondary)]" : ""}`}
                     style={{
                       backgroundColor: effectiveUserId
                         ? lightenColor(effectiveColor, 0.95)
@@ -1784,12 +4341,12 @@ export function KajiApp() {
                       {effectiveUserId ? "check_box" : "check_box_outline_blank"}
                     </span>
                     <span
-                      className="flex-1 flex items-center gap-1 text-[13.5px] font-medium min-w-0 text-[#202124]"
+                      className="flex-1 flex items-center gap-1 text-[13.5px] font-medium min-w-0 text-[var(--foreground)]"
                     >
                       <span className="truncate">{chore.title}</span>
                     </span>
                     {!effectiveUserId && (
-                      <span className="shrink-0 rounded-full bg-[#BDC1C6] px-2 py-[2px] text-[10px] font-bold text-white">
+                      <span className="shrink-0 rounded-full bg-[var(--app-text-tertiary)] px-2 py-[2px] text-[10px] font-bold text-white">
                         未設定
                       </span>
                     )}
@@ -1807,7 +4364,7 @@ export function KajiApp() {
             <button
               type="button"
               onClick={() => setVisibleAssignDays((prev) => Math.min(prev + 30, days.length))}
-              className="rounded-xl bg-white px-4 py-2 text-[13px] font-bold text-[#5F6368] shadow-sm"
+              className="rounded-xl bg-[var(--card)] px-4 py-2 text-[13px] font-bold text-[var(--muted-foreground)] shadow-sm"
             >
               もっと見る
             </button>
@@ -1820,435 +4377,1396 @@ export function KajiApp() {
   const renderTabHeader = (tab: TabKey) => {
     if (tab === "home") {
       return (
-        <div ref={homeHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+        <div ref={homeHeaderRef} className="pointer-events-none border-b border-[var(--border)] bg-[var(--app-header-bg)] px-4 pb-2.5 pt-2.5 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
           <div className="flex items-center justify-between">
-            <p className="text-[48px] font-bold leading-none text-[#5F6368]">{formatTopDate()}</p>
-            {boot.users.length > 1 ? (
-              <button
-                type="button"
-                onClick={() => {
-                  openAssignment();
-                  if (!assignmentUser && boot.users.length > 0) {
-                    setAssignmentUser(boot.users[0].id);
-                  }
-                }}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF3FF]"
-              >
-                <Users size={20} color="#1A9BE8" />
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={toggleSettingsFromHeader}
+              className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)]"
+              aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
+            >
+              <span className="material-symbols-rounded text-[26px]" style={{ color: sessionUser?.color ?? PRIMARY_COLOR }}>
+                account_circle
+              </span>
+            </button>
+            <div className="flex h-8 w-8 items-center justify-center" aria-hidden>
+              <img src="/app-icon.svg" alt="いえたすく" className="h-8 w-8" />
+            </div>
+            <div className="h-8 w-8" />
           </div>
         </div>
       );
     }
     if (tab === "list") {
+      const calendarMonthTitle = new Intl.DateTimeFormat("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        year: "numeric",
+        month: "long",
+      }).format(calendarMonthCursor);
       return (
-        <div ref={listHeaderRef} className="space-y-1.5 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-          <ScreenTitle title="家事一覧" />
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <p className="text-[13.2px] font-bold text-[#5F6368]">並び替え</p>
+        <div ref={listHeaderRef} className="space-y-2 bg-[var(--app-header-bg)] px-5 pb-2 pt-4 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={toggleSettingsFromHeader}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--card)]"
+              aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
+            >
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? PRIMARY_COLOR }}>
+                account_circle
+              </span>
+            </button>
+            <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center rounded-[8px] bg-[var(--secondary)] p-[3px]">
+                <button
+                  type="button"
+                  onClick={() => setCalendarExpanded(false)}
+                  className={`rounded-[6px] px-[14px] py-[6px] text-[13px] ${calendarExpanded ? "text-[var(--app-text-tertiary)]" : "bg-[var(--card)] font-bold text-[var(--foreground)]"}`}
+                >
+                  週
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarExpanded(true)}
+                  className={`rounded-[6px] px-[14px] py-[6px] text-[13px] ${calendarExpanded ? "bg-[var(--card)] font-bold text-[var(--foreground)]" : "text-[var(--app-text-tertiary)]"}`}
+                >
+                  月
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => setListSortOpen((prev) => !prev)}
-                aria-expanded={listSortOpen}
-                aria-controls="list-sort-options"
-                className="rounded-lg p-1 text-[#5F6368]"
+                onClick={() => {
+                  if (calendarExpanded) {
+                    shiftCalendarMonth(-1);
+                    return;
+                  }
+                  shiftCalendarWeek(-1);
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--muted-foreground)]"
+                aria-label={calendarExpanded ? "前月へ" : "前週へ"}
               >
-                {listSortOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCalendarExpanded((prev) => !prev)}
+                className="inline-flex items-center gap-1 text-[14px] font-semibold text-[var(--muted-foreground)]"
+              >
+                {calendarMonthTitle}
+                <ChevronDown size={15} className={calendarExpanded ? "rotate-180" : ""} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (calendarExpanded) {
+                    shiftCalendarMonth(1);
+                    return;
+                  }
+                  shiftCalendarWeek(1);
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--muted-foreground)]"
+                aria-label={calendarExpanded ? "次月へ" : "次週へ"}
+              >
+                <ChevronRight size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => openStandaloneScreen("manage", "list")}
+                className="inline-flex h-9 items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--card)] px-2 text-[11px] font-bold text-[var(--muted-foreground)]"
+              >
+                <span className="material-symbols-rounded text-[15px]">checklist</span>
+                家事管理
               </button>
             </div>
-            {listSortOpen ? (
-              <div id="list-sort-options" className="flex flex-wrap gap-1.5">
-                {LIST_SORT_ITEMS.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => setListSortKey(item.key)}
-                    className={`rounded-xl px-3 py-1.5 text-[12.5px] font-bold ${listSortKey === item.key ? "bg-[#1A9BE8] text-white" : "border border-[#DADCE0] bg-white text-[#5F6368]"}`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+          </div>
+        </div>
+      );
+    }
+    if (tab === "records") {
+      return (
+        <div ref={recordsHeaderRef} className="bg-[var(--app-header-bg)] px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={toggleSettingsFromHeader}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--card)]"
+              aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
+            >
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? PRIMARY_COLOR }}>
+                account_circle
+              </span>
+            </button>
+            <p className="text-[28px] font-bold leading-none text-[var(--foreground)]">みんなのきろく</p>
+            <div className="h-9 w-9" />
           </div>
         </div>
       );
     }
     if (tab === "stats") {
       return (
-        <div ref={statsHeaderRef} className="space-y-2 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-          <ScreenTitle title="統計" />
-          <div className="flex flex-wrap gap-1">
-            {([
-              { key: "week" as const, label: "1週間" },
-              { key: "month" as const, label: "1か月" },
-              { key: "half" as const, label: "半年" },
-              { key: "year" as const, label: "1年" },
-              { key: "all" as const, label: "全期間" },
-              { key: "custom" as const, label: "カスタム", accent: true as const },
-            ] as const).map((item) => (
+        <div ref={statsHeaderRef} className="space-y-2 bg-[var(--app-header-bg)] px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={toggleSettingsFromHeader}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--card)]"
+              aria-label={settingsOpen ? "設定を閉じる" : "設定を開く"}
+            >
+              <span className="material-symbols-rounded text-[32px]" style={{ color: sessionUser?.color ?? PRIMARY_COLOR }}>
+                account_circle
+              </span>
+            </button>
+            <div className="w-9" />
+            <div className="w-9" />
+          </div>
+          <div className="flex gap-1 rounded-[12px] bg-[var(--secondary)] p-1">
+            {REPORT_MONTH_OFFSETS.map((offset) => (
               <button
-                key={item.key}
+                key={offset}
                 type="button"
-                onClick={async () => {
-                  try {
-                    setError("");
-                    setStatsAnimationSeed((prev) => prev + 1);
-                    if (item.key === "custom") {
-                      setCustomEditorOpen(true);
-                      await applyCustomDateRange(customDateRange);
-                      return;
-                    }
-                    setCustomEditorOpen(false);
-                    await loadStats(item.key);
-                  } catch (err: unknown) {
-                    setError((err as Error).message ?? "統計の読み込みに失敗しました。");
-                  }
-                }}
-                className={`inline-flex items-center gap-1 rounded-[11px] px-2 py-1.5 text-[13.2px] font-bold ${statsPeriod === item.key
-                  ? "bg-[#1A9BE8] text-white"
-                  : "accent" in item && item.accent
-                    ? "bg-[#EEF3FF] text-[#4D8BFF]"
-                    : "bg-[#F1F3F4] text-[#5F6368]"
-                  }`}
+                onClick={() => setReportMonthOffset(offset)}
+                className={`flex-1 rounded-[10px] px-2 py-1.5 text-[12.5px] font-bold ${reportMonthOffset === offset ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
               >
-                {item.label}
+                {REPORT_MONTH_LABELS[offset]}
               </button>
             ))}
           </div>
         </div>
       );
     }
-    return (
-      <div ref={settingsHeaderRef} className="bg-[#F8F9FA]/95 px-5 pb-2 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
-        <ScreenTitle title="設定" />
+    return null;
+  };
+
+  const renderTimelineRecords = (timelineGroups: TimelineRecordGroup[], emptyMessage: string) => {
+    if (timelineGroups.length === 0) {
+      return (
+        <div className="rounded-[20px] border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-10 text-center">
+          <p className="text-[16px] font-bold text-[var(--foreground)]">まだ きろく がありません</p>
+          <p className="mt-2 text-[13px] font-medium text-[var(--muted-foreground)]">{emptyMessage}</p>
+        </div>
+      );
+    }
+
+    return timelineGroups.map((group) => (
+      <div key={`record-group-${group.dateKey}`} className="space-y-2">
+        <p className="text-[16px] font-bold text-[var(--foreground)]">{group.label}</p>
+        <div className="space-y-2">
+          {group.items.map((record) => {
+            const choreForIcon = chores.find((ch) => ch.id === record.chore.id);
+            const RecordIcon = iconByName(choreForIcon?.icon ?? "sparkles");
+            const myReaction = (record.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
+            const reactionCounts = (record.reactions ?? []).reduce<Record<string, number>>((acc, reaction) => {
+              acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
+              return acc;
+            }, {});
+            const visibleReactions = REACTION_CHOICES.filter((emoji) => (reactionCounts[emoji] ?? 0) > 0);
+            return (
+              <div key={record.id} className="space-y-1">
+                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-3 py-3">
+                  <div className="flex items-center gap-2">
+                    <RecordIcon size={16} color={choreForIcon?.iconColor ?? "var(--muted-foreground)"} />
+                    <p className="text-[15px] font-bold text-[var(--foreground)]">{record.chore.title}</p>
+                    <span className="text-[12px] text-[var(--app-text-tertiary)]">──</span>
+                    <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">{record.user.name}</p>
+                    <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
+                      {new Intl.DateTimeFormat("ja-JP", {
+                        timeZone: "Asia/Tokyo",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }).format(new Date(record.performedAt))}
+                    </p>
+                  </div>
+                  {record.memo ? (
+                    <p className="mt-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{record.memo}」</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 px-1">
+                  {visibleReactions.map((emoji) => {
+                    const mapped = REACTION_ICON_MAP[emoji];
+                    const selected = myReaction?.emoji === emoji;
+                    const count = reactionCounts[emoji] ?? 0;
+                    return (
+                      <button
+                        key={`${record.id}-${emoji}`}
+                        type="button"
+                        onClick={() => {
+                          void toggleReaction(record, emoji);
+                        }}
+                        disabled={reactionUpdatingId === record.id}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold ${selected ? "bg-[var(--app-surface-soft)]" : "bg-transparent"} disabled:opacity-50`}
+                      >
+                        <span className="material-symbols-rounded text-[18px]" style={{ color: mapped?.color ?? "var(--muted-foreground)" }}>
+                          {mapped?.icon ?? "add_reaction"}
+                        </span>
+                        {count > 1 ? <span className="text-[11px] text-[var(--muted-foreground)]">{count}</span> : null}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReactionPickerRecordId((prev) => (prev === record.id ? null : record.id));
+                    }}
+                    disabled={reactionUpdatingId === record.id}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[var(--app-text-tertiary)] disabled:opacity-50"
+                  >
+                    <span className="material-symbols-rounded text-[18px]">add_reaction</span>
+                  </button>
+                </div>
+                {reactionPickerRecordId === record.id ? (
+                  <div className="flex items-center gap-2 px-1">
+                    {REACTION_CHOICES.map((emoji) => {
+                      const mapped = REACTION_ICON_MAP[emoji];
+                      const selected = myReaction?.emoji === emoji;
+                      return (
+                        <button
+                          key={`${record.id}-picker-${emoji}`}
+                          type="button"
+                          onClick={() => {
+                            void toggleReaction(record, emoji);
+                            setReactionPickerRecordId(null);
+                          }}
+                          disabled={reactionUpdatingId === record.id}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${selected ? "bg-[var(--app-surface-soft)]" : "bg-[var(--card)]"} disabled:opacity-50`}
+                        >
+                          <span className="material-symbols-rounded text-[18px]" style={{ color: mapped.color }}>
+                            {mapped.icon}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
       </div>
-    );
+    ));
   };
 
   const renderMainTabContent = (tab: TabKey) => {
     if (tab === "home") {
       return (
-        <div className="space-y-[10px]" style={{ paddingTop: homeHeaderHeight }}>
-
-          <div className="space-y-[10px]" style={getPullAnimatedContentStyle(tab)}>
+        <div className="space-y-4" style={{ paddingTop: getTabHeaderHeight("home") }}>
+          <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
             {hasAnyUpcomingChores ? (
               <>
-                {homeSections.map((section) => (
-                  <div key={section.key} className="space-y-[6px]">
+                {homeSections.map((section) => {
+                  const sectionDateKey = getHomeSectionDateKey(section.key);
+                  return (
                     <div
-                      className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
-                      style={{ top: 0 }}
+                      key={section.key}
+                      data-drop-date={sectionDateKey}
+                      className={`space-y-2 rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[var(--app-surface-soft)] px-1 py-1" : ""}`}
                     >
-                      <HomeSectionTitle title={section.title} />
+                      <div
+                        className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]"
+                        style={{ top: 0 }}
+                      >
+                        <HomeSectionTitle title={section.title} />
+                        {section.key === "tomorrow" ? (
+                          <p className="mt-0.5 text-[12px] font-medium text-[var(--muted-foreground)]">今日やっちゃってもOK！</p>
+                        ) : null}
+                      </div>
+                      <div className="grid grid-cols-2 items-stretch gap-2">
+                        {section.rows.length === 0 ? (
+                          <p className="py-2 text-center text-[12px] font-medium text-[var(--app-text-tertiary)]">予定なし</p>
+                        ) : section.rows.map((row, choreIndex) => {
+                          const chore = row.chore;
+                          const disableTomorrowDailyCheck = false;
+                          const progressLabel =
+                            row.total > 1
+                              ? `${row.completed + row.skipped}/${row.total}`
+                              : undefined;
+                          const displayChore = chore;
+                          const isHomeDropTarget =
+                            homeDropTarget?.targetDateKey === sectionDateKey &&
+                            homeDropTarget.targetChoreId === chore.id;
+                          const showDropBefore = isHomeDropTarget && homeDropTarget.position === "before";
+                          const showDropAfter = isHomeDropTarget && homeDropTarget.position === "after";
+                          const homeRowKey = `${sectionDateKey}-${chore.id}-${choreIndex}`;
+                          return (
+                            <div
+                              key={homeRowKey}
+                              data-home-drop-date={sectionDateKey}
+                              data-home-drop-chore-id={chore.id}
+                              className={`${showDropBefore ? "border-t-2 border-[var(--primary)] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[var(--primary)] pb-1" : ""}`}
+                              onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
+                              style={{ touchAction: "pan-y" }}
+                            >
+                              <HomeTaskRow
+                                chore={displayChore}
+                                onRecord={(target) => openMemo(target, sectionDateKey)}
+                                onUndo={requestUndoRecord}
+                                progressLabel={progressLabel}
+                                isUpdating={recordUpdatingIds.includes(buildRecordMutationKey(chore.id, sectionDateKey))}
+                                recordDisabled={disableTomorrowDailyCheck}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="flex flex-col items-stretch gap-2">
-                      {section.chores.map((chore) => {
-                        const todayKey = toJstDateKey(startOfJstDay(new Date()));
-                        const tomorrowKey = toJstDateKey(addDays(startOfJstDay(new Date()), 1));
-                        const bigDueDateKey = chore.dueAt
-                          ? toJstDateKey(startOfJstDay(new Date(chore.dueAt)))
-                          : todayKey;
-                        const sectionDateKey =
-                          section.key === "tomorrow"
-                            ? tomorrowKey
-                            : section.key === "big"
-                              ? bigDueDateKey
-                              : todayKey;
-                        const assignedEntry = assignments.find(
-                          (x) => x.choreId === chore.id && x.date === sectionDateKey,
-                        );
-                        const isDefaultCleared = clearedDefaults.has(`${chore.id}:${sectionDateKey}`);
-                        const effectiveAssigneeId = assignedEntry?.userId ?? (isDefaultCleared ? null : chore.defaultAssigneeId) ?? null;
-                        const assigneeName = assignedEntry?.userName ?? (isDefaultCleared ? null : chore.defaultAssigneeName) ?? null;
-                        const assigneeUser = effectiveAssigneeId ? boot.users.find((u) => u.id === effectiveAssigneeId) : null;
-                        const assigneeColor = assigneeUser?.color ?? null;
-                        const disableTomorrowDailyCheck =
-                          section.key === "tomorrow" && chore.intervalDays === 1;
-                        const performerUser = chore.lastPerformerId ? boot.users.find((u) => u.id === chore.lastPerformerId) : null;
-                        const performerColor = performerUser?.color ?? null;
-                        return (
-                          <HomeTaskRow
-                            key={chore.id}
-                            chore={
-                              section.key === "tomorrow" && chore.doneToday
-                                ? { ...chore, doneToday: false }
-                                : chore
-                            }
-                            onRecord={openMemo}
-                            onUndo={undoRecord}
-                            isUpdating={recordUpdatingIds.includes(chore.id)}
-                            recordDisabled={disableTomorrowDailyCheck}
-                            assigneeName={assigneeName}
-                            assigneeColor={assigneeColor}
-                            performerColor={performerColor}
-                            meta={
-                              section.key === "big"
-                                ? `${chore.intervalDays}日ごと / ${dueInDaysLabel(chore)}`
-                                : undefined
-                            }
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </>
             ) : (
-              <div className="rounded-[24px] border border-dashed border-[#CFD8E3] bg-white px-5 py-8 text-center">
-                <p className="text-[16px] font-bold text-[#202124]">近日実施するべきタスクはありません</p>
-                <p className="mt-2 text-[13px] font-medium text-[#5F6368]">
+              <div className="rounded-[24px] border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-8 text-center">
+                <p className="text-[16px] font-bold text-[var(--foreground)]">近日実施するべきタスクはありません</p>
+                <p className="mt-2 text-[13px] font-medium text-[var(--muted-foreground)]">
                   必要な家事を追加すると、ここに表示されます。
                 </p>
                 <button
                   type="button"
                   onClick={openAddChore}
-                  className="mt-4 rounded-[12px] bg-[#1A9BE8] px-4 py-2 text-[14px] font-bold text-white"
+                  className="mt-4 rounded-[12px] bg-[var(--primary)] px-4 py-2 text-[14px] font-bold text-white"
                 >
                   家事を追加
                 </button>
               </div>
             )}
+            {latestRecordItem ? (
+              <div className="space-y-2">
+                <div className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]" style={{ top: 0 }}>
+                  <HomeSectionTitle title="さいしんのきろく" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
+                    <span className="material-symbols-rounded text-[14px] text-[var(--primary)]">check</span>
+                    <p className="text-[13.5px] font-bold text-[var(--foreground)]">{latestRecordItem.chore.title}</p>
+                    <p className="text-[12px] font-semibold text-[var(--muted-foreground)]">{latestRecordItem.user.name}</p>
+                    <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
+                      {new Intl.DateTimeFormat("ja-JP", {
+                        timeZone: "Asia/Tokyo",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }).format(new Date(latestRecordItem.performedAt))}
+                    </p>
+                  </div>
+                  {latestRecordItem.memo ? (
+                    <p className="px-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{latestRecordItem.memo}」</p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       );
     }
 
     if (tab === "list") {
+      const todayKey = toJstDateKey(startOfJstDay(new Date()));
+      const currentMonthKey = toMonthKey(calendarMonthCursor);
+      const calendarMonthLabel = new Intl.DateTimeFormat("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        year: "numeric",
+        month: "long",
+      }).format(calendarMonthCursor);
+      const selectedDate = parseDateKey(calendarSelectedDateKey) ?? startOfJstDay(new Date());
+      const selectedDateJst = new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000);
+      const selectedDateLabel = `${WEEKDAY_SHORT[selectedDateJst.getUTCDay()]} ${selectedDateJst.getUTCDate()}`;
+      const previousWeekTarget = shiftTargetDateByWeek(-1);
+      const nextWeekTarget = shiftTargetDateByWeek(1);
+
+      const renderCalendarChip = (item: CalendarScheduleItem, dateKey: string) => {
+        const chore = item.chore;
+        const ChipIcon = iconByName(chore.icon);
+        const performerUser = chore.lastPerformerId
+          ? boot.users.find((user) => user.id === chore.lastPerformerId)
+          : null;
+        const doneColor = performerUser?.color ?? PRIMARY_COLOR;
+        const isCompleted = item.pending === 0 && item.completed > 0;
+        const chipClass = isCompleted
+          ? "border"
+          : "border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]";
+        const doneStyle: CSSProperties | undefined = isCompleted
+          ? {
+            backgroundColor: `${doneColor}14`,
+            borderColor: `${doneColor}66`,
+            color: darkenColor(doneColor, 18),
+          }
+          : undefined;
+        return (
+          <button
+            key={`${dateKey}-${chore.id}`}
+            type="button"
+            onClick={() => {
+              if (suppressChipClickRef.current) { suppressChipClickRef.current = false; return; }
+              openReschedule(chore, dateKey, isCompleted);
+            }}
+            onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
+            className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
+            style={{ touchAction: "pan-y", ...doneStyle }}
+          >
+            <ChipIcon size={13} color={chore.iconColor} />
+            <span>{chore.title}</span>
+            {item.scheduled > 1 ? (
+              <span className="rounded-full bg-[var(--secondary)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--muted-foreground)]">
+                x{item.scheduled}
+              </span>
+            ) : null}
+            {isCompleted ? <span className="material-symbols-rounded text-[14px]">check</span> : null}
+          </button>
+        );
+      };
+
       return (
-        <div className="space-y-4" style={{ paddingTop: listHeaderHeight }}>
+        <div className="space-y-4" style={{ paddingTop: getTabHeaderHeight("list") }}>
           <div className="space-y-4" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
-            <div className="flex flex-col items-stretch gap-2">
-              {listChores.map((chore) => {
-                const meta = chore.isBigTask
-                  ? `${chore.intervalDays}日ごと / 最終: ${chore.lastPerformedAt ? formatMonthDay(chore.lastPerformedAt) : "未設定"
-                  } / ${dueInDaysLabel(chore)}`
-                  : `${chore.intervalDays}日ごと / 前回:${relativeLastPerformed(chore.lastPerformedAt)} / ${chore.lastPerformerName ?? "未設定"
-                  }`;
+            {calendarExpanded ? (
+              <div
+                data-calendar-swipe-surface="true"
+                className="space-y-1 rounded-[16px] border border-[var(--border)] bg-[var(--card)] px-2 py-3"
+                onTouchStart={handleCalendarTouchStart}
+                onTouchEnd={handleCalendarTouchEnd}
+              >
+                <div className="flex items-center justify-between px-1 pb-1">
+                  <button
+                    type="button"
+                    onClick={() => shiftCalendarMonth(-1)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--app-canvas)] text-[var(--muted-foreground)]"
+                    aria-label="前月へ"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">{calendarMonthLabel}</p>
+                  <button
+                    type="button"
+                    onClick={() => shiftCalendarMonth(1)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--app-canvas)] text-[var(--muted-foreground)]"
+                    aria-label="次月へ"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-y-1">
+                  {WEEKDAY_SHORT.map((day, index) => (
+                    <div key={`dow-${day}`} className={`text-center text-[10px] font-medium ${index === 0 ? "text-[var(--app-text-tertiary)]" : index === 6 ? "text-[var(--primary)]" : "text-[var(--app-text-tertiary)]"}`}>
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-y-1">
+                  {calendarMonthGridDates.map((date) => {
+                    const dateKey = toJstDateKey(date);
+                    const monthKey = toMonthKey(date);
+                    const inMonth = monthKey === currentMonthKey;
+                    const isSelected = dateKey === calendarSelectedDateKey;
+                    const dayOfWeek = new Date(date.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
+                    const weekendClass =
+                      dayOfWeek === 0 ? "text-[var(--app-text-tertiary)]" : dayOfWeek === 6 ? "text-[var(--primary)]" : "text-[var(--foreground)]";
+                    return (
+                      <button
+                        key={`month-cell-${dateKey}`}
+                        type="button"
+                        onClick={() => {
+                          focusCalendarDate(dateKey);
+                          setCalendarExpanded(false);
+                        }}
+                        className="flex min-h-[36px] flex-col items-center justify-center py-1"
+                      >
+                        <span
+                          className={`rounded-[8px] px-[6px] py-[1px] text-[13px] font-bold leading-none ${isSelected
+                            ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]"
+                            : inMonth
+                              ? weekendClass
+                              : "text-[var(--app-text-tertiary)]"
+                            }`}
+                        >
+                          {date.getDate()}
+                        </span>
+                        {inMonth ? renderDayDots(dateKey) : <span className="h-1 w-1" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCalendarExpanded(false)}
+                  className="mt-1 flex w-full items-center justify-center gap-1 rounded-[8px] py-1.5 text-[11px] font-semibold text-[var(--app-text-tertiary)] hover:bg-[var(--secondary)] active:bg-[var(--secondary)]"
+                  aria-label="週表示に縮小"
+                >
+                  <ChevronDown size={14} className="rotate-180" />
+                  <span>週表示に縮小</span>
+                </button>
+              </div>
+            ) : null}
+
+            {!calendarExpanded ? (
+              <div
+                data-calendar-swipe-surface="true"
+                className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-2 py-2"
+                onTouchStart={handleCalendarTouchStart}
+                onTouchEnd={handleCalendarTouchEnd}
+              >
+                <div className="flex items-center justify-around">
+                  {calendarSelectedWeekEntries.map((entry) => {
+                    const entryDateJst = new Date(entry.date.getTime() + 9 * 60 * 60 * 1000);
+                    const weekday = WEEKDAY_SHORT[entryDateJst.getUTCDay()];
+                    const dayNumber = entryDateJst.getUTCDate();
+                    const isSelected = entry.dateKey === calendarSelectedDateKey;
+                    const isSun = entryDateJst.getUTCDay() === 0;
+                    const isSat = entryDateJst.getUTCDay() === 6;
+                    return (
+                      <button
+                        key={entry.dateKey}
+                        type="button"
+                        onClick={() => setCalendarSelectedDateKey(entry.dateKey)}
+                        className="flex min-w-[36px] flex-col items-center gap-[2px] py-1"
+                      >
+                        <span className={`text-[10px] font-medium ${isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--app-text-tertiary)]"}`}>
+                          {weekday}
+                        </span>
+                        <span className={`rounded-[16px] px-2 py-[2px] text-[16px] font-bold leading-none ${isSelected ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]" : isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--foreground)]"}`}>
+                          {dayNumber}
+                        </span>
+                        {renderDayDots(entry.dateKey)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCalendarExpanded(true)}
+                  className="mt-1 flex w-full items-center justify-center gap-1 rounded-[8px] py-1.5 text-[11px] font-semibold text-[var(--app-text-tertiary)] hover:bg-[var(--secondary)] active:bg-[var(--secondary)]"
+                  aria-label="カレンダー表示に拡大"
+                >
+                  <ChevronDown size={14} />
+                  <span>カレンダー表示に拡大</span>
+                </button>
+              </div>
+            ) : null}
+
+            {draggingChore ? (
+              <div
+                data-drag-navigate="prev-week"
+                className="rounded-[12px] border border-dashed border-[var(--primary)] bg-[var(--app-surface-soft)] px-3 py-2 text-center text-[12px] font-bold text-[var(--primary)]"
+              >
+                <span data-drag-navigate="prev-week">↑ ここに乗せると前の週に移動</span>
+              </div>
+            ) : null}
+
+            <div className="space-y-4">
+              {calendarSelectedWeekEntries.map((entry) => {
+                const entryJst = new Date(entry.date.getTime() + 9 * 60 * 60 * 1000);
+                const dayTotalCount = entry.items.reduce((sum, item) => sum + item.scheduled, 0);
                 return (
-                  <SwipableListChoreRow
-                    key={chore.id}
-                    chore={chore}
-                    meta={meta}
-                    onOpenHistory={openHistory}
-                    onEdit={openEditChore}
-                    onSwipeDelete={handleSwipeDeleteChore}
-                    onDeleteSwipeActiveChange={handleListDeleteSwipeActiveChange}
-                    relaxedSwipeStart={pendingSwipeDeletes.length > 0}
-                  />
+                  <div
+                    key={`week-group-${entry.dateKey}`}
+                    data-drop-date={entry.dateKey}
+                    className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[var(--app-surface-soft)]" : entry.dateKey === calendarSelectedDateKey ? "bg-[var(--app-surface-soft)]" : ""}`}
+                    onClick={(event) => {
+                      handleCalendarSurfaceTap(event, entry.dateKey);
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="text-[14px] font-bold text-[var(--foreground)]">
+                        {WEEKDAY_SHORT[entryJst.getUTCDay()]} {entryJst.getUTCDate()}
+                        {entry.dateKey === todayKey ? " 今日" : ""}
+                      </p>
+                      <div className="h-px flex-1 bg-[var(--border)]" />
+                      <p className="text-[12px] font-medium text-[var(--app-text-tertiary)]">{dayTotalCount}件</p>
+                    </div>
+                    <div className="flex flex-wrap gap-[6px]">
+                      {entry.items.length === 0 ? (
+                        <p className="text-[12px] font-medium text-[var(--app-text-tertiary)]">予定なし</p>
+                      ) : (
+                        entry.items.map((item) =>
+                          renderCalendarChip(item, entry.dateKey),
+                        )
+                      )}
+                    </div>
+                  </div>
                 );
               })}
             </div>
+
+            {draggingChore ? (
+              <div
+                data-drag-navigate="next-week"
+                className="rounded-[12px] border border-dashed border-[var(--primary)] bg-[var(--app-surface-soft)] px-3 py-2 text-center text-[12px] font-bold text-[var(--primary)]"
+              >
+                <span data-drag-navigate="next-week">↓ ここに乗せると次の週に移動</span>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+
+    if (tab === "records") {
+      return (
+        <div className="space-y-4" style={{ paddingTop: getTabHeaderHeight("records") }}>
+          <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
+            {renderInlinePullRefreshHint(tab)}
+            <div data-tap-priority-zone="true" className="py-1">
+              <button
+                type="button"
+                onClick={() => {
+                  openStandaloneScreen("my-records", "records");
+                }}
+                className="flex w-full items-center justify-between rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 text-left"
+              >
+                <span className="text-[14px] font-semibold text-[var(--foreground)]">わたしのきろくを見る</span>
+                <ChevronRight size={16} color="var(--app-text-tertiary)" />
+              </button>
+            </div>
+            {renderTimelineRecords(groupedTimelineRecords, "家事を完了するとここにタイムライン表示されます。")}
           </div>
         </div>
       );
     }
 
     if (tab === "stats") {
+      const topChores = householdReport?.choreCounts.slice(0, 3) ?? [];
+      const staleTasks = householdReport?.staleTasks.slice(0, 3) ?? [];
+      const monthDiffLabel =
+        householdReportDiff > 0 ? `+${householdReportDiff}` : `${householdReportDiff}`;
+
       return (
-        <div className="space-y-5" style={{ paddingTop: statsHeaderHeight }}>
+        <div className="space-y-5" style={{ paddingTop: getTabHeaderHeight("stats") }}>
           <div className="space-y-5" style={getPullAnimatedContentStyle(tab)}>
             {renderInlinePullRefreshHint(tab)}
-            <StatsView
-              stats={stats}
-              activePeriod={statsPeriod}
-              isLoading={statsLoading}
-              animationSeed={statsAnimationSeed}
-              customDateRange={customDateRange}
-              userColors={(() => {
-                const map = new Map<string, string>();
-                for (const u of boot.users) {
-                  if (u.color) map.set(u.id, u.color);
-                }
-                return map;
-              })()}
-              onChangeCustomDateRange={setCustomDateRange}
-              onApplyCustomDateRange={async (range) => {
-                await applyCustomDateRange(range);
-                setCustomEditorOpen(false);
-              }}
-              customEditorOpen={customEditorOpen}
-              onBalanceSwipeActiveChange={setBalanceSwipeActive}
+            <button
+              type="button"
+              onClick={() => openStandaloneScreen("my-report", "stats")}
+              data-gesture-priority="tap"
+              className="flex w-full items-center justify-between rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 text-left"
+            >
+              <span className="text-[14px] font-semibold text-[var(--foreground)]">私のレポートを見る</span>
+              <ChevronRight size={16} color="var(--app-text-tertiary)" />
+            </button>
+            <div className="space-y-3">
+              <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+                <p className="text-[18px] font-bold text-[var(--foreground)]">今月のおうち</p>
+                {reportLoading && !householdReport ? (
+                  <div className="mt-3 flex items-center gap-2 text-[13px] text-[var(--muted-foreground)]">
+                    <Loader2 size={14} className="animate-spin" />
+                    読み込み中...
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-2.5 flex items-end gap-2">
+                      <p className="text-[48px] font-bold leading-none text-[var(--primary)]">{householdReport?.currentMonthTotal ?? 0}</p>
+                      <p className="text-[18px] font-semibold text-[var(--muted-foreground)]">回</p>
+                      <span className={`mb-1 inline-flex rounded-full px-2.5 py-1 text-[13px] font-bold ${householdReportDiff >= 0 ? "bg-[var(--app-surface-soft)] text-[var(--primary)]" : "bg-[var(--destructive)]/15 text-[var(--destructive)]"}`}>
+                        {monthDiffLabel} 先月比
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[13px] font-medium text-[var(--app-text-tertiary)]">みんなでたくさんやったね！</p>
+                  </>
+                )}
+              </div>
+
+              <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+                <p className="text-[18px] font-bold text-[var(--foreground)]">よく回った家事 トップ3</p>
+                <div className="mt-3 space-y-2">
+                  {topChores.length === 0 ? (
+                    <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">まだ記録がありません。</p>
+                  ) : (
+                    topChores.map((item) => {
+                      const ItemIcon = iconByName(item.icon);
+                      return (
+                        <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2">
+                          <ItemIcon size={14} color={item.iconColor} />
+                          <p className="flex-1 truncate text-[15px] font-bold text-[var(--foreground)]">{item.title}</p>
+                          <p className="text-[15px] font-bold text-[var(--primary)]">{item.count}回</p>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+                <p className="text-[18px] font-bold text-[var(--foreground)]">久しぶりかも？</p>
+                <div className="mt-3 space-y-2">
+                  {staleTasks.length === 0 ? (
+                    <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">問題のある家事はありません。</p>
+                  ) : (
+                    staleTasks.map((item) => {
+                      const ItemIcon = iconByName(item.icon);
+                      const lastPerformed = new Date(item.lastPerformedAt);
+                      const lastPerformedLabel = `${lastPerformed.getMonth() + 1}/${lastPerformed.getDate()}`;
+                      return (
+                        <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2">
+                          <ItemIcon size={14} color={item.iconColor} />
+                          <p className="flex-1 truncate text-[14px] font-bold text-[var(--foreground)]">{item.title}</p>
+                          <p className="text-[12px] font-medium text-[var(--muted-foreground)]">最終: {lastPerformedLabel}</p>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const inviteCode = boot.householdInviteCode ?? "";
+    const inviteLink =
+      typeof window === "undefined"
+        ? `https://ietasuku.vercel.app/?invite=${inviteCode}`
+        : `${window.location.origin}/?invite=${inviteCode}`;
+
+    if (settingsView === "push") {
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">プッシュ通知設定</p>
+          </div>
+          <SettingToggleRow title="プッシュ通知" subtitle="すべての通知をまとめてオン/オフ" checked={pushEnabled} disabled={pushLoading} onChange={(next) => { void handleTogglePush(next); }} />
+          {pushEnabled && notificationSettings ? (
+            <div className="space-y-3 rounded-[14px] bg-[var(--card)] p-3">
+              <div className="space-y-2 rounded-[12px] border border-[var(--border)] bg-[var(--app-canvas)] p-3">
+                <p className="text-[13px] font-bold text-[var(--foreground)]">通知時刻</p>
+                <div className="flex flex-wrap gap-2">
+                  {notificationSettings.reminderTimes.map((time) => (
+                    <button key={time} type="button" onClick={() => removeReminderTime(time)} className="inline-flex items-center gap-1 rounded-full bg-[var(--card)] px-3 py-1.5 text-[12px] font-bold text-[var(--primary)]">
+                      {time}
+                      {notificationSettings.reminderTimes.length > 1 ? <span className="text-[var(--app-text-tertiary)]">×</span> : null}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => setReminderTimePickerOpen((prev) => !prev)} className="inline-flex h-[30px] items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] px-3 text-[12px] font-bold text-[var(--muted-foreground)]">+ 追加</button>
+                </div>
+                {reminderTimePickerOpen ? (
+                  <div className="grid grid-cols-4 gap-2 pt-1">
+                    {REMINDER_HOUR_CHOICES.filter((time) => !notificationSettings.reminderTimes.includes(time)).map((time) => (
+                      <button key={time} type="button" onClick={() => addReminderTime(time)} className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-[12px] font-bold text-[var(--muted-foreground)]">{time}</button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <SettingToggleRow title="リマインド通知" checked={notificationSettings.notifyReminder} onChange={(next) => { void updateNotificationSettings({ ...notificationSettings, notifyReminder: next }); }} />
+              <SettingToggleRow title="パートナーの完了通知" checked={notificationSettings.notifyCompletion} onChange={(next) => { void updateNotificationSettings({ ...notificationSettings, notifyCompletion: next }); }} />
+              <button type="button" onClick={handleTestNotification} disabled={pushLoading} className="w-full rounded-[10px] bg-[var(--primary)] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60">いま通知を送信</button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setPushGuidePlatform("android");
+              setSettingsView("push-guide");
+            }}
+            className="flex w-full items-center justify-between rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-left"
+          >
+            <div>
+              <p className="text-[14px] font-bold text-[var(--foreground)]">スマホ通知の設定方法</p>
+              <p className="text-[12px] font-medium text-[var(--muted-foreground)]">Android・iPhone向けの手順を案内</p>
+            </div>
+            <ChevronRight size={16} color="var(--app-text-tertiary)" />
+          </button>
+        </div>
+      );
+    }
+
+    if (settingsView === "push-guide") {
+      const guide = PUSH_GUIDE_CONTENT[pushGuidePlatform];
+
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("push")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">通知の設定方法</p>
+          </div>
+
+          <div className="flex gap-1 rounded-[12px] bg-[var(--secondary)] p-1">
+            <button
+              type="button"
+              onClick={() => setPushGuidePlatform("android")}
+              className={`flex-1 rounded-[10px] px-2 py-2 text-[13px] font-bold ${pushGuidePlatform === "android" ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+            >
+              Android
+            </button>
+            <button
+              type="button"
+              onClick={() => setPushGuidePlatform("iphone")}
+              className={`flex-1 rounded-[10px] px-2 py-2 text-[13px] font-bold ${pushGuidePlatform === "iphone" ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+            >
+              iPhone
+            </button>
+          </div>
+
+          <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-4">
+            <p className="text-[15px] font-bold text-[var(--foreground)]">{guide.setupTitle}</p>
+            <div className="space-y-1.5 text-[12px] font-medium leading-relaxed text-[var(--muted-foreground)]">
+              {guide.setupSteps.map((step) => (
+                <p key={step}>{step}</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--app-surface-soft)] p-4">
+            <p className="text-[13px] font-bold text-[var(--primary)]">確認（テスト）</p>
+            <div className="space-y-1 text-[11.5px] font-medium leading-relaxed text-[var(--muted-foreground)]">
+              {PUSH_GUIDE_CONFIRM_STEPS.map((step) => (
+                <p key={step}>{step}</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-[14px] border border-[var(--primary)] bg-[var(--app-surface-soft)] p-4">
+            <p className="text-[13px] font-bold text-[var(--primary)]">{guide.troubleTitle}</p>
+            <div className="space-y-1 text-[11px] font-medium leading-relaxed text-[var(--muted-foreground)]">
+              {guide.troubleSteps.map((step) => (
+                <p key={step}>{step}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsView === "family") {
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">家族招待・家族管理</p>
+          </div>
+          <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-5">
+            <p className="text-[14px] font-bold text-[var(--muted-foreground)]">家族コード</p>
+            <p className="text-[30px] font-extrabold tracking-[0.16em] text-[var(--primary)]">{inviteCode || "----"}</p>
+            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">パートナーにこのコードを共有してください</p>
+            <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(inviteCode); setInfoMessage("家族コードをコピーしました。"); } catch { setError("家族コードのコピーに失敗しました。"); } }} className="rounded-[12px] bg-[var(--primary)] px-3 py-2 text-[14px] font-bold text-white">コードをコピー</button>
+          </div>
+          <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-5">
+            <p className="text-[14px] font-bold text-[var(--muted-foreground)]">招待リンク</p>
+            <p className="truncate rounded-[10px] bg-[var(--secondary)] px-3 py-2 text-[13px] font-medium text-[var(--muted-foreground)]">{inviteLink}</p>
+            <button type="button" onClick={async () => { if (navigator.share) { try { await navigator.share({ title: "いえたすく 招待", text: inviteLink, url: inviteLink }); return; } catch { } } try { await navigator.clipboard.writeText(inviteLink); setInfoMessage("招待リンクをコピーしました。"); } catch { setError("招待リンクの共有に失敗しました。"); } }} className="rounded-[12px] border-2 border-[var(--primary)] bg-[var(--card)] px-3 py-2 text-[14px] font-bold text-[var(--primary)]">リンクを共有</button>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[22px] font-bold text-[var(--foreground)]">家族メンバー</p>
+            {boot.users.map((member) => (
+              <div key={member.id} className="flex items-center gap-3 rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full text-white" style={{ backgroundColor: member.color ?? PRIMARY_COLOR }}>
+                  <span className="material-symbols-rounded text-[20px]">person</span>
+                </div>
+                <p className="flex-1 text-[15px] font-semibold text-[var(--foreground)]">{member.name}{member.id === sessionUser.id ? "（あなた）" : ""}</p>
+                <span className={`text-[11px] font-bold ${member.id === sessionUser.id ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}`}>{member.id === sessionUser.id ? "管理者" : "参加中"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsView === "manage") {
+      if (manageDetailTarget) {
+        const DetailIcon = iconByName(manageDetailTarget.icon);
+        return (
+          <div className="space-y-3 pb-4">
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setManageDetailChoreId(null)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]"
+                aria-label="家事一覧に戻る"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <p className="text-[22px] font-bold text-[var(--foreground)]">家事詳細</p>
+              <button
+                type="button"
+                onClick={() => openEditChore(manageDetailTarget)}
+                className="ml-auto inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-[12px] font-bold text-[var(--primary)]"
+              >
+                <span className="material-symbols-rounded text-[16px]">edit</span>
+                編集
+              </button>
+            </div>
+
+            <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: manageDetailTarget.bgColor }}>
+                  <DetailIcon size={18} color={manageDetailTarget.iconColor} />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-[16px] font-bold text-[var(--foreground)]">{manageDetailTarget.title}</p>
+                  <p className="text-[12px] font-medium text-[var(--muted-foreground)]">
+                    {manageDetailTarget.intervalDays}日ごと
+                  </p>
+                </div>
+              </div>
+              <p className="text-[12px] font-medium text-[var(--muted-foreground)]">直近30日の実施回数: {historyCountLast30}回</p>
+            </div>
+
+            <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-4">
+              <div className="flex items-end justify-between gap-2">
+                <p className="text-[16px] font-bold text-[var(--foreground)]">実施予定</p>
+                <span className="text-[11px] font-medium text-[var(--app-text-tertiary)]">次の5件</span>
+              </div>
+              {manageUpcomingDateKeys.length === 0 ? (
+                <p className="rounded-[10px] bg-[var(--app-canvas)] px-3 py-2 text-[13px] font-medium text-[var(--app-text-tertiary)]">予定なし</p>
+              ) : (
+                <div className="space-y-2">
+                  {manageUpcomingDateKeys.map((dateKey, index) => (
+                    <button
+                      key={`${manageDetailTarget.id}-planned-${dateKey}-${index}`}
+                      type="button"
+                      onClick={() => openReschedule(manageDetailTarget, dateKey)}
+                      className="flex w-full items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2 text-left"
+                    >
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--card)] px-1 text-[10px] font-bold text-[var(--muted-foreground)]">{index + 1}</span>
+                      <p className="text-[14px] font-semibold text-[var(--foreground)]">{formatDateKeyMonthDayWeekday(dateKey)}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 rounded-[16px] border border-[var(--border)] bg-[var(--card)] p-4">
+              <p className="text-[16px] font-bold text-[var(--foreground)]">実施履歴</p>
+              <SegmentedFilter items={historyFilters} activeKey={historyFilter} onChange={setHistoryFilter} />
+              {historyRecords.length === 0 ? (
+                <p className="rounded-[10px] bg-[var(--app-canvas)] px-3 py-4 text-center text-[13px] font-medium text-[var(--app-text-tertiary)]">履歴がありません</p>
+              ) : (
+                <AnimatedList delay={70} className="items-stretch gap-2">
+                  {historyRecords.map((record) => (
+                    <div key={record.id} className="flex items-start gap-3 rounded-[12px] bg-[var(--app-canvas)] p-3">
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[var(--primary)]" />
+                      <div className="space-y-1">
+                        <p className="text-[14px] font-bold text-[var(--foreground)]">
+                          {formatJpDate(record.performedAt)} {
+                            record.isSkipped
+                              ? "スキップ"
+                              : record.isInitial || record.user.name === "初期登録"
+                                ? "初回登録"
+                                : `${record.user.name}が実施`
+                          }
+                        </p>
+                        {record.memo ? (
+                          <p className="text-[12px] font-medium text-[var(--muted-foreground)]">メモ: {record.memo}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </AnimatedList>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-3 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => { if (standaloneScreen === "manage") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">家事を管理</p>
+            <span className="text-[14px] font-medium text-[var(--app-text-tertiary)]">{chores.length}件</span>
+          </div>
+          {listChores.map((chore) => {
+            const ChoreIcon = iconByName(chore.icon);
+            return (
+              <button key={chore.id} type="button" onClick={() => openManageDetail(chore.id)} className="flex w-full items-center justify-between rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-left">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: chore.bgColor }}>
+                    <ChoreIcon size={15} color={chore.iconColor} />
+                  </div>
+                  <div>
+                    <p className="text-[14px] font-bold text-[var(--foreground)]">{chore.title}</p>
+                    <p className="text-[11.5px] font-medium text-[var(--app-text-tertiary)]">{chore.intervalDays}日ごと</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} color="var(--app-text-tertiary)" />
+              </button>
+            );
+          })}
+          <button type="button" onClick={openAddChore} className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[15px] font-bold text-[var(--primary)]"><Plus size={16} />家事を追加</button>
+        </div>
+      );
+    }
+
+    if (settingsView === "my-report") {
+      const myDiff = myReportPreviousTotal === null ? null : (myReport?.currentMonthTotal ?? 0) - myReportPreviousTotal;
+      const myTopChores = myReport?.choreCounts.slice(0, 3) ?? [];
+      const staleTasks = householdReport?.staleTasks.slice(0, 3) ?? [];
+      return (
+        <div className="space-y-3 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => { if (standaloneScreen === "my-report") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
+              <ChevronLeft size={18} />
+            </button>
+          </div>
+          <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+            <p className="text-[18px] font-bold text-[var(--foreground)]">今月のわたし</p>
+            {myReportLoading ? (
+              <div className="mt-3 flex items-center gap-2 text-[13px] text-[var(--muted-foreground)]">
+                <Loader2 size={14} className="animate-spin" />
+                読み込み中...
+              </div>
+            ) : (
+              <>
+                <div className="mt-2.5 flex items-end gap-2">
+                  <p className="text-[48px] font-bold leading-none text-[var(--primary)]">{myReport?.currentMonthTotal ?? 0}</p>
+                  <p className="text-[18px] font-semibold text-[var(--muted-foreground)]">回</p>
+                  <span className={`mb-1 inline-flex rounded-full px-2.5 py-1 text-[13px] font-bold ${myDiff !== null && myDiff >= 0 ? "bg-[var(--app-surface-soft)] text-[var(--primary)]" : "bg-[var(--destructive)]/15 text-[var(--destructive)]"}`}>
+                    {myDiff === null ? "-" : myDiff > 0 ? `+${myDiff}` : `${myDiff}`} 先月比
+                  </span>
+                </div>
+                <p className="mt-2 text-[13px] font-medium text-[var(--app-text-tertiary)]">わたしの家事傾向をみてみよう</p>
+              </>
+            )}
+          </div>
+          <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+            <p className="text-[18px] font-bold text-[var(--foreground)]">よく回った家事 トップ3</p>
+            <div className="mt-3 space-y-2">
+              {myTopChores.length === 0 ? (
+                <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">まだ記録がありません。</p>
+              ) : (
+                myTopChores.map((item) => {
+                  const ItemIcon = iconByName(item.icon);
+                  return (
+                    <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2">
+                      <ItemIcon size={14} color={item.iconColor} />
+                      <p className="flex-1 truncate text-[15px] font-bold text-[var(--foreground)]">{item.title}</p>
+                      <p className="text-[15px] font-bold text-[var(--primary)]">{item.count}回</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+          <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+            <p className="text-[18px] font-bold text-[var(--foreground)]">久しぶりかも？</p>
+            <div className="mt-3 space-y-2">
+              {staleTasks.length === 0 ? (
+                <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">問題のある家事はありません。</p>
+              ) : (
+                staleTasks.map((item) => {
+                  const ItemIcon = iconByName(item.icon);
+                  const lastPerformed = new Date(item.lastPerformedAt);
+                  const lastPerformedLabel = `${lastPerformed.getMonth() + 1}/${lastPerformed.getDate()}`;
+                  return (
+                    <div key={item.choreId} className="flex items-center gap-2 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2">
+                      <ItemIcon size={14} color={item.iconColor} />
+                      <p className="flex-1 truncate text-[14px] font-bold text-[var(--foreground)]">{item.title}</p>
+                      <p className="text-[12px] font-medium text-[var(--muted-foreground)]">最終: {lastPerformedLabel}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsView === "my-records") {
+      return (
+        <div className="space-y-3 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => { if (standaloneScreen === "my-records") { returnFromStandaloneScreen(); } else { setSettingsView("menu"); } }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">わたしのきろく</p>
+          </div>
+          <div className="space-y-4">
+            {renderTimelineRecords(myGroupedTimelineRecords, "あなたの記録がここに表示されます。")}
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsView === "sleep") {
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">おやすみモード</p>
+          </div>
+          <p className="text-[13px] font-medium leading-relaxed text-[var(--muted-foreground)]">
+            おやすみモード中はプッシュ通知が届きません。設定した時間帯は通知をミュートします。
+          </p>
+          <div className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-2">
+            <SettingToggleRow
+              title="おやすみモード"
+              checked={sleepModeEnabled}
+              onChange={setSleepModeEnabled}
             />
+          </div>
+          <div className="space-y-2">
+            <p className="text-[14px] font-semibold text-[var(--muted-foreground)]">おやすみ時間</p>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <select
+                value={sleepModeStart}
+                onChange={(event) => setSleepModeStart(event.target.value)}
+                disabled={!sleepModeEnabled}
+                className="h-12 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 text-center text-[30px] font-bold leading-none text-[var(--foreground)] disabled:opacity-50"
+              >
+                {REMINDER_HOUR_CHOICES.map((time) => (
+                  <option key={`sleep-start-inline-${time}`} value={time}>
+                    {time}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[22px] font-semibold text-[var(--muted-foreground)]">〜</span>
+              <select
+                value={sleepModeEnd}
+                onChange={(event) => setSleepModeEnd(event.target.value)}
+                disabled={!sleepModeEnabled}
+                className="h-12 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 text-center text-[30px] font-bold leading-none text-[var(--foreground)] disabled:opacity-50"
+              >
+                {REMINDER_HOUR_CHOICES.map((time) => (
+                  <option key={`sleep-end-inline-${time}`} value={time}>
+                    {time}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">この時間帯はリマインド通知が届きません</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (settingsView === "theme") {
+      return (
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center gap-2 pt-1">
+            <button type="button" onClick={() => setSettingsView("menu")} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--card)] text-[var(--foreground)]">
+              <ChevronLeft size={18} />
+            </button>
+            <p className="text-[22px] font-bold text-[var(--foreground)]">テーマカラー</p>
+          </div>
+
+          <p className="text-[13px] font-medium leading-relaxed text-[var(--muted-foreground)]">
+            ライト/ダーク表示とアクセントカラーを切り替えられます。白黒ベースのUIに差し色が適用されます。
+          </p>
+
+          <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+            <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">表示テーマ</p>
+            <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-[var(--secondary)] p-1">
+              {THEME_MODE_ITEMS.map((item) => {
+                const selected = themeMode === item.key;
+                return (
+                  <button
+                    key={`theme-mode-settings-${item.key}`}
+                    type="button"
+                    onClick={() => handleThemeModeChange(item.key)}
+                    className={`rounded-[8px] px-2 py-1.5 text-[12px] font-bold transition-colors ${selected
+                      ? "bg-[var(--card)] text-[var(--foreground)]"
+                      : "text-[var(--muted-foreground)]"
+                      }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">
+              現在の表示: {resolvedTheme === "dark" ? "ダーク" : "ライト"}
+            </p>
+          </div>
+
+          <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-3">
+            <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">アクセントカラー</p>
+            <div className="grid grid-cols-2 gap-2">
+              {THEME_COLOR_ITEMS.map((item) => {
+                const selected = themeColor === item.key;
+                return (
+                  <button
+                    key={`theme-color-${item.key}`}
+                    type="button"
+                    onClick={() => handleThemeColorChange(item.key)}
+                    className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-left ${selected
+                      ? "border-[var(--primary)] bg-[var(--app-surface-soft)]"
+                      : "border-[var(--border)] bg-[var(--card)]"
+                      }`}
+                  >
+                    <span
+                      className="h-5 w-5 shrink-0 rounded-full border border-black/10"
+                      style={{ backgroundColor: item.preview }}
+                    />
+                    <span className="flex-1 text-[13px] font-semibold text-[var(--foreground)]">{item.label}</span>
+                    <span className={`material-symbols-rounded text-[18px] ${selected ? "text-[var(--primary)]" : "text-[var(--app-text-tertiary)]"}`}>
+                      {selected ? "check_circle" : "radio_button_unchecked"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       );
     }
 
     return (
-      <div className="space-y-6" style={{ paddingTop: settingsHeaderHeight }}>
+      <div className="flex h-full flex-col">
         <div className="space-y-4">
-          <SettingToggleRow
-            title="期限当日通知"
-            subtitle="朝8時・夕方18時に通知"
-            checked={notificationSettings?.notifyDueToday ?? false}
-            onChange={(next) => {
-              if (!notificationSettings) return;
-              updateNotificationSettings({ ...notificationSettings, notifyDueToday: next });
-            }}
-          />
-
-          <SettingToggleRow
-            title="期限超過通知"
-            checked={notificationSettings?.remindDailyIfOverdue ?? false}
-            onChange={(next) => {
-              if (!notificationSettings) return;
-              updateNotificationSettings({ ...notificationSettings, remindDailyIfOverdue: next });
-            }}
-          />
-          <SettingToggleRow
-            title="完了時通知"
-            checked={notificationSettings?.notifyCompletion ?? false}
-            onChange={(next) => {
-              if (!notificationSettings) return;
-              updateNotificationSettings({ ...notificationSettings, notifyCompletion: next });
-            }}
-          />
-
-          <div className="rounded-[14px] bg-white p-4">
-            <p className="text-[15px] font-bold text-[#202124]">マイカラー</p>
-            <p className="mt-1 text-[12px] font-medium text-[#9AA0A6]">分担バランスのグラフに使う色</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {USER_COLOR_PALETTE.map((c) => {
-                const isActive = (sessionUser.color ?? USER_COLOR_PALETTE[0]) === c;
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        setError("");
-                        await apiFetch("/api/user", {
-                          method: "PATCH",
-                          body: JSON.stringify({ color: c }),
-                        });
-                        setBoot((prev) => {
-                          if (!prev || prev.needsRegistration) return prev;
-                          return {
-                            ...prev,
-                            sessionUser: prev.sessionUser ? { ...prev.sessionUser, color: c } : prev.sessionUser,
-                            users: prev.users.map((u) => (u.id === sessionUser.id ? { ...u, color: c } : u)),
-                          };
-                        });
-                      } catch (err: unknown) {
-                        setError((err as Error).message ?? "カラーの変更に失敗しました。");
-                      }
-                    }}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-transform ${isActive ? "scale-110 ring-2 ring-[#202124] ring-offset-2" : ""}`}
-                    style={{ backgroundColor: c }}
-                    aria-label={c}
-                  >
-                    {isActive ? (
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <path d="M2.5 7L5.5 10L11.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <FamilyCodeCard
-            inviteCode={boot.householdInviteCode}
-            partnerName={
-              boot.users.length > 1
-                ? boot.users.find((u) => u.id !== sessionUser.id)?.name ?? null
-                : null
-            }
-          />
-
-          {boot.users.length <= 1 ? (
-            <JoinHouseholdCard
-              onJoin={async (code) => {
-                try {
-                  setError("");
-                  await apiFetch("/api/household/join", {
-                    method: "POST",
-                    body: JSON.stringify({ inviteCode: code }),
-                  });
-                  await refreshAll(statsPeriod);
-                } catch (err: unknown) {
-                  setError((err as Error).message ?? "参加に失敗しました。");
-                }
-              }}
-            />
-          ) : null}
-
-          <div className="rounded-[14px] bg-[#FFF8E8] p-4">
-            <p className="text-[17px] font-bold text-[#202124]">通知テスト</p>
+          <div className="space-y-1">
             <button
               type="button"
-              onClick={handleTestNotification}
-              disabled={pushLoading}
-              className="mt-3 w-full rounded-[12px] bg-[#C2A12F] px-3 py-2 text-[14.4px] font-bold text-white disabled:opacity-60"
+              onClick={closeSettings}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-white"
+              style={{ backgroundColor: sessionUser.color ?? PRIMARY_COLOR }}
+              aria-label="設定を閉じる"
             >
-              いま通知を送信
+              <span className="material-symbols-rounded text-[20px]">person</span>
             </button>
+            <p className="text-[28px] font-bold leading-none text-[var(--foreground)]">{sessionUser.name}</p>
+            <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">@{sessionUser.name.toLowerCase()} · いえたすく</p>
+            <p className="pt-1 text-[13px] font-semibold text-[var(--muted-foreground)]">{myReport?.currentMonthTotal ?? 0} 今月の記録・ {chores.length} 連続日数</p>
           </div>
 
-          <div className="rounded-[14px] bg-white p-4">
-            <p className="text-[17px] font-bold text-[#202124]">アプリ更新</p>
-            <button
-              type="button"
-              onClick={handleManualAppUpdate}
-              disabled={appUpdateLoading}
-              className="mt-3 w-full rounded-[12px] bg-[#1A9BE8] px-3 py-2 text-[14.4px] font-bold text-white disabled:opacity-60"
-            >
-              {appUpdateLoading || appReloading
-                ? "最新化中..."
-                : "最新化"}
-            </button>
-          </div>
+          <div className="h-px bg-[var(--border)]" />
 
-          <div className="rounded-[14px] bg-white p-4">
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await apiFetch("/api/logout", { method: "POST" });
+          <div className="space-y-1">
+            <button type="button" onClick={() => openStandaloneScreen("my-report")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">trending_up</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">私のレポート</span></button>
+            <button type="button" onClick={() => openStandaloneScreen("my-records")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">menu_book</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">わたしのきろく</span></button>
+            <button type="button" onClick={() => openSettingsView("theme")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">palette</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">テーマカラー</span></button>
+            <button type="button" onClick={() => openSettingsView("push")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">notifications</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">プッシュ通知設定</span></button>
+            <button type="button" onClick={() => openSettingsView("family")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">group</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">家族招待・家族管理</span></button>
+            <button type="button" onClick={() => openStandaloneScreen("manage")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">checklist</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">家事を管理</span></button>
+            <button type="button" onClick={() => openSettingsView("sleep")} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"><span className="material-symbols-rounded text-[21px] text-[var(--muted-foreground)]">bedtime</span><span className="text-[18px] leading-none font-semibold text-[var(--foreground)]">おやすみモード</span></button>
+          </div>
+        </div>
+
+        <div className="mt-auto pt-10">
+          <div className="h-px bg-[var(--border)]" />
+          <button
+            type="button"
+            onClick={() => {
+              setInfoMessage("設定とサポートは準備中です。");
+            }}
+            className="mt-2 flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"
+          >
+            <span className="material-symbols-rounded text-[20px] text-[var(--muted-foreground)]">settings</span>
+            <span className="text-[16px] font-medium text-[var(--foreground)]">設定とサポート</span>
+            <span className="material-symbols-rounded ml-auto text-[18px] text-[var(--muted-foreground)]">expand_more</span>
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await apiFetch("/api/logout", { method: "POST", body: "{}" });
+                if (typeof window !== "undefined") {
                   window.location.reload();
-                } catch (err: unknown) {
-                  setError((err as Error).message ?? "ログアウトに失敗しました。");
                 }
-              }}
-              className="w-full rounded-[12px] bg-[#E8E8E8] px-3 py-2 text-[14.4px] font-bold text-[#5F6368]"
-            >
-              ログアウト
-            </button>
-          </div>
+              } catch (err: unknown) {
+                setError((err as Error).message ?? "ログアウトに失敗しました。");
+              }
+            }}
+            className="mt-2 flex w-full items-center gap-3 rounded-[10px] px-2 py-2.5 text-left"
+          >
+            <span className="material-symbols-rounded text-[20px] text-[var(--destructive)]">logout</span>
+            <span className="text-[16px] font-medium text-[var(--destructive)]">ログアウト</span>
+          </button>
         </div>
       </div>
     );
   };
 
   return (
-    <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-hidden overscroll-y-none bg-[#F8F9FA]">
+    <main className="mx-auto flex h-screen w-full max-w-[430px] flex-col overflow-hidden overscroll-y-none bg-[var(--app-canvas)]">
       <section
         className="relative flex-1 overflow-hidden overscroll-y-none"
         onTouchStart={(e) => {
+          const dragGestureActive = Boolean(touchDragInfoRef.current?.active) || Boolean(draggingChore);
+          if (dragGestureActive) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchCancel();
+            sectionSwipeSuppressedRef.current = false;
+            return;
+          }
+          const t = e.touches[0];
+          sectionTouchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+          const target = e.target as HTMLElement | null;
+          const isTapPrioritySurface = Boolean(target?.closest("[data-gesture-priority='tap']"));
+          const isCalendarSurface =
+            activeTabRef.current === "list" &&
+            Boolean(target?.closest("[data-calendar-swipe-surface='true']"));
+          const isTapPriorityZone =
+            activeTabRef.current === "records" &&
+            Boolean(target?.closest(TAP_PRIORITY_ZONE_SELECTOR));
+          sectionSwipeSuppressedRef.current = isCalendarSurface || isTapPriorityZone;
+          if (isCalendarSurface || isTapPriorityZone) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchStart(e);
+            return;
+          }
           swipe.onTouchStart(e);
           assignmentEdgeSwipe.onTouchStart(e);
         }}
         onTouchMove={(e) => {
+          const dragGestureActive = Boolean(touchDragInfoRef.current?.active) || Boolean(draggingChore);
+          if (dragGestureActive) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchCancel();
+            return;
+          }
+          if (sectionSwipeSuppressedRef.current) return;
+          const start = sectionTouchStartRef.current;
+          const t = e.touches[0];
+          if (start && t) {
+            const dx = Math.abs(t.clientX - start.x);
+            const dy = Math.abs(t.clientY - start.y);
+            const isDownwardPull = t.clientY > start.y && dy > dx * PULL_START_DIRECTION_RATIO;
+
+            // pull-to-refresh candidate のときは section 側では preventDefault せず、
+            // mainScrollRef の native touchmove 側だけで preventDefault する。
+            if (pullEligibleRef.current && isDownwardPull) {
+              sectionSwipeSuppressedRef.current = true;
+              swipe.onTouchCancel();
+              return;
+            }
+
+            // 明らかな縦スクロールはタブスワイプ抑止のみ行い、スクロール/Pull 判定を優先する。
+            if (dy > dx * 1.3) return;
+          }
           swipe.onTouchMove(e);
           assignmentEdgeSwipe.onTouchMove(e);
         }}
         onTouchEnd={(e) => {
+          const dragGestureActive = Boolean(touchDragInfoRef.current?.active) || Boolean(draggingChore);
+          if (dragGestureActive) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchCancel();
+            return;
+          }
+          sectionTouchStartRef.current = null;
+          if (sectionSwipeSuppressedRef.current) {
+            sectionSwipeSuppressedRef.current = false;
+            tapPriorityZoneActiveRef.current = false;
+            assignmentEdgeSwipe.onTouchEnd(e);
+            return;
+          }
           swipe.onTouchEnd(e);
+          tapPriorityZoneActiveRef.current = false;
           assignmentEdgeSwipe.onTouchEnd(e);
         }}
         onTouchCancel={() => {
-          swipe.onTouchCancel();
+          sectionTouchStartRef.current = null;
+          if (!sectionSwipeSuppressedRef.current) {
+            swipe.onTouchCancel();
+          }
+          sectionSwipeSuppressedRef.current = false;
+          tapPriorityZoneActiveRef.current = false;
           assignmentEdgeSwipe.onTouchCancel();
         }}
       >
         <div className="relative h-full overflow-hidden">
-          <div className="absolute left-0 right-0 top-0 z-30 overflow-hidden" style={isSwipeSheetMoving ? undefined : { height: activeTab === "home" ? homeHeaderHeight : activeTab === "list" ? listHeaderHeight : activeTab === "stats" ? statsHeaderHeight : settingsHeaderHeight }}>
+          <div className="pointer-events-none absolute left-0 right-0 top-0 z-30 overflow-hidden" style={isSwipeSheetMoving ? undefined : { height: getTabHeaderHeight(activeTab) }}>
             <div
               className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
               style={{
@@ -2257,7 +5775,10 @@ export function KajiApp() {
               }}
             >
               {TAB_ORDER.map((tab) => (
-                <div key={tab} className="w-full shrink-0">
+                <div
+                  key={tab}
+                  className={`${tab === "home" ? "pointer-events-none" : "pointer-events-auto"} w-full shrink-0`}
+                >
                   {renderTabHeader(tab)}
                 </div>
               ))}
@@ -2270,11 +5791,10 @@ export function KajiApp() {
               overscrollBehaviorY: "contain",
             }}
             onTouchStart={handleMainScrollTouchStart}
-            onTouchMove={handleMainScrollTouchMove}
             onTouchEnd={handleMainScrollTouchEnd}
             onTouchCancel={handleMainScrollTouchCancel}
           >
-            {error ? <div className="mb-4 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
+            {error ? <div className="mb-4 rounded-xl bg-[var(--destructive)]/15 px-3 py-2 text-sm text-[var(--destructive)]">{error}</div> : null}
             <div className="relative min-h-full overflow-x-hidden">
               <div
                 className={`flex ${isSwipeSheetMoving ? "will-change-transform" : ""}`}
@@ -2294,38 +5814,38 @@ export function KajiApp() {
 
           {assignmentMounted ? (
             <div
-              className={`absolute inset-0 z-40 overflow-auto bg-[#F8F9FA] px-5 pb-8 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
+              className={`absolute inset-0 z-40 overflow-auto bg-[var(--app-canvas)] px-5 pb-8 transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${assignmentSlideIn ? "translate-x-0" : "translate-x-full"}`}
             >
-              {error ? <div className="mb-4 mt-5 rounded-xl bg-[#FDECEE] px-3 py-2 text-sm text-[#C5221F]">{error}</div> : null}
+              {error ? <div className="mb-4 mt-5 rounded-xl bg-[var(--destructive)]/15 px-3 py-2 text-sm text-[var(--destructive)]">{error}</div> : null}
               <div className={`space-y-4 ${error ? "pt-2" : "pt-5"}`}>
-                <div className="sticky top-0 z-30 -mx-5 space-y-3 bg-[#F8F9FA]/95 px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85">
+                <div className="sticky top-0 z-30 -mx-5 space-y-3 bg-[var(--app-header-bg)] px-5 pb-3 pt-5 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]">
                   <div className="flex items-center justify-between">
                     <button
                       type="button"
                       onClick={closeAssignment}
-                      className="flex items-center gap-1 text-[14px] font-bold text-[#1A9BE8]"
+                      className="flex items-center gap-1 text-[14px] font-bold text-[var(--primary)]"
                     >
                       <ChevronLeft size={18} /> 戻る
                     </button>
-                    <p className="text-[18px] font-bold text-[#202124]">担当設定</p>
+                    <p className="text-[18px] font-bold text-[var(--foreground)]">担当設定</p>
                     <div className="w-[50px]" />
                   </div>
 
                   <div className="flex gap-2">
                     {(boot?.users ?? []).map((u) => {
                       const isSelected = assignmentUser === u.id;
-                      const userColor = u.color ?? "#1A9BE8";
+                      const userColor = u.color ?? PRIMARY_COLOR;
                       return (
                         <button
                           key={u.id}
                           type="button"
                           onClick={() => setAssignmentUser(isSelected ? null : u.id)}
-                          className={`rounded-2xl px-4 py-2 text-[13px] font-bold transition-colors ${isSelected ? "text-white" : "border text-[#5F6368]"
+                          className={`rounded-2xl px-4 py-2 text-[13px] font-bold transition-colors ${isSelected ? "text-white" : "border text-[var(--muted-foreground)]"
                             }`}
                           style={
                             isSelected
                               ? { backgroundColor: userColor, borderColor: userColor }
-                              : { backgroundColor: "white", borderColor: "#DADCE0" }
+                              : { backgroundColor: "white", borderColor: "var(--border)" }
                           }
                         >
                           {u.name}
@@ -2334,22 +5854,6 @@ export function KajiApp() {
                     })}
                   </div>
 
-                  <div className="flex gap-1 rounded-xl bg-[#F1F3F4] p-1">
-                    <button
-                      type="button"
-                      onClick={() => setAssignmentTab("daily")}
-                      className={`flex-1 rounded-lg py-1.5 text-[13px] font-bold ${assignmentTab === "daily" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
-                    >
-                      日々のタスク
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAssignmentTab("big")}
-                      className={`flex-1 rounded-lg py-1.5 text-[13px] font-bold ${assignmentTab === "big" ? "bg-white text-[#202124] shadow-sm" : "text-[#5F6368]"}`}
-                    >
-                      大仕事
-                    </button>
-                  </div>
                 </div>
 
                 <div
@@ -2434,10 +5938,49 @@ export function KajiApp() {
         </div>
       </section>
 
-      <div
-        aria-hidden
-        className="pointer-events-none fixed bottom-0 left-0 right-0 z-[45] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
-      />
+      {settingsOpen ? (
+        <div className="fixed inset-0 z-[70]">
+          <button
+            type="button"
+            aria-label="設定を閉じる"
+            onClick={closeSettings}
+            className="absolute inset-0 bg-black/30"
+          />
+          <aside className={`absolute inset-y-0 left-0 w-[320px] max-w-[88%] ${settingsView === "menu" ? "bg-[var(--card)]" : "bg-[var(--secondary)]"} shadow-[12px_0_28px_rgba(0,0,0,0.2)]`}>
+            <div className="h-full overflow-y-auto px-4 pb-24 pt-6">
+              {renderMainTabContent("settings")}
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
+      {standaloneScreen ? (
+        <div className="fixed inset-0 z-[75] bg-[var(--app-canvas)]">
+          <div className="mx-auto h-full w-full max-w-[430px] overflow-y-auto px-5 pb-24 pt-5">
+            {renderMainTabContent("settings")}
+          </div>
+        </div>
+      ) : null}
+
+      {taskBanner ? (
+        <div className="pointer-events-none fixed left-0 right-0 top-3 z-[90] mx-auto max-w-[430px] px-4">
+          <div
+            className={`rounded-[12px] border px-4 py-2.5 text-center text-[14px] font-bold shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${taskBanner.tone === "green"
+              ? "border-[var(--primary)] bg-[var(--app-surface-soft)] text-[var(--primary)]"
+              : "border-[var(--primary)] bg-[var(--app-surface-soft)] text-[var(--primary)]"
+              }`}
+          >
+            {taskBanner.message}
+          </div>
+        </div>
+      ) : null}
+
+      {!settingsOpen ? (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed bottom-0 left-0 right-0 z-[74] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
+        />
+      ) : null}
 
       {pendingSwipeDeletes.map((pending, index) => (
         <UndoToast
@@ -2450,218 +5993,594 @@ export function KajiApp() {
       ))}
 
       {infoMessage ? (
-        <div
-          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/35 px-6 backdrop-blur-[1px]"
-          style={{
+        <ConfirmDialog
+          open={Boolean(infoMessage)}
+          onConfirm={() => setInfoMessage("")}
+          title={infoDialogCopy(infoMessage).title}
+          description={infoDialogCopy(infoMessage).description}
+          confirmLabel={infoDialogCopy(infoMessage).confirmLabel}
+          confirmVariant="primary"
+          closeOnBackdrop={false}
+          zIndexClassName="z-[10000]"
+          overlayClassName="bg-black/35 backdrop-blur-[1px]"
+          overlayStyle={{
             paddingTop: "max(env(safe-area-inset-top), 16px)",
             paddingBottom: "max(env(safe-area-inset-bottom), 16px)",
           }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="更新完了"
-            className="w-full max-w-[288px] rounded-[18px] border border-[#DADCE0] bg-white px-4 py-4 shadow-[0_18px_44px_rgba(0,0,0,0.26)]"
-          >
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F3FD]">
-              <span className="material-symbols-rounded text-[22px] text-[#1A9BE8]">check_circle</span>
+          panelClassName="max-w-[288px] rounded-[18px] border border-[var(--border)] px-4 py-4 shadow-[0_18px_44px_rgba(0,0,0,0.26)]"
+          icon={(
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--app-surface-soft)]">
+              <span className="material-symbols-rounded text-[22px] text-[var(--primary)]">check_circle</span>
             </div>
-            <p className="mt-2.5 text-center text-[15px] font-bold text-[#202124]">{infoMessage}</p>
-            <button
-              type="button"
-              onClick={() => setInfoMessage("")}
-              className="mt-3.5 w-full rounded-xl border border-[#1A9BE8] bg-[#1A9BE8] px-3 py-2 text-[14px] font-bold text-white shadow-[0_4px_12px_rgba(26,155,232,0.35)]"
-            >
-              OK
-            </button>
-          </div>
-        </div>
+          )}
+        />
       ) : null}
 
       <div
         aria-hidden
-        className={`pointer-events-none fixed inset-0 z-[10010] bg-[#F8F9FA] transition-opacity duration-200 ${appReloading ? "opacity-100" : "opacity-0"}`}
+        className={`pointer-events-none fixed inset-0 z-[10010] bg-[var(--app-canvas)] transition-opacity duration-200 ${appReloading ? "opacity-100" : "opacity-0"}`}
       />
 
-      <nav className="fixed bottom-4 left-0 right-0 z-50 mx-auto max-w-[430px] px-4">
-        <div className="flex w-full items-center justify-around rounded-full bg-white px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
-          <button type="button" onClick={() => { closeAssignment(); setActiveTab("home"); setRefreshAnimationSeed((p) => p + 1); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "#9AA0A6" }}>home</span>
+      {touchDragging && draggingChore ? (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            left: touchDragPos.x,
+            top: touchDragPos.y,
+            transform: "translate(-50%, -50%) scale(1.1)",
+            zIndex: 9998,
+            pointerEvents: "none",
+          }}
+          className="inline-flex items-center gap-1 rounded-[10px] border border-[var(--primary)] bg-[var(--app-surface-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--foreground)] shadow-lg opacity-90"
+        >
+          <span className="material-symbols-rounded text-[13px]" style={{ color: draggingChore.iconColor }}>drag_indicator</span>
+          <span>{draggingChore.title}</span>
+        </div>
+      ) : null}
+
+      <nav className="fixed bottom-4 left-0 right-0 z-[76] mx-auto max-w-[430px] px-4">
+        <div className="flex w-full items-center justify-around rounded-full bg-[var(--card)] px-2 py-2 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
+          <button
+            type="button"
+            onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("home"); setRefreshAnimationSeed((p) => p + 1); }}
+            className="flex w-[62px] flex-col items-center gap-0.5 py-1"
+          >
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>home</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "home" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>ホーム</span>
           </button>
-          <button type="button" onClick={() => { closeAssignment(); setActiveTab("list"); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "#9AA0A6" }}>checklist</span>
+          <button
+            type="button"
+            onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("records"); }}
+            className="flex w-[62px] flex-col items-center gap-0.5 py-1"
+          >
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "records" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>menu_book</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "records" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>きろく</span>
           </button>
-          <button type="button" onClick={() => { closeAssignment(); openAddChore(); }} className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[#1A9BE8] text-white shadow-md">
+          <button type="button" onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); openAddChore(); }} className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-[var(--primary)] text-white shadow-md">
             <Plus size={20} strokeWidth={2.5} />
           </button>
-          <button type="button" onClick={() => { closeAssignment(); setActiveTab("stats"); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "#9AA0A6" }}>bar_chart</span>
+          <button
+            type="button"
+            onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("list"); }}
+            className="flex w-[62px] flex-col items-center gap-0.5 py-1"
+          >
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>calendar_month</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "list" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>カレンダー</span>
           </button>
-          <button type="button" onClick={() => { closeAssignment(); setActiveTab("settings"); }} className="flex h-10 w-10 items-center justify-center">
-            <span className="material-symbols-rounded text-[24px]" style={{ color: activeTab === "settings" ? PRIMARY_COLOR : "#9AA0A6" }}>settings</span>
+          <button
+            type="button"
+            onClick={() => { closeAssignment(); closeSettings(); closeStandaloneScreen(); setActiveTab("stats"); }}
+            className="flex w-[62px] flex-col items-center gap-0.5 py-1"
+          >
+            <span className="material-symbols-rounded text-[22px]" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>bar_chart</span>
+            <span className="text-[10px] font-bold" style={{ color: activeTab === "stats" ? PRIMARY_COLOR : "var(--app-text-tertiary)" }}>レポート</span>
           </button>
         </div>
       </nav>
 
+      {renderChoreEditorSheets()}
       <BottomSheet
-        open={choreEditorOpen && !customIconOpen}
+        open={calendarBlankActionOpen}
+        onClose={closeCalendarBlankActionSheet}
+        title=""
+        maxHeightClassName="min-h-[52vh] max-h-[86vh]"
+      >
+        {calendarBlankActionDateKey ? (() => {
+          const selectedDate = parseDateKey(calendarBlankActionDateKey);
+          const selectedDateLabel = !selectedDate
+            ? calendarBlankActionDateKey
+            : `${WEEKDAY_SHORT[new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay()]} ${new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDate()}`;
+          const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+          const isPastDate = compareDateKey(calendarBlankActionDateKey, todayDateKey) < 0;
+
+          return (
+            <div className="space-y-4 pb-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[21px] font-bold text-[var(--foreground)]">この日の操作</p>
+                  <p className="text-[12px] font-medium text-[var(--muted-foreground)]">{calendarBlankActionDateKey} ({selectedDateLabel})</p>
+                </div>
+                {calendarBlankActionMode === "record" ? (
+                  <button
+                    type="button"
+                    onClick={() => setCalendarBlankActionMode("choice")}
+                    className="rounded-[10px] border border-[var(--border)] px-3 py-1.5 text-[12px] font-semibold text-[var(--muted-foreground)]"
+                  >
+                    戻る
+                  </button>
+                ) : null}
+              </div>
+
+              {calendarBlankActionMode === "choice" ? (
+                <div className="space-y-3">
+                  <ActionButton
+                    type="button"
+                    onClick={() => {
+                      closeCalendarBlankActionSheet();
+                      openAddChoreForDate(calendarBlankActionDateKey);
+                    }}
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                  >
+                    家事の新規登録
+                  </ActionButton>
+                  <ActionButton
+                    type="button"
+                    onClick={() => setCalendarBlankActionMode("record")}
+                    variant="secondary"
+                    size="lg"
+                    fullWidth
+                  >
+                    実績/予定を記録する
+                  </ActionButton>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {calendarQuickRecordChores.length === 0 ? (
+                    <p className="rounded-[12px] border border-[var(--border)] bg-[var(--app-canvas)] px-3 py-3 text-[13px] font-medium text-[var(--muted-foreground)]">
+                      登録済みの家事がありません。まずは新規登録してください。
+                    </p>
+                  ) : (
+                    calendarQuickRecordChores.map((chore) => {
+                      const TaskIcon = iconByName(chore.icon);
+                      const updating = recordUpdatingIds.includes(buildRecordMutationKey(chore.id, calendarBlankActionDateKey));
+                      return (
+                        <div
+                          key={`calendar-blank-record-${calendarBlankActionDateKey}-${chore.id}`}
+                          className="space-y-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 py-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <TaskIcon size={15} color={chore.iconColor} />
+                            <p className="truncate text-[14px] font-bold text-[var(--foreground)]">{chore.title}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              disabled={updating}
+                              onClick={() => {
+                                handleCalendarBlankComplete(chore, calendarBlankActionDateKey);
+                              }}
+                              className="rounded-[10px] bg-[var(--primary)] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                            >
+                              完了にする
+                            </button>
+                            <button
+                              type="button"
+                              disabled={updating || isPastDate}
+                              onClick={() => {
+                                handleCalendarBlankPlanned(chore, calendarBlankActionDateKey);
+                              }}
+                              className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[13px] font-bold text-[var(--foreground)] disabled:opacity-40"
+                            >
+                              予定を登録
+                            </button>
+                          </div>
+                          {isPastDate ? (
+                            <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">
+                              過去日は「完了にする」のみ選べます。
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })() : null}
+      </BottomSheet>
+      <BottomSheet
+        open={memoOpen}
         onClose={() => {
-          if (saveChoreLoading || deleteChoreLoading) return;
-          setChoreEditorOpen(false);
+          setMemoOpen(false);
+          setMemoBaseDateKey(null);
+          setPendingRecordDateChoice(null);
+          setMemoFlowMode("default");
+          setMemoQuickDateKey(null);
+          setSkipCountDialogOpen(false);
+          setSkipCountValue(1);
+          setSkipCountMax(1);
+          setCompleteCountDialogOpen(false);
+          setCompleteCountValue(1);
+          setCompleteCountMax(1);
+          setPendingCompletePerformedAtMode("today");
+          setMemoTarget(null);
         }}
         title=""
-        maxHeightClassName="max-h-[92vh]"
-        containerClassName="px-0 pb-4 pt-[10px]"
-        scrollable={true}
+        maxHeightClassName="min-h-[62vh] max-h-[88vh]"
       >
-        <div className="space-y-[14px] px-5 pb-1">
-          <p className="text-center text-[24px] font-bold text-[#202124]">
-            {editingChore?.id ? "編集" : "登録"}
-          </p>
-          {editingChore ? (
-            <ChoreEditor
-              mode={editingChore.id ? "edit" : "create"}
-              value={editingChore}
-              customIcons={customIcons}
-              users={boot?.users ?? []}
-              isSaving={saveChoreLoading}
-              isDeleting={deleteChoreLoading}
-              onChange={setEditingChore}
-              onSave={saveChore}
-              onDelete={requestDeleteChore}
-              onDeleteCustomIcon={handleDeleteCustomIcon}
-              onOpenCustomIcon={() => setCustomIconOpen(true)}
-            />
+        <div className="space-y-3 pb-2">
+          <p className="text-[14.4px] font-bold text-[var(--muted-foreground)]">ひとこと（任意）</p>
+          <textarea
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            placeholder="排水口もきれいにしたよ、など"
+            className="h-[80px] w-full resize-none rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[15.6px] font-medium text-[var(--foreground)] outline-none"
+          />
+          <ActionButton
+            type="button"
+            onClick={submitRecord}
+            variant="primary"
+            size="lg"
+            fullWidth
+          >
+            {memoFlowMode === "calendar-quick" ? "この内容で完了にする" : "やったよ！"}
+          </ActionButton>
+          {memoFlowMode === "default" ? (
+            <ActionButton
+              type="button"
+              onClick={submitSkip}
+              variant="secondary"
+              size="lg"
+              fullWidth
+              className="mt-3"
+            >
+              スキップ
+            </ActionButton>
           ) : null}
         </div>
       </BottomSheet>
 
-      <BottomSheet open={customIconOpen} onClose={() => setCustomIconOpen(false)} title="" maxHeightClassName="max-h-[92vh]">
-        {editingChore ? (
-          <CustomIconPicker
-            value={editingChore}
-            onChange={setEditingChore}
-            onApply={async (iconData) => {
-              const saved = await handleAddCustomIcon(iconData);
-              if (saved) {
-                setEditingChore((prev) =>
-                  prev
-                    ? {
-                      ...prev,
-                      icon: saved.icon,
-                      iconColor: saved.iconColor,
-                      bgColor: saved.bgColor,
-                    }
-                    : prev,
-                );
-              }
-              setCustomIconOpen(false);
-            }}
-          />
-        ) : null}
-      </BottomSheet>
-      <BottomSheet
-        open={memoOpen}
-        onClose={() => setMemoOpen(false)}
-        title=""
-        maxHeightClassName="min-h-[62vh] max-h-[88vh]"
-      >
-        <div className="space-y-3 pb-2">
-          <p className="text-[14.4px] font-bold text-[#5F6368]">メモ（任意）</p>
-          <textarea
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            placeholder="通知に添えるメモを入力"
-            className="h-[80px] w-full resize-none rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15.6px] font-medium text-[#202124] outline-none"
-          />
-          <button
-            type="button"
-            onClick={submitRecord}
-            className="w-full rounded-[14px] bg-[#1A9BE8] px-4 py-3 text-[15.6px] font-bold text-white"
+      {completeCountDialogOpen ? (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 px-6 backdrop-blur-sm"
+          onClick={() => setCompleteCountDialogOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="完了件数の選択"
+            className="w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-[var(--card)] p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
           >
-            記録する
-          </button>
-          <button
-            type="button"
-            onClick={submitSkip}
-            className="mt-3 w-full rounded-[14px] border border-[#DADCE0] bg-white px-4 py-3 text-[15.6px] font-bold text-[#5F6368]"
-          >
-            スキップ
-          </button>
-        </div>
-      </BottomSheet>
-
-      <BottomSheet
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        title=""
-        maxHeightClassName="min-h-[62vh] max-h-[88vh]"
-      >
-        <div className="space-y-3 pb-2">
-          <div className="rounded-[14px] bg-white p-3">
-            <p className="text-[16.8px] font-bold text-[#202124]">{historyTarget?.title}</p>
-            <p className="text-[13.2px] font-medium text-[#5F6368]">
-              {historyTarget ? `${historyTarget.intervalDays}日ごと / 直近30日の実施回数: ${historyCountLast30}回` : ""}
-            </p>
-          </div>
-          <SegmentedFilter items={historyFilters} activeKey={historyFilter} onChange={setHistoryFilter} />
-          <AnimatedList delay={70} className="items-stretch gap-2">
-            {historyRecords.map((record, index) => (
-              <div key={record.id} className="flex items-start gap-3 rounded-[14px] bg-white p-3">
-                <span
-                  className="mt-1 h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: index % 2 === 0 ? "#33C28A" : "#4285F4" }}
-                />
-                <div className="space-y-1">
-                  <p className="text-[15.6px] font-bold text-[#202124]">
-                    {formatJpDate(record.performedAt)} {
-                      record.isSkipped
-                        ? "スキップ"
-                        : record.isInitial || record.user.name === "初期登録"
-                          ? "初回登録"
-                          : `${record.user.name}が実施`
-                    }
-                  </p>
-                  {record.memo ? (
-                    <p className="text-[13.2px] font-medium text-[#5F6368]">メモ: {record.memo}</p>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </AnimatedList>
-        </div>
-      </BottomSheet>
-
-      {deleteConfirmOpen ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="mx-6 w-full max-w-[320px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-white p-6 shadow-xl">
-            <p className="text-center text-[17px] font-bold text-[#202124]">
-              この家事を削除しますか？
-            </p>
-            <p className="mt-2 text-center text-[13px] font-medium text-[#5F6368]">
-              削除すると元に戻せません。
-            </p>
-            <div className="mt-5 grid grid-cols-2 gap-2">
+            <p className="text-center text-[18px] font-bold text-[var(--foreground)]">完了件数</p>
+            <p className="mt-1 text-center text-[13px] font-medium text-[var(--muted-foreground)]">残り {completeCountMax} 件</p>
+            <div className="mt-4 flex items-center justify-center gap-3">
               <button
                 type="button"
-                onClick={() => setDeleteConfirmOpen(false)}
-                disabled={deleteChoreLoading}
-                className="rounded-[14px] border border-[#DADCE0] bg-white px-4 py-[11px] text-[15px] font-bold text-[#5F6368] disabled:opacity-60"
+                onClick={() => setCompleteCountValue((prev) => Math.max(1, prev - 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]"
+              >
+                <Minus size={16} />
+              </button>
+              <p className="min-w-[56px] text-center text-[24px] font-bold text-[var(--foreground)]">{completeCountValue}</p>
+              <button
+                type="button"
+                onClick={() => setCompleteCountValue((prev) => Math.min(completeCountMax, prev + 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--primary)] text-white"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <ActionButton
+                type="button"
+                variant="secondary"
+                size="md"
+                fullWidth
+                onClick={() => setCompleteCountDialogOpen(false)}
               >
                 キャンセル
-              </button>
-              <button
+              </ActionButton>
+              <ActionButton
                 type="button"
-                onClick={confirmDeleteChore}
-                disabled={deleteChoreLoading}
-                className="inline-flex items-center justify-center gap-2 rounded-[14px] bg-[#D45858] px-4 py-[11px] text-[15px] font-bold text-white disabled:opacity-60"
+                variant="primary"
+                size="md"
+                fullWidth
+                onClick={confirmCompleteWithCount}
               >
-                {deleteChoreLoading ? <Loader2 size={16} className="animate-spin" /> : null}
-                {deleteChoreLoading ? "削除中..." : "削除する"}
-              </button>
+                完了にする
+              </ActionButton>
             </div>
           </div>
         </div>
+      ) : null}
+
+      {skipCountDialogOpen ? (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 px-6 backdrop-blur-sm"
+          onClick={() => setSkipCountDialogOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="スキップ件数の選択"
+            className="w-full max-w-[340px] animate-[scaleIn_0.2s_ease-out] rounded-[20px] bg-[var(--card)] p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-center text-[18px] font-bold text-[var(--foreground)]">スキップ件数</p>
+            <p className="mt-1 text-center text-[13px] font-medium text-[var(--muted-foreground)]">残り {skipCountMax} 件</p>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSkipCountValue((prev) => Math.max(1, prev - 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)]"
+              >
+                <Minus size={16} />
+              </button>
+              <p className="min-w-[56px] text-center text-[24px] font-bold text-[var(--foreground)]">{skipCountValue}</p>
+              <button
+                type="button"
+                onClick={() => setSkipCountValue((prev) => Math.min(skipCountMax, prev + 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--primary)] text-white"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <ActionButton
+                type="button"
+                variant="secondary"
+                size="md"
+                fullWidth
+                onClick={() => setSkipCountDialogOpen(false)}
+              >
+                キャンセル
+              </ActionButton>
+              <ActionButton
+                type="button"
+                variant="success"
+                size="md"
+                fullWidth
+                onClick={confirmSkipWithCount}
+              >
+                スキップ
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <BottomSheet
+        open={rescheduleOpen}
+        onClose={() => {
+          setRescheduleOpen(false);
+          setRescheduleTarget(null);
+          setRescheduleTargetCompleted(false);
+        }}
+        title=""
+        maxHeightClassName="min-h-[56vh] max-h-[86vh]"
+      >
+        <div className="space-y-4 pb-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[22px] font-bold text-[var(--foreground)]">日にちを変更</p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openRescheduleEditChore}
+                disabled={!rescheduleTarget}
+                aria-label="家事を編集"
+                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-bold ${rescheduleTarget
+                  ? "border-[var(--border)] bg-[var(--card)] text-[var(--primary)]"
+                  : "cursor-not-allowed border-[var(--border)] bg-[var(--secondary)] text-[var(--app-text-tertiary)]"
+                  }`}
+              >
+                <span className="material-symbols-rounded text-[16px]">edit</span>
+                家事を編集
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRescheduleOpen(false);
+                  setRescheduleTarget(null);
+                  setRescheduleTargetCompleted(false);
+                }}
+                className="text-[var(--muted-foreground)]"
+                aria-label="閉じる"
+              >
+                <span className="material-symbols-rounded text-[24px]">close</span>
+              </button>
+            </div>
+          </div>
+          {rescheduleTarget ? (
+            <div className="flex items-center gap-2 rounded-[12px] bg-[var(--secondary)] px-3 py-2">
+              {(() => {
+                const TaskIcon = iconByName(rescheduleTarget.icon);
+                return <TaskIcon size={16} color={rescheduleTarget.iconColor} />;
+              })()}
+              <p className="text-[14px] font-semibold text-[var(--foreground)]">{rescheduleTarget.title}</p>
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <p className="text-[14px] font-medium text-[var(--muted-foreground)]">いつに移動しますか？</p>
+            <button
+              type="button"
+              onClick={() => setRescheduleChoice("tomorrow")}
+              className={`flex w-full items-center justify-between rounded-[12px] px-3 py-3 text-left ${rescheduleChoice === "tomorrow" ? "border-2 border-[var(--primary)] bg-[var(--app-surface-soft)]" : "border border-[var(--border)] bg-[var(--card)]"}`}
+            >
+              <div>
+                <span className="text-[14px] font-bold text-[var(--foreground)]">次の日に変更</span>
+                <p className="text-[11px] font-medium text-[var(--muted-foreground)]">{shiftDateKey(rescheduleBaseDateKey, 1)}</p>
+              </div>
+              <span className="material-symbols-rounded text-[18px] text-[var(--app-text-tertiary)]">
+                {rescheduleChoice === "tomorrow" ? "check_circle" : "radio_button_unchecked"}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRescheduleChoice("next_same_weekday")}
+              className={`flex w-full items-center justify-between rounded-[12px] px-3 py-3 text-left ${rescheduleChoice === "next_same_weekday" ? "border-2 border-[var(--primary)] bg-[var(--app-surface-soft)]" : "border border-[var(--border)] bg-[var(--card)]"}`}
+            >
+              <div>
+                <span className="text-[14px] font-bold text-[var(--foreground)]">来週の同じ曜日</span>
+                <p className="text-[11px] font-medium text-[var(--muted-foreground)]">{shiftDateKey(rescheduleBaseDateKey, 7)}</p>
+              </div>
+              <span className="material-symbols-rounded text-[18px] text-[var(--app-text-tertiary)]">
+                {rescheduleChoice === "next_same_weekday" ? "check_circle" : "radio_button_unchecked"}
+              </span>
+            </button>
+            <div className={`space-y-2 rounded-[12px] px-3 py-3 ${rescheduleChoice === "custom" ? "border-2 border-[var(--primary)] bg-[var(--app-surface-soft)]" : "border border-[var(--border)] bg-[var(--card)]"}`}>
+              <button
+                type="button"
+                onClick={() => setRescheduleChoice("custom")}
+                className="flex w-full items-center justify-between text-left"
+              >
+                <span className="text-[14px] font-bold text-[var(--foreground)]">日付を指定</span>
+                <span className="material-symbols-rounded text-[18px] text-[var(--app-text-tertiary)]">
+                  {rescheduleChoice === "custom" ? "check_circle" : "radio_button_unchecked"}
+                </span>
+              </button>
+              <input
+                type="date"
+                value={rescheduleCustomDate}
+                onChange={(event) => {
+                  setRescheduleCustomDate(event.target.value);
+                  setRescheduleChoice("custom");
+                }}
+                className="h-11 w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 text-[14px] font-semibold text-[var(--foreground)] outline-none"
+              />
+            </div>
+          </div>
+          <ActionButton
+            type="button"
+            onClick={() => {
+              void applyReschedule();
+            }}
+            variant="success"
+            size="lg"
+            fullWidth
+          >
+            この日に変更
+          </ActionButton>
+          <ActionButton
+            type="button"
+            onClick={() => {
+              if (!rescheduleTarget) return;
+              if (rescheduleTargetCompleted && !canUndoChoreRecord(rescheduleTarget)) {
+                setError("この完了は未完了に戻せません。");
+                return;
+              }
+              setRescheduleOpen(false);
+              setRescheduleTarget(null);
+              if (rescheduleTargetCompleted) {
+                requestUndoRecord(rescheduleTarget);
+                setRescheduleTargetCompleted(false);
+                return;
+              }
+              setRescheduleTargetCompleted(false);
+              openMemo(rescheduleTarget, rescheduleBaseDateKey);
+            }}
+            variant="secondary"
+            size="lg"
+            fullWidth
+            className={rescheduleTargetCompleted ? undefined : "border-[var(--primary)] text-[var(--primary)]"}
+          >
+            {rescheduleTargetCompleted ? "未完了にする" : "完了にする"}
+          </ActionButton>
+        </div>
+      </BottomSheet>
+
+      {pendingRecordDateChoice ? (() => {
+        const copy = recordDateChoiceDialogCopy({
+          choreTitle: pendingRecordDateChoice.choreTitle,
+          sourceDateKey: pendingRecordDateChoice.sourceDateKey,
+        });
+        return (
+          <ConfirmDialog
+            open={Boolean(pendingRecordDateChoice)}
+            onClose={() => setPendingRecordDateChoice(null)}
+            onCancel={() => {
+              setPendingRecordDateChoice(null);
+              submitRecordWithCountChoice("today");
+            }}
+            onConfirm={() => {
+              setPendingRecordDateChoice(null);
+              submitRecordWithCountChoice("source");
+            }}
+            title={copy.title}
+            description={copy.description}
+            detail={copy.detail}
+            cancelLabel={copy.cancelLabel}
+            confirmLabel={copy.confirmLabel}
+            confirmVariant="success"
+          />
+        );
+      })() : null}
+
+      {pendingRescheduleConfirm ? (() => {
+        const copy = rescheduleConfirmDialogCopy({
+          choreTitle: pendingRescheduleConfirm.choreTitle,
+          sourceDateKey: pendingRescheduleConfirm.sourceDateKey,
+          targetDateKey: pendingRescheduleConfirm.targetDateKey,
+        });
+        return (
+          <ConfirmDialog
+            open={Boolean(pendingRescheduleConfirm)}
+            onClose={closePendingRescheduleConfirm}
+            onCancel={() => {
+              void confirmPendingReschedule(false);
+            }}
+            onConfirm={() => {
+              void confirmPendingReschedule(true);
+            }}
+            title={copy.title}
+            description={copy.description}
+            detail={copy.detail}
+            cancelLabel={copy.cancelLabel}
+            confirmLabel={copy.confirmLabel}
+            confirmVariant="success"
+            loading={rescheduleConfirmLoading}
+          />
+        );
+      })() : null}
+
+      {undoConfirmTarget ? (() => {
+        const copy = undoRecordDialogCopy(undoConfirmTarget.title);
+        return (
+          <ConfirmDialog
+            open={Boolean(undoConfirmTarget)}
+            onClose={() => setUndoConfirmTarget(null)}
+            onCancel={() => setUndoConfirmTarget(null)}
+            onConfirm={() => {
+              void confirmUndoRecord();
+            }}
+            title={copy.title}
+            description={copy.description}
+            cancelLabel={copy.cancelLabel}
+            confirmLabel={copy.confirmLabel}
+            confirmVariant="destructive"
+          />
+        );
+      })() : null}
+
+      {deleteConfirmOpen ? (
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          onClose={() => setDeleteConfirmOpen(false)}
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={confirmDeleteChore}
+          title={deleteChoreDialogCopy.title}
+          description={deleteChoreDialogCopy.description}
+          cancelLabel={deleteChoreDialogCopy.cancelLabel}
+          confirmLabel={deleteChoreDialogCopy.confirmLabel}
+          confirmLoadingLabel={deleteChoreDialogCopy.confirmLoadingLabel}
+          confirmVariant="destructive"
+          loading={deleteChoreLoading}
+          zIndexClassName="z-[9999]"
+        />
       ) : null}
     </main >
   );

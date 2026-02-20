@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 
 import { badRequest, requireSession } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { OCCURRENCE_SOURCE_OVERRIDE, ensureOccurrenceBackfill } from "@/lib/chore-occurrence";
 import { touchHousehold } from "@/lib/sync";
-import { startOfJstDay } from "@/lib/time";
+import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -14,20 +15,73 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
 
   const record = await prisma.choreRecord.findFirst({
     where: { id, householdId: session.householdId },
-    select: { id: true, performedAt: true },
+    select: { id: true, choreId: true, userId: true, performedAt: true, scheduledDate: true },
   });
-  if (!record) return badRequest("済が見つかりません。", 404);
+  if (!record) return badRequest("対象の記録が見つかりません。", 404);
 
   const todayStart = startOfJstDay(new Date());
-  if (record.performedAt < todayStart) {
-    return badRequest("当日済のみ取消できます。");
+  const twoDaysAgo = addDays(todayStart, -1);
+  if (record.performedAt < twoDaysAgo) {
+    return badRequest("取り消せるのは今日または昨日の記録のみです。");
   }
 
-  await prisma.choreRecord.delete({ where: { id } });
+  const tomorrowStart = addDays(todayStart, 1);
+  const sourceDateKey = record.scheduledDate || toJstDateKey(startOfJstDay(record.performedAt));
 
-  // Notify other devices about the change
+  await prisma.$transaction(async (tx) => {
+    await tx.choreRecord.delete({ where: { id } });
+
+    const chore = await tx.chore.findFirst({
+      where: { id: record.choreId, householdId: session.householdId, archived: false },
+      select: { intervalDays: true, dailyTargetCount: true },
+    });
+    if (!chore) return;
+
+    // Undoing the first non-initial completion can leave this chore without
+    // any baseline record for recurrence calculation. Recreate one so the
+    // chore stays scheduled on the expected day.
+    const latestPastOrTodayRecord = await tx.choreRecord.findFirst({
+      where: {
+        householdId: session.householdId,
+        choreId: record.choreId,
+        performedAt: { lt: tomorrowStart },
+      },
+      orderBy: { performedAt: "desc" },
+      select: { id: true },
+    });
+
+    if (!latestPastOrTodayRecord) {
+      await tx.choreRecord.create({
+        data: {
+          householdId: session.householdId,
+          choreId: record.choreId,
+          userId: record.userId,
+          performedAt: addDays(record.performedAt, -Math.max(1, chore.intervalDays)),
+          memo: null,
+          isInitial: true,
+          isSkipped: false,
+        },
+      });
+    }
+
+    await ensureOccurrenceBackfill(tx, record.choreId);
+    const hasPendingOccurrences = await tx.choreOccurrence.findFirst({
+      where: { choreId: record.choreId, status: "pending" },
+      select: { id: true },
+    });
+    if (hasPendingOccurrences || chore.dailyTargetCount > 1) {
+      await tx.choreOccurrence.create({
+        data: {
+          choreId: record.choreId,
+          dateKey: sourceDateKey,
+          status: "pending",
+          sourceType: OCCURRENCE_SOURCE_OVERRIDE,
+        },
+      });
+    }
+  });
+
   await touchHousehold(session.householdId);
 
   return NextResponse.json({ ok: true });
 }
-

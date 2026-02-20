@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 
 import { buildReminderPayload, canSendPush, sendWebPush } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
@@ -6,19 +7,36 @@ import { addDays, startOfJstDay } from "@/lib/time";
 
 export const runtime = "nodejs";
 
+function safeCompare(a: string, b: string) {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
 function isAuthorized(request: Request) {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) return true;
+  const expected = process.env.CRON_SECRET?.trim();
+  if (!expected) {
+    // Fail closed in production. Allow local/dev runs without CRON_SECRET.
+    return process.env.NODE_ENV !== "production";
+  }
+
   const auth = request.headers.get("authorization");
-  const bearer = auth?.replace(/^Bearer\s+/i, "");
+  const bearer = auth?.replace(/^Bearer\s+/i, "").trim();
   const url = new URL(request.url);
-  const secretQuery = url.searchParams.get("secret");
-  return bearer === expected || secretQuery === expected;
+  const secretQuery = url.searchParams.get("secret")?.trim();
+
+  if (bearer && safeCompare(bearer, expected)) return true;
+  // Query-based secret is allowed only for non-production/manual validation.
+  if (process.env.NODE_ENV !== "production" && secretQuery && safeCompare(secretQuery, expected)) {
+    return true;
+  }
+  return false;
 }
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "認証エラーです。" }, { status: 401 });
   }
   if (!canSendPush()) {
     return NextResponse.json({ ok: true, skipped: "push-not-configured" });
@@ -26,18 +44,22 @@ export async function GET(request: Request) {
 
   const households = await prisma.household.findMany({
     where: {
-      OR: [{ notifyDueToday: true }, { remindDailyIfOverdue: true }],
+      OR: [{ notifyReminder: true }, { notifyDueToday: true }, { remindDailyIfOverdue: true }],
     },
-    select: { id: true, notifyDueToday: true, remindDailyIfOverdue: true },
+    select: { id: true, notifyReminder: true, notifyDueToday: true, remindDailyIfOverdue: true },
   });
 
   const householdIds = households.map((h) => h.id);
+  const now = new Date();
+  const todayStart = startOfJstDay(now);
+  const tomorrowStart = addDays(todayStart, 1);
 
   const [allChores, allSubs] = await Promise.all([
     prisma.chore.findMany({
       where: { householdId: { in: householdIds }, archived: false },
       include: {
         records: {
+          where: { performedAt: { lt: tomorrowStart } },
           take: 1,
           orderBy: { performedAt: "desc" },
           select: { performedAt: true },
@@ -64,12 +86,12 @@ export async function GET(request: Request) {
     subsByHousehold.set(sub.householdId, list);
   }
 
-  const now = new Date();
-  const todayStart = startOfJstDay(now);
-  const tomorrowStart = addDays(todayStart, 1);
-
   let sent = 0;
   for (const household of households) {
+    const notifyReminder =
+      household.notifyReminder ?? (household.notifyDueToday || household.remindDailyIfOverdue);
+    if (!notifyReminder) continue;
+
     const chores = choresByHousehold.get(household.id) ?? [];
 
     const dueChores = chores
@@ -83,23 +105,20 @@ export async function GET(request: Request) {
           : 0;
         return {
           title: c.title,
+          icon: c.icon,
           dueAt,
           isOverdue,
           isDueToday: dueAt >= todayStart && dueAt < tomorrowStart,
           overdueDays,
         };
       })
-      .filter(
-        (c) =>
-          (household.notifyDueToday && c.isDueToday) ||
-          (household.remindDailyIfOverdue && c.isOverdue),
-      );
+      .filter((c) => c.isDueToday || c.isOverdue);
 
     if (!dueChores.length) continue;
 
     const subs = subsByHousehold.get(household.id) ?? [];
     const payload = buildReminderPayload({
-      chores: dueChores.map((x) => ({ title: x.title, isOverdue: x.isOverdue, overdueDays: x.overdueDays })),
+      chores: dueChores.map((x) => ({ title: x.title, icon: x.icon })),
     });
 
     await Promise.all(

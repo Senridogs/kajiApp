@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, type TouchEvent as ReactTouchEvent } from "react";
 import { AnimatePresence, motion, type PanInfo, useDragControls } from "motion/react";
@@ -113,8 +113,8 @@ export function BottomSheet({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/30"
-            aria-label="閉じる"
+            className="fixed inset-0 z-[80] bg-black/30"
+            aria-label="シートを閉じる"
           />
           <motion.section
             ref={sectionRef}
@@ -131,24 +131,24 @@ export function BottomSheet({
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            className={`fixed bottom-0 left-0 right-0 z-50 mx-auto w-full max-w-[430px] rounded-t-[22px] bg-[#F8F9FA] shadow-xl ${containerClassName} ${maxHeightClassName} ${scrollable ? "overflow-auto" : "overflow-hidden"}`}
+            className={`fixed bottom-0 left-0 right-0 z-[85] mx-auto w-full max-w-[430px] rounded-t-[22px] bg-[var(--app-surface)] shadow-xl ${containerClassName} ${maxHeightClassName} ${scrollable ? "overflow-auto" : "overflow-hidden"}`}
             style={{ overscrollBehaviorY: "contain" }}
           >
             <button
               type="button"
               onPointerDown={(event) => dragControls.start(event)}
               className="mx-auto mb-3 flex h-6 w-16 cursor-grab touch-none items-center justify-center active:cursor-grabbing"
-              aria-label="シートを移動"
+              aria-label="シートをドラッグ"
             >
-              <span className="h-1.5 w-12 rounded-full bg-[#DADCE0]" />
+              <span className="h-1.5 w-12 rounded-full bg-[var(--border)]" />
             </button>
             {(title ?? "") !== "" ? (
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-bold text-[#202124]">{title}</h2>
+                <h2 className="text-base font-bold text-[var(--foreground)]">{title}</h2>
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-full p-1 text-[#5F6368] hover:bg-[#E8EAED]"
+                  className="rounded-full p-1 text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
                 >
                   <X size={18} />
                 </button>
@@ -161,3 +161,4 @@ export function BottomSheet({
     </AnimatePresence>
   );
 }
+

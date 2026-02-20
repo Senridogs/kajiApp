@@ -10,7 +10,7 @@ export async function DELETE(
 ) {
     const session = await getSession();
     if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return NextResponse.json({ error: "認証情報がありません。" }, { status: 401 });
     }
 
     const { id } = await params;
@@ -20,7 +20,7 @@ export async function DELETE(
     });
 
     if (!icon) {
-        return NextResponse.json({ error: "Not found" }, { status: 404 });
+        return NextResponse.json({ error: "対象のアイコンが見つかりません。" }, { status: 404 });
     }
 
     await prisma.customIcon.delete({ where: { id } });

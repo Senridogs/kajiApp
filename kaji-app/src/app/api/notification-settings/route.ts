@@ -6,13 +6,38 @@ import { touchHousehold } from "@/lib/sync";
 
 type Body = {
   reminderTimes?: string[];
+  notifyReminder?: boolean;
+  // legacy payload compatibility
   notifyDueToday?: boolean;
   remindDailyIfOverdue?: boolean;
   notifyCompletion?: boolean;
 };
 
-function isValidTime(value: string) {
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+function parseReminderHour(value: string): number | null {
+  const match = /^([01]\d|2[0-3]):00$/.exec(value);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  return Number.isFinite(hour) ? hour : null;
+}
+
+function normalizeReminderTimes(values: string[]): { values: string[] } | { error: string } {
+  const normalized = [...new Set(values.map((x) => x.trim()))];
+  const hours: number[] = [];
+
+  for (const value of normalized) {
+    const hour = parseReminderHour(value);
+    if (hour === null || hour < 6 || hour > 23) {
+      return { error: "通知時刻は 06:00〜23:00 の1時間単位で指定してください。" };
+    }
+    hours.push(hour);
+  }
+
+  if (hours.length < 1 || hours.length > 4) {
+    return { error: "通知時刻は1件以上4件以下で設定してください。" };
+  }
+
+  hours.sort((a, b) => a - b);
+  return { values: hours.map((hour) => `${String(hour).padStart(2, "0")}:00`) };
 }
 
 export async function GET() {
@@ -23,6 +48,7 @@ export async function GET() {
     where: { id: session.householdId },
     select: {
       reminderTimes: true,
+      notifyReminder: true,
       notifyDueToday: true,
       remindDailyIfOverdue: true,
       notifyCompletion: true,
@@ -33,8 +59,9 @@ export async function GET() {
 
   return NextResponse.json({
     reminderTimes: household.reminderTimes,
-    notifyDueToday: household.notifyDueToday,
-    remindDailyIfOverdue: household.remindDailyIfOverdue,
+    notifyReminder:
+      household.notifyReminder ??
+      (household.notifyDueToday || household.remindDailyIfOverdue),
     notifyCompletion: household.notifyCompletion,
     inviteCode: household.inviteCode,
   });
@@ -49,19 +76,20 @@ export async function PATCH(request: Request) {
   const data: Record<string, unknown> = {};
 
   if (Array.isArray(body?.reminderTimes)) {
-    const normalized = [...new Set(body.reminderTimes.map((x) => x.trim()))].sort();
-    if (!normalized.length) return badRequest("通知時刻を1件以上設定してください。");
-    if (normalized.some((x) => !isValidTime(x))) {
-      return badRequest("通知時刻は HH:mm 形式で入力してください。");
-    }
-    data.reminderTimes = normalized;
+    const normalized = normalizeReminderTimes(body.reminderTimes);
+    if ("error" in normalized) return badRequest(normalized.error);
+    data.reminderTimes = normalized.values;
   }
 
-  if (typeof body?.notifyDueToday === "boolean") {
-    data.notifyDueToday = body.notifyDueToday;
+  if (typeof body?.notifyReminder === "boolean") {
+    data.notifyReminder = body.notifyReminder;
   }
-  if (typeof body?.remindDailyIfOverdue === "boolean") {
-    data.remindDailyIfOverdue = body.remindDailyIfOverdue;
+
+  if (
+    typeof body?.notifyReminder !== "boolean" &&
+    (typeof body?.notifyDueToday === "boolean" || typeof body?.remindDailyIfOverdue === "boolean")
+  ) {
+    data.notifyReminder = Boolean(body.notifyDueToday || body.remindDailyIfOverdue);
   }
   if (typeof body?.notifyCompletion === "boolean") {
     data.notifyCompletion = body.notifyCompletion;
@@ -76,8 +104,7 @@ export async function PATCH(request: Request) {
     data,
     select: {
       reminderTimes: true,
-      notifyDueToday: true,
-      remindDailyIfOverdue: true,
+      notifyReminder: true,
       notifyCompletion: true,
     },
   });
@@ -86,5 +113,9 @@ export async function PATCH(request: Request) {
   // bumps updatedAt — but we call it explicitly to ensure the sync token changes.
   await touchHousehold(session.householdId);
 
-  return NextResponse.json(updated);
+  return NextResponse.json({
+    reminderTimes: updated.reminderTimes,
+    notifyReminder: updated.notifyReminder,
+    notifyCompletion: updated.notifyCompletion,
+  });
 }
