@@ -1,12 +1,17 @@
 ﻿import { badRequest, readJsonBody, requireSession } from "@/lib/api";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
+  OCCURRENCE_SOURCE_GENERATOR,
+  OCCURRENCE_SOURCE_OVERRIDE,
+  OCCURRENCE_STATUS_CONSUMED,
+  OCCURRENCE_STATUS_PENDING,
+  ensureOccurrenceBackfill,
+  loadCurrentScheduledDateKeys,
+} from "@/lib/chore-occurrence";
+import {
+  buildRecurrenceDateKeys,
   isDateKey,
-  rebuildScheduleDateKeys,
-  resolveCurrentScheduleDateKeys,
   resolveScheduleWindow,
-  sortedDateKeys,
 } from "@/lib/schedule-policy";
 import { touchHousehold } from "@/lib/sync";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
@@ -21,43 +26,15 @@ type Body = {
   mode?: "move" | "add";
 };
 
-function removeOneOccurrence(dateKeys: string[], targetDateKey: string) {
-  const next = [...dateKeys];
-  const index = next.findIndex((dateKey) => dateKey === targetDateKey);
-  if (index >= 0) {
-    next.splice(index, 1);
-  }
-  return next;
-}
-
-function includeSourceDateIfMissing(dateKeys: string[], sourceDateKey: string) {
-  if (dateKeys.includes(sourceDateKey)) return dateKeys;
-  return [...dateKeys, sourceDateKey].sort((a, b) => a.localeCompare(b));
-}
-
 function mapOverridesForResponse(
-  overrides: Array<{ id: string; choreId: string; date: string; createdAt: Date }>,
+  rows: Array<{ id: string; choreId: string; dateKey: string; createdAt: Date }>,
 ) {
-  return overrides.map((override) => ({
-    id: override.id,
-    choreId: override.choreId,
-    date: override.date,
-    createdAt: override.createdAt.toISOString(),
+  return rows.map((row) => ({
+    id: row.id,
+    choreId: row.choreId,
+    date: row.dateKey,
+    createdAt: row.createdAt.toISOString(),
   }));
-}
-
-function isDuplicateScheduleOverrideError(error: unknown) {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
-  if (error.code !== "P2002") return false;
-
-  const target = error.meta?.target;
-  if (Array.isArray(target)) {
-    return target.includes("choreId") && target.includes("date");
-  }
-  if (typeof target === "string") {
-    return target.includes("choreId") && target.includes("date");
-  }
-  return false;
 }
 
 const DUPLICATE_SCHEDULE_MESSAGE = "その日には同じ家事がすでに登録されています。";
@@ -73,10 +50,7 @@ function duplicateScheduleConflictResponse() {
   );
 }
 
-function moveDateKeepingTimeOfDay(
-  originalPerformedAt: Date,
-  targetDateKey: string,
-) {
+function moveDateKeepingTimeOfDay(originalPerformedAt: Date, targetDateKey: string) {
   const targetMidnightJst = new Date(`${targetDateKey}T00:00:00+09:00`);
   const jstOffsetMs = 9 * 60 * 60 * 1000;
   const originalJst = new Date(originalPerformedAt.getTime() + jstOffsetMs);
@@ -125,6 +99,9 @@ export async function POST(request: Request) {
   });
   if (!chore) return badRequest("対象の家事が見つかりません。", 404);
 
+  if (mode === "add" && date < todayDateKey) {
+    return badRequest("過去の日付には予定を追加できません。");
+  }
   try {
     if (mode === "add") {
       if (date < todayDateKey) {
@@ -183,132 +160,152 @@ export async function POST(request: Request) {
       select: { id: true, performedAt: true },
     });
     if (!record) return badRequest("対象の記録が見つかりません。", 404);
+
     const sourceRecordDateKey = toJstDateKey(startOfJstDay(new Date(record.performedAt)));
-
-    const currentOverrides = await prisma.choreScheduleOverride.findMany({
-      where: { choreId },
-      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-      select: { date: true },
-    });
-    const dueBase = chore.records[0]?.performedAt ?? chore.createdAt;
-    const dueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
-    const window = resolveScheduleWindow(sourceRecordDateKey, date);
-    const currentDateKeys = resolveCurrentScheduleDateKeys({
-      overrideDateKeys: currentOverrides.map((entry) => entry.date),
-      dueDateKey,
-      intervalDays: chore.intervalDays,
-      dailyTargetCount: chore.dailyTargetCount,
-      window,
-    });
-    const currentDateKeysForMove = includeSourceDateIfMissing(
-      currentDateKeys,
-      sourceRecordDateKey,
-    );
-    const nextDateKeys = rebuildScheduleDateKeys({
-      currentDateKeys: currentDateKeysForMove,
-      sourceDateKey: sourceRecordDateKey,
-      targetDateKey: date,
-      recalculateFuture,
-      mergeIfDuplicate,
-      intervalDays: chore.intervalDays,
-      dailyTargetCount: chore.dailyTargetCount,
-      window,
-    });
-    const remainingDateKeys = removeOneOccurrence(nextDateKeys, date);
-    const newPerformedAt = moveDateKeepingTimeOfDay(record.performedAt, date);
-
-    const savedOverrides = await prisma.$transaction(async (tx) => {
+    const saved = await prisma.$transaction(async (tx) => {
+      await ensureOccurrenceBackfill(tx, choreId);
       await tx.choreRecord.update({
         where: { id: sourceRecordId },
-        data: { performedAt: newPerformedAt },
+        data: { performedAt: moveDateKeepingTimeOfDay(record.performedAt, date) },
       });
-      await tx.choreScheduleOverride.deleteMany({ where: { choreId } });
-      if (remainingDateKeys.length > 0) {
-        await tx.choreScheduleOverride.createMany({
-          data: remainingDateKeys.map((dateKey) => ({ choreId, date: dateKey })),
+      await tx.choreOccurrence.create({
+        data: {
+          choreId,
+          dateKey: sourceRecordDateKey,
+          status: OCCURRENCE_STATUS_PENDING,
+          sourceType: OCCURRENCE_SOURCE_OVERRIDE,
+        },
+      });
+      const consumed = await tx.choreOccurrence.findFirst({
+        where: { choreId, dateKey: date, status: OCCURRENCE_STATUS_PENDING },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true },
+      });
+      if (consumed) {
+        await tx.choreOccurrence.update({
+          where: { id: consumed.id },
+          data: { status: OCCURRENCE_STATUS_CONSUMED },
         });
       }
-      return tx.choreScheduleOverride.findMany({
-        where: { choreId },
-        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-        select: { id: true, choreId: true, date: true, createdAt: true },
+      return tx.choreOccurrence.findMany({
+        where: { choreId, status: OCCURRENCE_STATUS_PENDING },
+        orderBy: [{ dateKey: "asc" }, { createdAt: "asc" }],
+        select: { id: true, choreId: true, dateKey: true, createdAt: true },
       });
     });
 
     await touchHousehold(session.householdId);
-    return Response.json({
-      moved: true,
-      choreId,
-      sourceDate: sourceRecordDateKey,
-      date,
-      recalculateFuture,
-      mergeIfDuplicate,
-      sourceRecordId,
-      overrides: mapOverridesForResponse(savedOverrides),
-    });
+    return Response.json({ moved: true, choreId, sourceRecordId, date, overrides: mapOverridesForResponse(saved) });
   }
 
-  // Backward-compatible mode for old clients that only send "date".
-  if (!sourceDate) {
-    const override = await prisma.$transaction(async (tx) => {
-      await tx.choreScheduleOverride.deleteMany({ where: { choreId } });
-      return tx.choreScheduleOverride.create({ data: { choreId, date } });
-    });
+  let savedOverrides: Array<{ id: string; choreId: string; dateKey: string; createdAt: Date }> = []
+  try {
+    savedOverrides = await prisma.$transaction(async (tx) => {
+    await ensureOccurrenceBackfill(tx, choreId);
+    const dueBase = chore.records[0]?.performedAt ?? chore.createdAt;
+    const dueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
+    const window = resolveScheduleWindow(sourceDate ?? todayDateKey, date);
 
-    await touchHousehold(session.householdId);
+    if (mode === "add") {
+      const currentDateKeys = await loadCurrentScheduledDateKeys(tx, {
+        choreId,
+        dueDateKey,
+        intervalDays: chore.intervalDays,
+        dailyTargetCount: chore.dailyTargetCount,
+        window,
+      });
+      const scheduledCount = currentDateKeys.filter((dateKey) => dateKey === date).length;
+      if (scheduledCount > 0 && !allowDuplicate) {
+        throw new Error(DUPLICATE_SCHEDULE_MESSAGE);
+      }
+      await tx.choreOccurrence.create({
+        data: {
+          choreId,
+          dateKey: date,
+          status: OCCURRENCE_STATUS_PENDING,
+          sourceType: OCCURRENCE_SOURCE_OVERRIDE,
+        },
+      });
+    } else if (!sourceDate) {
+      await tx.choreOccurrence.create({
+        data: {
+          choreId,
+          dateKey: date,
+          status: OCCURRENCE_STATUS_PENDING,
+          sourceType: OCCURRENCE_SOURCE_OVERRIDE,
+        },
+      });
+    } else {
+      const sourceOccurrence = await tx.choreOccurrence.findFirst({
+        where: { choreId, dateKey: sourceDate, status: OCCURRENCE_STATUS_PENDING },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true },
+      });
+      if (!sourceOccurrence) {
+        return [];
+      }
+      await tx.choreOccurrence.update({
+        where: { id: sourceOccurrence.id },
+        data: { status: OCCURRENCE_STATUS_CONSUMED },
+      });
 
-    return Response.json({
-      override: {
-        id: override.id,
-        choreId: override.choreId,
-        date: override.date,
-        createdAt: override.createdAt.toISOString(),
-      },
+      if (recalculateFuture) {
+        await tx.choreOccurrence.updateMany({
+          where: {
+            choreId,
+            status: OCCURRENCE_STATUS_PENDING,
+            sourceType: OCCURRENCE_SOURCE_GENERATOR,
+            dateKey: { gte: sourceDate },
+          },
+          data: { status: OCCURRENCE_STATUS_CONSUMED },
+        });
+        const generated = buildRecurrenceDateKeys({
+          dueDateKey: date,
+          intervalDays: chore.intervalDays,
+          dailyTargetCount: chore.dailyTargetCount,
+          fromDateKey: date,
+          toDateKey: window.toDateKey,
+        });
+        if (generated.length > 0) {
+          await tx.choreOccurrence.createMany({
+            data: generated.map((dateKey) => ({
+              choreId,
+              dateKey,
+              status: OCCURRENCE_STATUS_PENDING,
+              sourceType: OCCURRENCE_SOURCE_GENERATOR,
+            })),
+          });
+        }
+      } else {
+        const hasPendingOnTarget = await tx.choreOccurrence.findFirst({
+          where: { choreId, dateKey: date, status: OCCURRENCE_STATUS_PENDING },
+          select: { id: true },
+        });
+        if (!mergeIfDuplicate || !hasPendingOnTarget) {
+          await tx.choreOccurrence.create({
+            data: {
+              choreId,
+              dateKey: date,
+              status: OCCURRENCE_STATUS_PENDING,
+              sourceType: OCCURRENCE_SOURCE_OVERRIDE,
+            },
+          });
+        }
+      }
+    }
+
+    return tx.choreOccurrence.findMany({
+      where: { choreId, status: OCCURRENCE_STATUS_PENDING },
+      orderBy: [{ dateKey: "asc" }, { createdAt: "asc" }],
+      select: { id: true, choreId: true, dateKey: true, createdAt: true },
     });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === DUPLICATE_SCHEDULE_MESSAGE) {
+      return badRequest(DUPLICATE_SCHEDULE_MESSAGE, 409);
+    }
+    throw error;
   }
-
-  const currentOverrides = await prisma.choreScheduleOverride.findMany({
-    where: { choreId },
-    orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-    select: { date: true },
-  });
-  const dueBase = chore.records[0]?.performedAt ?? chore.createdAt;
-  const dueDateKey = toJstDateKey(addDays(dueBase, chore.intervalDays));
-  const window = resolveScheduleWindow(sourceDate, date);
-  const currentDateKeys = resolveCurrentScheduleDateKeys({
-    overrideDateKeys: currentOverrides.map((entry) => entry.date),
-    dueDateKey,
-    intervalDays: chore.intervalDays,
-    dailyTargetCount: chore.dailyTargetCount,
-    window,
-  });
-
-  if (!currentDateKeys.includes(sourceDate)) {
-    return badRequest("元の日付は現在の予定に含まれていません。", 409);
-  }
-
-  const nextDateKeys = rebuildScheduleDateKeys({
-    currentDateKeys,
-    sourceDateKey: sourceDate,
-    targetDateKey: date,
-    recalculateFuture,
-    mergeIfDuplicate,
-    intervalDays: chore.intervalDays,
-    dailyTargetCount: chore.dailyTargetCount,
-    window,
-  });
-  const savedOverrides = await prisma.$transaction(async (tx) => {
-    await tx.choreScheduleOverride.deleteMany({ where: { choreId } });
-    if (nextDateKeys.length === 0) return [];
-    await tx.choreScheduleOverride.createMany({
-      data: nextDateKeys.map((dateKey) => ({ choreId, date: dateKey })),
-    });
-    return tx.choreScheduleOverride.findMany({
-      where: { choreId },
-      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-      select: { id: true, choreId: true, date: true, createdAt: true },
-    });
-  });
 
   await touchHousehold(session.householdId);
 
@@ -318,6 +315,7 @@ export async function POST(request: Request) {
     date,
     recalculateFuture,
     mergeIfDuplicate,
+    allowDuplicate,
     overrides: mapOverridesForResponse(savedOverrides),
   });
   } catch (error) {
@@ -327,4 +325,3 @@ export async function POST(request: Request) {
     throw error;
   }
 }
-
