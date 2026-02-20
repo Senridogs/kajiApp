@@ -1038,6 +1038,31 @@ export function KajiApp() {
     [boot?.todayChores, boot?.tomorrowChores],
   );
 
+  const scheduleOverrides = boot?.scheduleOverrides ?? [];
+  const scheduleOverridesByChore = useMemo(() => {
+    const map = new Map<string, ChoreScheduleOverride[]>();
+    for (const override of scheduleOverrides) {
+      const list = map.get(override.choreId) ?? [];
+      list.push(override);
+      map.set(override.choreId, list);
+    }
+    return map;
+  }, [scheduleOverrides]);
+
+  const countScheduledOccurrencesOnDate = useCallback((choreId: string, dateKey: string) => {
+    const chore = chores.find((item) => item.id === choreId);
+    if (!chore) return 0;
+
+    const overrideList = scheduleOverridesByChore.get(choreId) ?? [];
+    if (overrideList.length > 0) {
+      return overrideList.filter((override) => override.date === dateKey).length;
+    }
+
+    const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
+    if (Number.isNaN(targetDate.getTime())) return 0;
+    return isScheduledOnDate(chore, targetDate) ? 1 : 0;
+  }, [chores, scheduleOverridesByChore]);
+
   const assignmentDaysByTab = useMemo(() => {
     const today = startOfJstDay(new Date());
     const todayKey = toJstDateKey(today);
@@ -1068,36 +1093,11 @@ export function KajiApp() {
       daily: mapDays(dailyFiltered, true),
       big: mapDays(bigFiltered, true),
     };
-  }, [chores, priorityHomeChoreIds]);
+  }, [chores, priorityHomeChoreIds, countScheduledOccurrencesOnDate]);
 
   useEffect(() => {
     customDateRangeRef.current = customDateRange;
   }, [customDateRange]);
-
-  const scheduleOverrides = boot?.scheduleOverrides ?? [];
-  const scheduleOverridesByChore = useMemo(() => {
-    const map = new Map<string, ChoreScheduleOverride[]>();
-    for (const override of scheduleOverrides) {
-      const list = map.get(override.choreId) ?? [];
-      list.push(override);
-      map.set(override.choreId, list);
-    }
-    return map;
-  }, [scheduleOverrides]);
-
-  const countScheduledOccurrencesOnDate = useCallback((choreId: string, dateKey: string) => {
-    const chore = chores.find((item) => item.id === choreId);
-    if (!chore) return 0;
-
-    const overrideList = scheduleOverridesByChore.get(choreId) ?? [];
-    if (overrideList.length > 0) {
-      return overrideList.filter((override) => override.date === dateKey).length;
-    }
-
-    const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-    if (Number.isNaN(targetDate.getTime())) return 0;
-    return isScheduledOnDate(chore, targetDate) ? 1 : 0;
-  }, [chores, scheduleOverridesByChore]);
 
   const hasDuplicateScheduleCollision = useCallback((
     choreId: string,
