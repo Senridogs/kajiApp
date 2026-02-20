@@ -78,6 +78,8 @@ import {
 import {
   buildHomeRowsByDate,
 } from "@/lib/home-occurrence";
+import { addDateKeyDays, addDays, compareDateKey, formatDateKey, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { countScheduledOccurrencesOnDate as countScheduledOccurrencesOnDateByReadModel } from "@/lib/occurrence-read-model";
 import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const JA_COLLATOR = new Intl.Collator("ja");
@@ -92,10 +94,12 @@ const HOME_SECTION_STICKY_FALLBACK_TOP = 60;
 const TAB_HEADER_HEIGHT_FALLBACK = 72;
 const ASSIGNMENT_SHEET_SLIDE_MS = 240;
 const ASSIGNMENT_BACK_SWIPE_EDGE_PX = 72;
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PULL_REFRESH_TRIGGER_PX = 74;
 const PULL_REFRESH_MAX_PX = 128;
 const PULL_REFRESH_HOLD_PX = 28;
+const PULL_START_DIRECTION_RATIO = 1.05;
+const PULL_START_MIN_MOVEMENT_PX = 5;
+const PULL_HORIZONTAL_CANCEL_RATIO = 1.1;
 const REMINDER_HOUR_CHOICES = Array.from({ length: 18 }, (_, idx) => `${String(6 + idx).padStart(2, "0")}:00`);
 const REACTION_CHOICES = ["👏", "❤️", "✨", "🎉"] as const;
 const REACTION_ICON_MAP: Record<(typeof REACTION_CHOICES)[number], { icon: string; color: string }> = {
@@ -178,6 +182,7 @@ type PendingCalendarPlanDuplicateConfirm = {
 };
 type StandaloneScreenKey = "manage" | "my-report" | "my-records";
 type StandaloneOriginKey = "settings" | "list" | "stats" | "records";
+type HomeRowUiState = "pending" | "done" | "skipped";
 type TimelineRecordGroup = {
   dateKey: string;
   label: string;
@@ -276,19 +281,16 @@ function applyPullResistance(distance: number) {
   return Math.min(PULL_REFRESH_MAX_PX, Math.max(0, distance) * 0.5);
 }
 
-function compareDateKey(left: string, right: string) {
-  return left.localeCompare(right);
-}
-
-function resolvePerformedAtForDateKey(dateKey: string, now = new Date()) {
-  const todayKey = toJstDateKey(startOfJstDay(now));
-  if (compareDateKey(dateKey, todayKey) > 0) {
-    return now;
+function resolveDateKeyTimestamp(dateKey: string, now = new Date()) {
+  const parsedDate = parseDateKey(dateKey);
+  if (!parsedDate) {
+    return { parsedDate: null, scheduledDateKey: formatDateKey(now), performedAt: now, hasFutureScheduledDate: false };
   }
 
-  const targetDayStart = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-  if (Number.isNaN(targetDayStart.getTime())) {
-    return now;
+  const scheduledDateKey = formatDateKey(parsedDate);
+  const todayKey = formatDateKey(now);
+  if (compareDateKey(scheduledDateKey, todayKey) > 0) {
+    return { parsedDate, scheduledDateKey, performedAt: now, hasFutureScheduledDate: true };
   }
 
   const jstOffsetMs = 9 * 60 * 60 * 1000;
@@ -296,8 +298,14 @@ function resolvePerformedAtForDateKey(dateKey: string, now = new Date()) {
   const elapsedMs =
     ((nowJst.getUTCHours() * 60 + nowJst.getUTCMinutes()) * 60 + nowJst.getUTCSeconds()) * 1000 +
     nowJst.getUTCMilliseconds();
-  return new Date(targetDayStart.getTime() + elapsedMs);
+  return {
+    parsedDate,
+    scheduledDateKey,
+    performedAt: new Date(parsedDate.getTime() + elapsedMs),
+    hasFutureScheduledDate: false,
+  };
 }
+
 
 function buildGroupedTimelineRecords(items: ChoreRecordItem[]): TimelineRecordGroup[] {
   const todayKey = toJstDateKey(startOfJstDay(new Date()));
@@ -351,33 +359,13 @@ function isSameDateKey(a: string, b: string) {
 }
 
 function formatDateKeyMonthDayWeekday(dateKey: string) {
-  const date = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-  if (Number.isNaN(date.getTime())) return dateKey;
+  const date = parseDateKey(dateKey);
+  if (!date) return dateKey;
   const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
   const month = jstDate.getUTCMonth() + 1;
   const day = jstDate.getUTCDate();
   const weekday = WEEKDAY_SHORT[jstDate.getUTCDay()];
   return `${month}/${day}(${weekday})`;
-}
-
-function scheduledDayOffset(
-  chore: Pick<ChoreWithComputed, "dueAt">,
-  targetDate: Date,
-) {
-  if (!chore.dueAt) return null;
-  const dueStart = startOfJstDay(new Date(chore.dueAt));
-  if (Number.isNaN(dueStart.getTime())) return null;
-  const targetStart = startOfJstDay(targetDate);
-  return Math.floor((targetStart.getTime() - dueStart.getTime()) / DAY_IN_MS);
-}
-
-function isScheduledOnDate(
-  chore: Pick<ChoreWithComputed, "dueAt" | "intervalDays">,
-  targetDate: Date,
-) {
-  const diffDays = scheduledDayOffset(chore, targetDate);
-  if (diffDays === null || diffDays < 0) return false;
-  return diffDays % Math.max(1, chore.intervalDays) === 0;
 }
 
 function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
@@ -401,33 +389,22 @@ function sortHomeSectionChores(
   chores: ChoreWithComputed[],
   sessionUserId: string | null,
   resolveAssigneeId: (choreId: string) => string | null,
+  resolveHomeState: (choreId: string) => HomeRowUiState,
   customIcons: CustomIconOption[],
 ) {
   return [...chores].sort((a, b) => {
-    const aIsSkipped = !!a.lastRecordSkipped && a.doneToday;
-    const bIsSkipped = !!b.lastRecordSkipped && b.doneToday;
-    if (a.id === b.id) {
-      const doneFirstRank = (done: boolean, skipped: boolean) => {
-        if (!done) return 2;
-        return skipped ? 1 : 0;
-      };
-      const sameIdRankDiff =
-        doneFirstRank(a.doneToday, aIsSkipped) - doneFirstRank(b.doneToday, bIsSkipped);
-      if (sameIdRankDiff !== 0) return sameIdRankDiff;
-    }
-
-    // doneState: 0=not done, 1=done, 2=skipped
-    const getDoneState = (done: boolean, skipped: boolean) => {
-      if (sectionKey === "tomorrow") return 0; // Tomorrow section doesn't show done state sorting in the same way usually
-      if (!done) return 0;
-      return skipped ? 2 : 1;
+    const getDoneStateRank = (state: HomeRowUiState) => {
+      if (sectionKey === "tomorrow") return 0;
+      if (state === "pending") return 0;
+      if (state === "done") return 1;
+      return 2;
     };
 
-    const aState = getDoneState(a.doneToday, aIsSkipped);
-    const bState = getDoneState(b.doneToday, bIsSkipped);
+    const aStateRank = getDoneStateRank(resolveHomeState(a.id));
+    const bStateRank = getDoneStateRank(resolveHomeState(b.id));
 
     // 1. Sort by done state (Not Done -> Done -> Skipped)
-    if (aState !== bState) return aState - bState;
+    if (aStateRank !== bStateRank) return aStateRank - bStateRank;
 
     // 2. assignee priority: self > partner > none
     const aAssignee = resolveAssigneeId(a.id);
@@ -514,14 +491,6 @@ function mergeAssignments(
     merged.push(entry);
   }
   return merged;
-}
-
-function buildHomeDateKeys(now = new Date()) {
-  const base = startOfJstDay(now);
-  const today = toJstDateKey(base);
-  const yesterday = toJstDateKey(addDays(base, -1));
-  const tomorrow = toJstDateKey(addDays(base, 1));
-  return { today, yesterday, tomorrow };
 }
 
 function sameHomeOrderByDate(a: HomeOrderByDate, b: HomeOrderByDate) {
@@ -673,6 +642,8 @@ export function KajiApp() {
     useState<PendingCalendarPlanDuplicateConfirm | null>(null);
   const [undoConfirmTarget, setUndoConfirmTarget] = useState<ChoreWithComputed | null>(null);
   const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
+  const recordMutationSequenceRef = useRef(0);
+  const latestRecordMutationByKeyRef = useRef<Record<string, number>>({});
   const [reactionUpdatingId, setReactionUpdatingId] = useState<string | null>(null);
   const [manageDetailChoreId, setManageDetailChoreId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState("all");
@@ -848,6 +819,7 @@ export function KajiApp() {
   const [pullDragging, setPullDragging] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshAnimationSeed, setRefreshAnimationSeed] = useState(0);
+  const pullRefreshEnabled = true;
 
   const sessionUser = boot?.sessionUser ?? null;
   const chores = boot?.chores ?? [];
@@ -1066,18 +1038,32 @@ export function KajiApp() {
   }, [scheduleOverrides]);
 
   const countScheduledOccurrencesOnDate = useCallback((choreId: string, dateKey: string) => {
-    const chore = chores.find((item) => item.id === choreId);
-    if (!chore) return 0;
-
-    const overrideList = scheduleOverridesByChore.get(choreId) ?? [];
-    if (overrideList.length > 0) {
-      return overrideList.filter((override) => override.date === dateKey).length;
+    const monthEntry = calendarMonthSummary?.occurrenceByDate?.[dateKey]?.[choreId];
+    if (monthEntry) {
+      return monthEntry.scheduled;
+    }
+    const homeEntry = boot?.homeProgressByDate?.[dateKey]?.[choreId];
+    if (homeEntry) {
+      return homeEntry.total;
     }
 
-    const targetDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-    if (Number.isNaN(targetDate.getTime())) return 0;
+    const targetDate = parseDateKey(dateKey);
+    if (!targetDate) return 0;
     return isScheduledOnDate(chore, targetDate) ? Math.max(1, chore.dailyTargetCount) : 0;
   }, [chores, scheduleOverridesByChore]);
+    const chore = chores.find((item) => item.id === choreId);
+    if (!chore) return 0;
+    return countScheduledOccurrencesOnDateByReadModel({
+      dateKey,
+      chore: {
+        id: chore.id,
+        intervalDays: chore.intervalDays,
+        dailyTargetCount: chore.dailyTargetCount,
+        dueAt: chore.dueAt ? new Date(chore.dueAt) : null,
+        scheduleOverrides: (scheduleOverridesByChore.get(chore.id) ?? []).map((override) => ({ date: override.date })),
+      },
+    });
+  }, [boot?.homeProgressByDate, calendarMonthSummary?.occurrenceByDate, chores, scheduleOverridesByChore]);
 
   const assignmentDaysByTab = useMemo(() => {
     const today = startOfJstDay(new Date());
@@ -1160,80 +1146,40 @@ export function KajiApp() {
     return items;
   }, [manageDetailTarget, scheduleOverridesByChore]);
 
-  const calendarWindowStart = useMemo(
-    () => startOfJstWeekMonday(addDays(calendarMonthCursor, -31)),
-    [calendarMonthCursor],
-  );
-  const calendarWindowEnd = useMemo(
-    () => addDays(calendarWindowStart, 130),
-    [calendarWindowStart],
-  );
   const calendarMonthKey = useMemo(
     () => toMonthKey(calendarMonthCursor),
     [calendarMonthCursor],
   );
   const calendarScheduleMap = useMemo(() => {
     const map = new Map<string, ChoreWithComputed[]>();
-    const addToMap = (dateKey: string, chore: ChoreWithComputed) => {
-      const current = map.get(dateKey) ?? [];
-      current.push(chore);
-      map.set(dateKey, current);
-    };
+    const choreById = new Map(chores.map((chore) => [chore.id, chore]));
+    const occurrenceByDate = calendarMonthSummary?.occurrenceByDate ?? {};
 
-    chores.forEach((chore) => {
-      // Show the latest completed day on calendar as completed (initial seed records are excluded).
-      if (chore.lastPerformedAt && !chore.lastRecordSkipped && !chore.lastRecordIsInitial) {
-        const performedDateKey = toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)));
-        if (
-          performedDateKey >= toJstDateKey(calendarWindowStart) &&
-          performedDateKey <= toJstDateKey(calendarWindowEnd)
-        ) {
-          addToMap(performedDateKey, chore);
+    Object.entries(occurrenceByDate).forEach(([dateKey, byChore]) => {
+      const items: ChoreWithComputed[] = [];
+      Object.entries(byChore).forEach(([choreId, entry]) => {
+        const chore = choreById.get(choreId);
+        if (!chore) return;
+        for (let i = 0; i < entry.scheduled; i += 1) {
+          items.push(chore);
         }
-      }
-
-      const overrideList = (scheduleOverridesByChore.get(chore.id) ?? []).filter((override) => {
-        if (override.date < toJstDateKey(calendarWindowStart)) return false;
-        if (override.date > toJstDateKey(calendarWindowEnd)) return false;
-        return true;
       });
-
-      if (overrideList.length > 0) {
-        const overrideDateCounts = new Map<string, number>();
-        overrideList.forEach((ov) => {
-          overrideDateCounts.set(ov.date, (overrideDateCounts.get(ov.date) ?? 0) + 1);
-        });
-        overrideDateCounts.forEach((count, dKey) => {
-          for (let i = 0; i < count; i += 1) addToMap(dKey, chore);
-        });
-        return;
-      }
-
-      for (let day = calendarWindowStart; day <= calendarWindowEnd; day = addDays(day, 1)) {
-        const dKey = toJstDateKey(day);
-        if (!isScheduledOnDate(chore, day)) continue;
-        const occurrenceCount = Math.max(1, chore.dailyTargetCount);
-        for (let i = 0; i < occurrenceCount; i += 1) {
-          addToMap(dKey, chore);
-        }
-      }
-    });
-
-    map.forEach((items) => {
       items.sort((a, b) => {
         const titleDiff = JA_COLLATOR.compare(a.title, b.title);
         if (titleDiff !== 0) return titleDiff;
         return JA_COLLATOR.compare(a.id, b.id);
       });
+      if (items.length > 0) {
+        map.set(dateKey, items);
+      }
     });
+
     return map;
-  }, [calendarWindowEnd, calendarWindowStart, chores, scheduleOverridesByChore]);
+  }, [calendarMonthSummary?.occurrenceByDate, chores]);
 
   const calendarMonthGridDates = useMemo(() => {
     const monthStart = startOfJstDay(new Date(calendarMonthCursor));
-    const firstOfMonth = startOfJstDay(new Date(
-      `${toJstDateKey(monthStart).slice(0, 8)}01T00:00:00+09:00`,
-    ));
+    const firstOfMonth = parseDateKey(`${toJstDateKey(monthStart).slice(0, 8)}01`) ?? monthStart;
     const gridStart = startOfJstWeekMonday(firstOfMonth);
     return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
   }, [calendarMonthCursor]);
@@ -1259,6 +1205,14 @@ export function KajiApp() {
     );
     setCalendarMonthSummary(data);
     return data;
+  }, []);
+
+  const loadChoreMutationSnapshot = useCallback(async (choreId: string, dateKey: string) => {
+    return apiFetch<{
+      chore: ChoreWithComputed;
+      scheduleOverrides: ChoreScheduleOverride[];
+      homeProgressEntry: HomeProgressEntry | null;
+    }>(`/api/chores/${choreId}?date=${encodeURIComponent(dateKey)}`, { cache: "no-store" });
   }, []);
 
   const loadHouseholdReport = useCallback(async (offset: (typeof REPORT_MONTH_OFFSETS)[number]) => {
@@ -1554,8 +1508,8 @@ export function KajiApp() {
   }, [calendarMonthKey, loadCalendarMonthSummary]);
 
   useEffect(() => {
-    const selected = startOfJstDay(new Date(`${calendarSelectedDateKey}T00:00:00+09:00`));
-    if (Number.isNaN(selected.getTime())) return;
+    const selected = parseDateKey(calendarSelectedDateKey);
+    if (!selected) return;
     setCalendarWeekStart(startOfJstWeekMonday(selected));
   }, [calendarSelectedDateKey]);
 
@@ -1697,20 +1651,24 @@ export function KajiApp() {
 
   useEffect(() => {
     if (typeof document === "undefined") return;
+    if (!pullRefreshEnabled || assignmentOpen || settingsOpen) return;
+
     const html = document.documentElement;
     const body = document.body;
     const previousHtmlOverscrollY = html.style.overscrollBehaviorY;
     const previousBodyOverscrollY = body.style.overscrollBehaviorY;
     const previousBodyOverflow = body.style.overflow;
+
     html.style.overscrollBehaviorY = "none";
     body.style.overscrollBehaviorY = "none";
     body.style.overflow = "hidden";
+
     return () => {
       html.style.overscrollBehaviorY = previousHtmlOverscrollY;
       body.style.overscrollBehaviorY = previousBodyOverscrollY;
       body.style.overflow = previousBodyOverflow;
     };
-  }, []);
+  }, [assignmentOpen, pullRefreshEnabled, settingsOpen]);
 
   useEffect(() => {
     const scroller = mainScrollRef.current;
@@ -1726,7 +1684,7 @@ export function KajiApp() {
 
       const dx = touch.clientX - pullStartXRef.current;
       const dy = touch.clientY - pullStartYRef.current;
-      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * 1.2;
+      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * PULL_START_DIRECTION_RATIO;
       const canRefreshBySwipe =
         pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
 
@@ -1743,15 +1701,73 @@ export function KajiApp() {
     };
   }, [assignmentOpen, isTapPriorityTarget, pullRefreshing]);
 
+  const buildRecordMutationKey = useCallback((choreId: string, dateKey: string) => `${choreId}:${dateKey}`, []);
 
+  const beginRecordMutation = useCallback((mutationKey: string) => {
+    const mutationId = recordMutationSequenceRef.current + 1;
+    recordMutationSequenceRef.current = mutationId;
+    latestRecordMutationByKeyRef.current[mutationKey] = mutationId;
+    return mutationId;
+  }, []);
 
+  const isLatestRecordMutation = useCallback((mutationKey: string, mutationId: number) => {
+    return latestRecordMutationByKeyRef.current[mutationKey] === mutationId;
+  }, []);
 
-  const setRecordUpdating = useCallback((choreId: string, isUpdating: boolean) => {
+  const setRecordUpdating = useCallback((choreId: string, dateKey: string, isUpdating: boolean) => {
+    const updatingKey = `${choreId}:${dateKey}`;
     setRecordUpdatingIds((prev) => {
       if (isUpdating) {
-        return prev.includes(choreId) ? prev : [...prev, choreId];
+        return prev.includes(updatingKey) ? prev : [...prev, updatingKey];
       }
-      return prev.filter((id) => id !== choreId);
+      return prev.filter((id) => id !== updatingKey);
+    });
+  }, []);
+
+  const patchBootForRecordMutation = useCallback((
+    choreId: string,
+    dateKey: string,
+    patch: {
+      chore?: ChoreWithComputed;
+      homeProgressEntry?: HomeProgressEntry | null;
+      scheduleOverrides?: ChoreScheduleOverride[];
+    },
+  ) => {
+    setBoot((prev) => {
+      if (!prev || prev.needsRegistration) return prev;
+      const nextChores = patch.chore
+        ? prev.chores.map((chore) => (chore.id === choreId ? patch.chore! : chore))
+        : prev.chores;
+      const split = patch.chore ? splitComputedChoresForHome(nextChores) : null;
+      const nextHomeProgressByDate = { ...prev.homeProgressByDate };
+      if (patch.homeProgressEntry !== undefined) {
+        const currentDateProgress = { ...(nextHomeProgressByDate[dateKey] ?? {}) };
+        if (patch.homeProgressEntry === null) {
+          delete currentDateProgress[choreId];
+        } else {
+          currentDateProgress[choreId] = patch.homeProgressEntry;
+        }
+        if (Object.keys(currentDateProgress).length > 0) {
+          nextHomeProgressByDate[dateKey] = currentDateProgress;
+        } else {
+          delete nextHomeProgressByDate[dateKey];
+        }
+      }
+      const nextScheduleOverrides = patch.scheduleOverrides
+        ? [
+          ...prev.scheduleOverrides.filter((override) => override.choreId !== choreId),
+          ...patch.scheduleOverrides,
+        ]
+        : prev.scheduleOverrides;
+
+      return {
+        ...prev,
+        chores: nextChores,
+        todayChores: split ? split.todayChores : prev.todayChores,
+        tomorrowChores: split ? split.tomorrowChores : prev.tomorrowChores,
+        homeProgressByDate: nextHomeProgressByDate,
+        scheduleOverrides: nextScheduleOverrides,
+      };
     });
   }, []);
 
@@ -1882,10 +1898,10 @@ export function KajiApp() {
   };
 
   const openAddChoreForDate = (dateKey: string) => {
-    const selectedDate = new Date(`${dateKey}T00:00:00+09:00`);
-    const initialPerformedAt = Number.isNaN(selectedDate.getTime())
-      ? defaultLastPerformedAt()
-      : selectedDate.toISOString();
+    const resolved = resolveDateKeyTimestamp(dateKey);
+    const initialPerformedAt = resolved.parsedDate
+      ? resolved.parsedDate.toISOString()
+      : defaultLastPerformedAt();
     closeSettings();
     closeStandaloneScreen();
     setEditingChore({
@@ -2096,11 +2112,11 @@ export function KajiApp() {
   }, [boot?.homeProgressByDate, countScheduledOccurrencesOnDate, memoBaseDateKey, memoTarget]);
 
   const shiftDateKey = useCallback((dateKey: string, days: number) => {
-    const parsed = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-    if (Number.isNaN(parsed.getTime())) {
+    const shifted = addDateKeyDays(dateKey, days);
+    if (!shifted) {
       return toJstDateKey(addDays(startOfJstDay(new Date()), days));
     }
-    return toJstDateKey(addDays(parsed, days));
+    return shifted;
   }, []);
 
   const openReschedule = (chore: ChoreWithComputed, baseDateKey?: string) => {
@@ -2190,8 +2206,8 @@ export function KajiApp() {
   );
 
   const focusCalendarDate = useCallback((dateKey: string) => {
-    const nextDate = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
-    if (Number.isNaN(nextDate.getTime())) return;
+    const nextDate = parseDateKey(dateKey);
+    if (!nextDate) return;
     // Cancel any pending week-nav timer so it doesn't fire after this explicit navigation.
     if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null; }
     dragNavHoveringRef.current = null;
@@ -2361,9 +2377,18 @@ export function KajiApp() {
   const handleChorePointerDown = useCallback(
     (chore: ChoreWithComputed, sourceDateKey: string, event: React.PointerEvent<HTMLElement>) => {
       if (!event.isPrimary) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
       const { clientX: startX, clientY: startY } = event;
       touchDragInfoRef.current = { active: false, chore, sourceDateKey, startX, startY };
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (event.pointerType === "mouse") {
+        touchDragInfoRef.current.active = true;
+        suppressChipClickRef.current = true;
+        beginChoreDrag(chore, sourceDateKey);
+        setTouchDragging(true);
+        setTouchDragPos({ x: startX, y: startY });
+        return;
+      }
       longPressTimerRef.current = window.setTimeout(() => {
         if (!touchDragInfoRef.current) return;
         touchDragInfoRef.current.active = true;
@@ -2620,7 +2645,8 @@ export function KajiApp() {
 
   const shiftTargetDateByWeek = useCallback((direction: -1 | 1) => {
     const source = dragSourceDateKey ?? toJstDateKey(startOfJstDay(new Date()));
-    const sourceDate = startOfJstDay(new Date(`${source}T00:00:00+09:00`));
+    const sourceDate = parseDateKey(source);
+    if (!sourceDate) return source;
     const jstDay = new Date(sourceDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
     const weekDayIndex = jstDay === 0 ? 6 : jstDay - 1;
     // Use the source date's own week start (not calendarWeekStart) so that week-nav buttons
@@ -2640,24 +2666,30 @@ export function KajiApp() {
     memoText: string;
   }) => {
     const targetId = chore.id;
-    const previousBoot = boot;
+    const mutationKey = buildRecordMutationKey(targetId, dateKey);
+    const mutationId = beginRecordMutation(mutationKey);
+    const previousChore = chores.find((item) => item.id === targetId) ?? null;
+    const previousHomeProgressEntry = boot?.homeProgressByDate?.[dateKey]?.[targetId] ?? null;
+    const previousOverrides = scheduleOverridesByChore.get(targetId) ?? [];
     const now = new Date();
     const todayStart = startOfJstDay(now);
     const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrow = addDays(todayStart, 2);
-    const performedAt = resolvePerformedAtForDateKey(dateKey, now);
+    const resolved = resolveDateKeyTimestamp(dateKey, now);
+    const performedAt = resolved.performedAt;
     const performedAtIso = performedAt.toISOString();
-    const performedAtDateKey = toJstDateKey(startOfJstDay(performedAt));
+    const performedAtDateKey = resolved.scheduledDateKey;
     const completedTomorrowTask = chore.isDueTomorrow;
 
     setMemoOpen(false);
-    setRecordUpdating(targetId, true);
+    setRecordUpdating(targetId, dateKey, true);
 
     if (sessionUser) {
+      let optimisticChore: ChoreWithComputed | null = null;
       updateBootChoreOptimistically(targetId, (current) => {
         const nextDueAt = addDays(performedAt, current.intervalDays);
         const nextDueAtTime = nextDueAt.getTime();
-        return {
+        optimisticChore = {
           ...current,
           doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
           lastPerformedAt: performedAtIso,
@@ -2676,7 +2708,27 @@ export function KajiApp() {
               : 0,
           daysSinceLast: 0,
         };
+        return optimisticChore;
       });
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, dateKey);
+      const currentProgress = boot?.homeProgressByDate?.[dateKey]?.[targetId] ?? null;
+      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseCompleted = currentProgress?.completed ?? 0;
+      const baseSkipped = currentProgress?.skipped ?? 0;
+      const nextCompleted = Math.min(baseTotal, baseCompleted + 1);
+      const nextPending = Math.max(0, baseTotal - nextCompleted - baseSkipped);
+      if (optimisticChore) {
+        patchBootForRecordMutation(targetId, dateKey, {
+          chore: optimisticChore,
+          homeProgressEntry: {
+            total: baseTotal,
+            completed: nextCompleted,
+            skipped: baseSkipped,
+            pending: nextPending,
+            latestState: "done",
+          },
+        });
+      }
     }
 
     try {
@@ -2685,6 +2737,7 @@ export function KajiApp() {
         memo: memoText,
         skipped: false,
         performedAt: performedAtIso,
+        scheduledDate: performedAtDateKey,
       };
       if (scheduledCount > 0) {
         body.sourceDate = dateKey;
@@ -2695,6 +2748,7 @@ export function KajiApp() {
         method: "POST",
         body: JSON.stringify(body),
       });
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
       if (result?.record?.id) {
         updateBootChoreOptimistically(targetId, (current) => ({
           ...current,
@@ -2702,7 +2756,14 @@ export function KajiApp() {
         }));
       }
 
-      await Promise.all([
+      const snapshot = await loadChoreMutationSnapshot(targetId, dateKey);
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
+      patchBootForRecordMutation(targetId, dateKey, {
+        chore: snapshot.chore,
+        homeProgressEntry: snapshot.homeProgressEntry,
+        scheduleOverrides: snapshot.scheduleOverrides,
+      });
+      void Promise.all([
         loadBootstrap(),
         loadCalendarMonthSummary(calendarMonthKeyRef.current),
       ]);
@@ -2713,12 +2774,20 @@ export function KajiApp() {
 
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
-      if (previousBoot) {
-        setBoot(previousBoot);
+      if (isLatestRecordMutation(mutationKey, mutationId) && previousChore) {
+        patchBootForRecordMutation(targetId, dateKey, {
+          chore: previousChore,
+          homeProgressEntry: previousHomeProgressEntry,
+          scheduleOverrides: previousOverrides,
+        });
       }
-      setError((err as Error).message ?? "記録に失敗しました。");
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setError((err as Error).message ?? "記録に失敗しました。");
+      }
     } finally {
-      setRecordUpdating(targetId, false);
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setRecordUpdating(targetId, dateKey, false);
+      }
       setMemoTarget(null);
       setMemoBaseDateKey(null);
       setMemo("");
@@ -2726,12 +2795,19 @@ export function KajiApp() {
       setMemoQuickDateKey(null);
     }
   }, [
-    boot,
+    beginRecordMutation,
+    boot?.homeProgressByDate,
+    buildRecordMutationKey,
+    chores,
+    countScheduledOccurrencesOnDate,
+    isLatestRecordMutation,
     loadBootstrap,
     loadCalendarMonthSummary,
+    loadChoreMutationSnapshot,
     loadHistory,
     loadStats,
-    countScheduledOccurrencesOnDate,
+    patchBootForRecordMutation,
+    scheduleOverridesByChore,
     sessionUser,
     setRecordUpdating,
     showTaskBanner,
@@ -2751,7 +2827,7 @@ export function KajiApp() {
     }
 
     setError("");
-    setRecordUpdating(chore.id, true);
+    setRecordUpdating(chore.id, dateKey, true);
     try {
       await apiFetch("/api/schedule-override", {
         method: "POST",
@@ -2784,7 +2860,7 @@ export function KajiApp() {
       }
       setError(message);
     } finally {
-      setRecordUpdating(chore.id, false);
+      setRecordUpdating(chore.id, dateKey, false);
     }
   }, [
     closeCalendarBlankActionSheet,
@@ -2838,19 +2914,14 @@ export function KajiApp() {
   }) => {
     if (!memoTarget) return;
     const targetId = memoTarget.id;
-    const previousBoot = boot;
     const now = new Date();
     const todayStart = startOfJstDay(now);
     const tomorrowStart = addDays(todayStart, 1);
     const dayAfterTomorrow = addDays(todayStart, 2);
     const sourceDateKey = memoBaseDateKey ?? undefined;
     const shouldSendSourceDate = Boolean(sourceDateKey);
-    let hasFutureMemoBase = false;
-    if (sourceDateKey) {
-      const baseDate = startOfJstDay(new Date(`${sourceDateKey}T00:00:00+09:00`));
-      hasFutureMemoBase =
-        !Number.isNaN(baseDate.getTime()) && baseDate.getTime() > todayStart.getTime();
-    }
+    const resolvedSourceDate = sourceDateKey ? resolveDateKeyTimestamp(sourceDateKey, now) : null;
+    const hasFutureMemoBase = resolvedSourceDate?.hasFutureScheduledDate ?? false;
     if (performedAtMode === "today" && hasFutureMemoBase && !bypassFutureConfirm && sourceDateKey) {
       openRescheduleConfirmWithCollisionCheck({
         origin: skipped ? "future-skip" : "future-record",
@@ -2862,26 +2933,31 @@ export function KajiApp() {
       return;
     }
 
-    let performedAt = now;
-    if (performedAtMode === "source" && sourceDateKey) {
-      const sourceDayStart = startOfJstDay(new Date(`${sourceDateKey}T00:00:00+09:00`));
-      if (!Number.isNaN(sourceDayStart.getTime())) {
-        const elapsedTodayMs = Math.max(0, now.getTime() - todayStart.getTime());
-        performedAt = new Date(sourceDayStart.getTime() + elapsedTodayMs);
-      }
-    }
+    const resolvedPerformedAt =
+      performedAtMode === "source" && sourceDateKey
+        ? resolveDateKeyTimestamp(sourceDateKey, now)
+        : { performedAt: now, scheduledDateKey: formatDateKey(now) };
+    const performedAt = resolvedPerformedAt.performedAt;
     const performedAtIso = performedAt.toISOString();
+    const performedAtDateKey = resolvedPerformedAt.scheduledDateKey;
     const performedAtDateKey = toJstDateKey(startOfJstDay(performedAt));
+    const mutationDateKey = sourceDateKey ?? performedAtDateKey;
+    const mutationKey = buildRecordMutationKey(targetId, mutationDateKey);
+    const mutationId = beginRecordMutation(mutationKey);
+    const previousChore = chores.find((item) => item.id === targetId) ?? null;
+    const previousHomeProgressEntry = boot?.homeProgressByDate?.[mutationDateKey]?.[targetId] ?? null;
+    const previousOverrides = scheduleOverridesByChore.get(targetId) ?? [];
     const completedTomorrowTask = memoTarget.isDueTomorrow;
 
     setMemoOpen(false);
-    setRecordUpdating(targetId, true);
+    setRecordUpdating(targetId, mutationDateKey, true);
 
     if (sessionUser) {
+      let optimisticChore: ChoreWithComputed | null = null;
       updateBootChoreOptimistically(targetId, (chore) => {
         const nextDueAt = addDays(performedAt, chore.intervalDays);
         const nextDueAtTime = nextDueAt.getTime();
-        return {
+        optimisticChore = {
           ...chore,
           doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
           lastPerformedAt: performedAtIso,
@@ -2898,15 +2974,42 @@ export function KajiApp() {
           isOverdue: nextDueAt < todayStart,
           overdueDays:
             nextDueAt < todayStart
-              ? Math.floor((todayStart.getTime() - nextDueAtTime) / (24 * 60 * 60 * 1000))
+              ? Math.floor((todayStart.getTime() - nextDueAtTime) / DAY_IN_MS)
               : 0,
           daysSinceLast: 0,
         };
+        return optimisticChore;
       });
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, mutationDateKey);
+      const currentProgress = boot?.homeProgressByDate?.[mutationDateKey]?.[targetId] ?? null;
+      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseCompleted = currentProgress?.completed ?? 0;
+      const baseSkipped = currentProgress?.skipped ?? 0;
+      const consume = skipped ? Math.max(1, Math.min(skipCount ?? 1, skipCountMax)) : 1;
+      const nextCompleted = skipped ? baseCompleted : Math.min(baseTotal, baseCompleted + consume);
+      const nextSkipped = skipped ? Math.min(baseTotal, baseSkipped + consume) : baseSkipped;
+      const nextPending = Math.max(0, baseTotal - nextCompleted - nextSkipped);
+      if (optimisticChore) {
+        patchBootForRecordMutation(targetId, mutationDateKey, {
+          chore: optimisticChore,
+          homeProgressEntry: {
+            total: baseTotal,
+            completed: nextCompleted,
+            skipped: nextSkipped,
+            pending: nextPending,
+            latestState: skipped ? "skipped" : "done",
+          },
+        });
+      }
     }
 
     try {
-      const body: Record<string, unknown> = { memo, skipped, performedAt: performedAtIso };
+      const body: Record<string, unknown> = {
+        memo,
+        skipped,
+        performedAt: performedAtIso,
+        scheduledDate: performedAtDateKey,
+      };
       if (skipped && typeof skipCount === "number") {
         body.skipCount = skipCount;
       }
@@ -2922,29 +3025,43 @@ export function KajiApp() {
         method: "POST",
         body: JSON.stringify(body),
       });
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
       if (result?.record?.id) {
         updateBootChoreOptimistically(targetId, (chore) => ({
           ...chore,
           lastRecordId: result.record.id,
         }));
       }
-      if (shouldSendSourceDate && sourceDateKey) {
-        await Promise.all([
-          loadBootstrap(),
-          loadCalendarMonthSummary(calendarMonthKeyRef.current),
-        ]);
-      }
+      const snapshot = await loadChoreMutationSnapshot(targetId, mutationDateKey);
+      if (!isLatestRecordMutation(mutationKey, mutationId)) return;
+      patchBootForRecordMutation(targetId, mutationDateKey, {
+        chore: snapshot.chore,
+        homeProgressEntry: snapshot.homeProgressEntry,
+        scheduleOverrides: snapshot.scheduleOverrides,
+      });
+      void Promise.all([
+        loadBootstrap(),
+        loadCalendarMonthSummary(calendarMonthKeyRef.current),
+      ]);
       if (!skipped && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
         showTaskBanner("明日のものをやってえらい！", "blue");
       }
       void Promise.all([loadStats(statsPeriod), loadHistory()]);
     } catch (err: unknown) {
-      if (previousBoot) {
-        setBoot(previousBoot);
+      if (isLatestRecordMutation(mutationKey, mutationId) && previousChore) {
+        patchBootForRecordMutation(targetId, mutationDateKey, {
+          chore: previousChore,
+          homeProgressEntry: previousHomeProgressEntry,
+          scheduleOverrides: previousOverrides,
+        });
       }
-      setError((err as Error).message ?? (skipped ? "スキップに失敗しました。" : "記録に失敗しました。"));
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setError((err as Error).message ?? (skipped ? "スキップに失敗しました。" : "記録に失敗しました。"));
+      }
     } finally {
-      setRecordUpdating(targetId, false);
+      if (isLatestRecordMutation(mutationKey, mutationId)) {
+        setRecordUpdating(targetId, mutationDateKey, false);
+      }
       setMemoTarget(null);
       setMemoBaseDateKey(null);
       setMemoFlowMode("default");
@@ -2954,20 +3071,27 @@ export function KajiApp() {
       setSkipCountMax(1);
     }
   }, [
-    boot,
+    beginRecordMutation,
+    boot?.homeProgressByDate,
+    buildRecordMutationKey,
+    chores,
+    countScheduledOccurrencesOnDate,
+    isLatestRecordMutation,
     loadBootstrap,
     loadCalendarMonthSummary,
+    loadChoreMutationSnapshot,
     loadHistory,
     loadStats,
     memo,
     memoBaseDateKey,
     memoTarget,
     openRescheduleConfirmWithCollisionCheck,
+    patchBootForRecordMutation,
+    scheduleOverridesByChore,
     sessionUser,
     setRecordUpdating,
     showTaskBanner,
     skipCountMax,
-    skipCountValue,
     statsPeriod,
     updateBootChoreOptimistically,
   ]);
@@ -3068,7 +3192,8 @@ export function KajiApp() {
   const undoRecord = async (chore: ChoreWithComputed) => {
     if (!chore.lastRecordId) return;
     const previousBoot = boot;
-    setRecordUpdating(chore.id, true);
+    const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
+    setRecordUpdating(chore.id, todayDateKey, true);
 
     // Recalculate due-date flags from the pre-check dueAt.
     // submitRecord shifted dueAt forward by intervalDays, so we reverse it.
@@ -3114,13 +3239,13 @@ export function KajiApp() {
       }
       setError((err as Error).message ?? "元に戻す処理に失敗しました。");
     } finally {
-      setRecordUpdating(chore.id, false);
+      setRecordUpdating(chore.id, todayDateKey, false);
     }
   };
 
   const requestUndoRecord = (chore: ChoreWithComputed) => {
     if (!chore.lastRecordId) return;
-    if (recordUpdatingIds.includes(chore.id)) return;
+    if (recordUpdatingIds.includes(buildRecordMutationKey(chore.id, toJstDateKey(startOfJstDay(new Date()))))) return;
     setUndoConfirmTarget(chore);
   };
 
@@ -3297,7 +3422,14 @@ export function KajiApp() {
     }
   };
 
-  const pullRefreshEnabled = true;
+  const logPullGuard = useCallback((stage: string, reason: string, details: Record<string, unknown> = {}) => {
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem("kaji_pull_debug") !== "1") return;
+    console.info("[kaji:pull-guard]", { stage, reason, ...details });
+  }, []);
+
+  // Safari/Chrome 実機回帰観点: 「スクロールのみ」「更新のみ」「横スワイプのみ」。
+
   const executePullRefresh = useCallback(async () => {
     if (!pullRefreshEnabled) return;
     if (pullRefreshing) return;
@@ -3320,14 +3452,31 @@ export function KajiApp() {
 
   const handleMainScrollTouchStart = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
-      if (pullRefreshing || assignmentOpen || settingsOpen) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchstart", "disabled");
+        return;
+      }
+      if (pullRefreshing) {
+        logPullGuard("touchstart", "refreshing");
+        return;
+      }
+      if (assignmentOpen || settingsOpen) {
+        logPullGuard("touchstart", "blocked_by_sheet", { assignmentOpen, settingsOpen });
+        return;
+      }
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
       if (!touch || !scroller) return;
       tapPriorityZoneActiveRef.current = isTapPriorityTarget(event.target);
       pullStartScrollTopRef.current = scroller.scrollTop;
       if (tapPriorityZoneActiveRef.current || scroller.scrollTop > 0) {
+      if (!touch || !scroller) {
+        logPullGuard("touchstart", "missing_touch_or_scroller", { hasTouch: Boolean(touch), hasScroller: Boolean(scroller) });
+        return;
+      }
+      pullStartScrollTopRef.current = scroller.scrollTop;
+      if (scroller.scrollTop > 0) {
+        logPullGuard("touchstart", "scroll_not_at_top", { scrollTop: scroller.scrollTop });
         pullEligibleRef.current = false;
         pullDraggingRef.current = false;
         setPullDragging(false);
@@ -3335,23 +3484,41 @@ export function KajiApp() {
       }
 
       pullEligibleRef.current = true;
+      logPullGuard("touchstart", "eligible");
       pullDraggingRef.current = false;
       setPullDragging(false);
       pullStartYRef.current = touch.clientY;
       pullStartXRef.current = touch.clientX;
     },
     [assignmentOpen, isTapPriorityTarget, pullRefreshing, settingsOpen],
+    [assignmentOpen, logPullGuard, pullRefreshEnabled, pullRefreshing, settingsOpen],
   );
 
   const handleMainScrollTouchMove = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
       if (!pullRefreshEnabled) return;
       if (!pullEligibleRef.current || pullRefreshing || tapPriorityZoneActiveRef.current) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchmove", "disabled");
+        return;
+      }
+      if (pullRefreshing) {
+        logPullGuard("touchmove", "refreshing");
+        return;
+      }
+      if (!pullEligibleRef.current) {
+        logPullGuard("touchmove", "not_eligible");
+        return;
+      }
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
-      if (!touch || !scroller) return;
+      if (!touch || !scroller) {
+        logPullGuard("touchmove", "missing_touch_or_scroller", { hasTouch: Boolean(touch), hasScroller: Boolean(scroller) });
+        return;
+      }
 
       if (scroller.scrollTop > 0) {
+        logPullGuard("touchmove", "lost_top_position", { scrollTop: scroller.scrollTop });
         pullEligibleRef.current = false;
         pullDraggingRef.current = false;
         setPullDragging(false);
@@ -3361,7 +3528,7 @@ export function KajiApp() {
 
       const dx = touch.clientX - pullStartXRef.current;
       const dy = touch.clientY - pullStartYRef.current;
-      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * 1.2;
+      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * PULL_START_DIRECTION_RATIO;
       const canRefreshBySwipe = pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
 
       if (dy > 0 && isMostlyVertical && canRefreshBySwipe) {
@@ -3369,8 +3536,9 @@ export function KajiApp() {
       }
 
       if (!pullDraggingRef.current) {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * 0.9) {
+        if (Math.abs(dx) < PULL_START_MIN_MOVEMENT_PX && Math.abs(dy) < PULL_START_MIN_MOVEMENT_PX) return;
+        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * PULL_HORIZONTAL_CANCEL_RATIO) {
+          logPullGuard("touchmove", "direction_rejected", { dx, dy });
           pullEligibleRef.current = false;
           pullDraggingRef.current = false;
           setPullDragging(false);
@@ -3379,6 +3547,7 @@ export function KajiApp() {
         }
         pullDraggingRef.current = true;
         setPullDragging(true);
+        logPullGuard("touchmove", "drag_started", { dx, dy });
       }
 
       if (dy <= 0) {
@@ -3390,7 +3559,7 @@ export function KajiApp() {
       event.preventDefault();
       event.stopPropagation();
     },
-    [pullRefreshing],
+    [logPullGuard, pullRefreshEnabled, pullRefreshing],
   );
 
   // React 17+ registers onTouchMove as passive, preventing preventDefault().
@@ -3408,7 +3577,10 @@ export function KajiApp() {
     const shouldHandle = pullDraggingRef.current || pullDistance > 0;
     pullEligibleRef.current = false;
 
-    if (!shouldHandle) return;
+    if (!shouldHandle) {
+      logPullGuard("touchend", "no_pull_state", { pullDistance, pullDragging: pullDraggingRef.current });
+      return;
+    }
 
     pullDraggingRef.current = false;
     setPullDragging(false);
@@ -3419,30 +3591,38 @@ export function KajiApp() {
     }
 
     setPullDistance(0);
-  }, [executePullRefresh, pullDistance, pullRefreshEnabled]);
+  }, [executePullRefresh, logPullGuard, pullDistance, pullRefreshEnabled]);
 
   const handleMainScrollTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchend", "disabled");
+        return;
+      }
       if (pullDraggingRef.current || pullDistance > 0) {
+        logPullGuard("touchend", "gesture_end", { pullDistance });
         event.stopPropagation();
       }
       tapPriorityZoneActiveRef.current = false;
       endMainScrollPullGesture();
     },
-    [endMainScrollPullGesture, pullDistance],
+    [endMainScrollPullGesture, logPullGuard, pullDistance, pullRefreshEnabled],
   );
 
   const handleMainScrollTouchCancel = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchcancel", "disabled");
+        return;
+      }
       if (pullDraggingRef.current || pullDistance > 0) {
+        logPullGuard("touchcancel", "gesture_cancel", { pullDistance });
         event.stopPropagation();
       }
       tapPriorityZoneActiveRef.current = false;
       endMainScrollPullGesture();
     },
-    [endMainScrollPullGesture, pullDistance],
+    [endMainScrollPullGesture, logPullGuard, pullDistance, pullRefreshEnabled],
   );
 
   const historyUsers = useMemo(() => boot?.users ?? [], [boot?.users]);
@@ -3963,14 +4143,16 @@ export function KajiApp() {
     dateKey: string,
     sectionRows: typeof todayRowsForHome,
   ) => {
+    const rowById = new Map(sectionRows.map((row) => [row.chore.id, row]));
     const sortedChores = sortHomeSectionChores(
       sectionKey,
       sectionRows.map((row) => row.chore),
       sessionUser?.id ?? null,
       (choreId) => {
-        const found = sectionRows.find((row) => row.chore.id === choreId)?.chore;
+        const found = rowById.get(choreId)?.chore;
         return resolveAssigneeForSort(choreId, sectionKey, found);
       },
+      (choreId) => rowById.get(choreId)?.state ?? "pending",
       customIcons,
     );
     const orderedIds = applyHomeStoredOrder(
@@ -4450,26 +4632,6 @@ export function KajiApp() {
                       key={section.key}
                       data-drop-date={sectionDateKey}
                       className={`space-y-2 rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[#EEF4FE] px-1 py-1" : ""}`}
-                      onDragOver={(event) => {
-                        if (!draggingChore) return;
-                        event.preventDefault();
-                        setDragTargetDateKey(sectionDateKey);
-                        setHomeDropTarget(null);
-                      }}
-                      onDragLeave={() => {
-                        setDragTargetDateKey((prev) => (prev === sectionDateKey ? null : prev));
-                        setHomeDropTarget(null);
-                      }}
-                      onDrop={(event) => {
-                        if (!draggingChore) return;
-                        event.preventDefault();
-                        setHomeDropTarget(null);
-                        if (dragSourceDateKey === sectionDateKey) {
-                          clearDragState();
-                          return;
-                        }
-                        void dropDraggedChoreToDate(sectionDateKey);
-                      }}
                     >
                       <div
                         className="sticky z-20 bg-[#F8F9FA]/95 pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[#F8F9FA]/85"
@@ -4500,61 +4662,18 @@ export function KajiApp() {
                           return (
                             <div
                               key={homeRowKey}
-                              draggable
                               data-home-drop-date={sectionDateKey}
                               data-home-drop-chore-id={chore.id}
                               className={`${showDropBefore ? "border-t-2 border-[#1A73E8] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[#1A73E8] pb-1" : ""}`}
-                              onDragStart={(event) => {
-                                beginChoreDrag(displayChore, sectionDateKey);
-                                event.dataTransfer.effectAllowed = "move";
-                                event.dataTransfer.setData("text/plain", chore.id);
-                              }}
-                              onDragOver={(event) => {
-                                if (!draggingChore) return;
-                                event.preventDefault();
-                                event.stopPropagation();
-                                const position = resolveDropPosition(event.clientY, event.currentTarget);
-                                setDragTargetDateKey(sectionDateKey);
-                                setHomeDropTarget({
-                                  targetDateKey: sectionDateKey,
-                                  targetChoreId: chore.id,
-                                  position,
-                                });
-                              }}
-                              onDragLeave={(event) => {
-                                event.stopPropagation();
-                                setHomeDropTarget((previous) => {
-                                  if (
-                                    previous &&
-                                    previous.targetDateKey === sectionDateKey &&
-                                    previous.targetChoreId === chore.id
-                                  ) {
-                                    return null;
-                                  }
-                                  return previous;
-                                });
-                              }}
-                              onDrop={(event) => {
-                                if (!draggingChore) return;
-                                event.preventDefault();
-                                event.stopPropagation();
-                                const position = resolveDropPosition(event.clientY, event.currentTarget);
-                                handleHomeDrop({
-                                  targetDateKey: sectionDateKey,
-                                  targetChoreId: chore.id,
-                                  position,
-                                });
-                              }}
-                              onDragEnd={clearDragState}
                               onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
-                              style={{ touchAction: "none" }}
+                              style={{ touchAction: "pan-y" }}
                             >
                               <HomeTaskRow
                                 chore={displayChore}
                                 onRecord={(target) => openMemo(target, sectionDateKey)}
                                 onUndo={requestUndoRecord}
                                 progressLabel={progressLabel}
-                                isUpdating={recordUpdatingIds.includes(chore.id)}
+                                isUpdating={recordUpdatingIds.includes(buildRecordMutationKey(chore.id, sectionDateKey))}
                                 recordDisabled={disableTomorrowDailyCheck}
                               />
                             </div>
@@ -4617,7 +4736,7 @@ export function KajiApp() {
         year: "numeric",
         month: "long",
       }).format(calendarMonthCursor);
-      const selectedDate = startOfJstDay(new Date(`${calendarSelectedDateKey}T00:00:00+09:00`));
+      const selectedDate = parseDateKey(calendarSelectedDateKey) ?? startOfJstDay(new Date());
       const selectedDateJst = new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000);
       const selectedDateLabel = `${WEEKDAY_SHORT[selectedDateJst.getUTCDay()]} ${selectedDateJst.getUTCDate()}`;
       const previousWeekTarget = shiftTargetDateByWeek(-1);
@@ -4652,16 +4771,9 @@ export function KajiApp() {
               if (suppressChipClickRef.current) { suppressChipClickRef.current = false; return; }
               openReschedule(chore, dateKey);
             }}
-            draggable
-            onDragStart={(event) => {
-              beginChoreDrag(chore, dateKey);
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", chore.id);
-            }}
-            onDragEnd={clearDragState}
             onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
             className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
-            style={{ touchAction: "none", ...doneStyle }}
+            style={{ touchAction: "pan-y", ...doneStyle }}
           >
             <ChipIcon size={13} color={chore.iconColor} />
             <span>{chore.title}</span>
@@ -4801,11 +4913,6 @@ export function KajiApp() {
             {draggingChore ? (
               <div
                 data-drag-navigate="prev-week"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  void dropDraggedChoreToDate(previousWeekTarget);
-                }}
                 className="rounded-[12px] border border-dashed border-[#F9AB00] bg-[#FFF8E8] px-3 py-2 text-center text-[12px] font-bold text-[#B06000]"
               >
                 <span data-drag-navigate="prev-week">↑ ここに乗せると前の週に移動</span>
@@ -4822,18 +4929,6 @@ export function KajiApp() {
                     className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[#EEF4FE]" : entry.dateKey === calendarSelectedDateKey ? "bg-[#F5F9FF]" : ""}`}
                     onClick={(event) => {
                       handleCalendarSurfaceTap(event, entry.dateKey);
-                    }}
-                    onDragOver={(event) => {
-                      if (!draggingChore) return;
-                      event.preventDefault();
-                      setDragTargetDateKey(entry.dateKey);
-                    }}
-                    onDragLeave={() => {
-                      setDragTargetDateKey((prev) => (prev === entry.dateKey ? null : prev));
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      void dropDraggedChoreToDate(entry.dateKey);
                     }}
                   >
                     <div className="flex items-center gap-2">
@@ -4861,11 +4956,6 @@ export function KajiApp() {
             {draggingChore ? (
               <div
                 data-drag-navigate="next-week"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  void dropDraggedChoreToDate(nextWeekTarget);
-                }}
                 className="rounded-[12px] border border-dashed border-[#34A853] bg-[#E8F5E9] px-3 py-2 text-center text-[12px] font-bold text-[#1E8E3E]"
               >
                 <span data-drag-navigate="next-week">↓ ここに乗せると次の週に移動</span>
@@ -4893,6 +4983,15 @@ export function KajiApp() {
                 <ChevronRight size={16} color="#9AA0A6" />
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => openStandaloneScreen("my-records", "records")}
+              data-gesture-priority="tap"
+              className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
+            >
+              <span className="text-[14px] font-semibold text-[#202124]">わたしのきろくを見る</span>
+              <ChevronRight size={16} color="#9AA0A6" />
+            </button>
             {renderTimelineRecords(groupedTimelineRecords, "家事を完了するとここにタイムライン表示されます。")}
           </div>
         </div>
@@ -4912,6 +5011,7 @@ export function KajiApp() {
             <button
               type="button"
               onClick={() => openStandaloneScreen("my-report", "stats")}
+              data-gesture-priority="tap"
               className="flex w-full items-center justify-between rounded-[12px] border border-[#DADCE0] bg-white px-4 py-2.5 text-left"
             >
               <span className="text-[14px] font-semibold text-[#202124]">私のレポートを見る</span>
@@ -5491,9 +5591,17 @@ export function KajiApp() {
       <section
         className="relative flex-1 overflow-hidden overscroll-y-none"
         onTouchStart={(e) => {
+          const dragGestureActive = Boolean(touchDragInfoRef.current?.active) || Boolean(draggingChore);
+          if (dragGestureActive) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchCancel();
+            sectionSwipeSuppressedRef.current = false;
+            return;
+          }
           const t = e.touches[0];
           sectionTouchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
           const target = e.target as HTMLElement | null;
+          const isTapPrioritySurface = Boolean(target?.closest("[data-gesture-priority='tap']"));
           const isCalendarSurface =
             activeTabRef.current === "list" &&
             Boolean(target?.closest("[data-calendar-swipe-surface='true']"));
@@ -5502,6 +5610,8 @@ export function KajiApp() {
             Boolean(target?.closest(TAP_PRIORITY_ZONE_SELECTOR));
           sectionSwipeSuppressedRef.current = isCalendarSurface || isTapPriorityZone;
           if (isCalendarSurface || isTapPriorityZone) {
+          sectionSwipeSuppressedRef.current = isCalendarSurface || isTapPrioritySurface;
+          if (sectionSwipeSuppressedRef.current) {
             swipe.onTouchCancel();
             assignmentEdgeSwipe.onTouchStart(e);
             return;
@@ -5510,26 +5620,41 @@ export function KajiApp() {
           assignmentEdgeSwipe.onTouchStart(e);
         }}
         onTouchMove={(e) => {
+          const dragGestureActive = Boolean(touchDragInfoRef.current?.active) || Boolean(draggingChore);
+          if (dragGestureActive) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchCancel();
+            return;
+          }
           if (sectionSwipeSuppressedRef.current) return;
           const start = sectionTouchStartRef.current;
           const t = e.touches[0];
           if (start && t) {
             const dx = Math.abs(t.clientX - start.x);
             const dy = Math.abs(t.clientY - start.y);
-            const isDownwardPull = t.clientY > start.y && dy > dx * 1.05;
+            const isDownwardPull = t.clientY > start.y && dy > dx * PULL_START_DIRECTION_RATIO;
+
+            // pull-to-refresh candidate のときは section 側では preventDefault せず、
+            // mainScrollRef の native touchmove 側だけで preventDefault する。
             if (pullEligibleRef.current && isDownwardPull) {
               sectionSwipeSuppressedRef.current = true;
               swipe.onTouchCancel();
               return;
             }
-            // Skip swipe handlers for clearly vertical gestures so they do not
-            // interfere with the pull-to-refresh native touchmove listener.
-            if (dy > dx * 1.5) return;
+
+            // 明らかな縦スクロールはタブスワイプ抑止のみ行い、スクロール/Pull 判定を優先する。
+            if (dy > dx * 1.3) return;
           }
           swipe.onTouchMove(e);
           assignmentEdgeSwipe.onTouchMove(e);
         }}
         onTouchEnd={(e) => {
+          const dragGestureActive = Boolean(touchDragInfoRef.current?.active) || Boolean(draggingChore);
+          if (dragGestureActive) {
+            swipe.onTouchCancel();
+            assignmentEdgeSwipe.onTouchCancel();
+            return;
+          }
           sectionTouchStartRef.current = null;
           if (sectionSwipeSuppressedRef.current) {
             sectionSwipeSuppressedRef.current = false;
@@ -5870,8 +5995,8 @@ export function KajiApp() {
         maxHeightClassName="min-h-[52vh] max-h-[86vh]"
       >
         {calendarBlankActionDateKey ? (() => {
-          const selectedDate = startOfJstDay(new Date(`${calendarBlankActionDateKey}T00:00:00+09:00`));
-          const selectedDateLabel = Number.isNaN(selectedDate.getTime())
+          const selectedDate = parseDateKey(calendarBlankActionDateKey);
+          const selectedDateLabel = !selectedDate
             ? calendarBlankActionDateKey
             : `${WEEKDAY_SHORT[new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay()]} ${new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDate()}`;
           const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
@@ -5928,7 +6053,7 @@ export function KajiApp() {
                   ) : (
                     calendarQuickRecordChores.map((chore) => {
                       const TaskIcon = iconByName(chore.icon);
-                      const updating = recordUpdatingIds.includes(chore.id);
+                      const updating = recordUpdatingIds.includes(buildRecordMutationKey(chore.id, calendarBlankActionDateKey));
                       return (
                         <div
                           key={`calendar-blank-record-${calendarBlankActionDateKey}-${chore.id}`}
@@ -6243,7 +6368,7 @@ export function KajiApp() {
           cancelLabel="やめる"
           confirmLabel="追加する"
           confirmVariant="success"
-          loading={recordUpdatingIds.includes(pendingCalendarPlanDuplicateConfirm.choreId)}
+          loading={recordUpdatingIds.includes(buildRecordMutationKey(pendingCalendarPlanDuplicateConfirm.choreId, pendingCalendarPlanDuplicateConfirm.dateKey))}
         />
       ) : null}
 

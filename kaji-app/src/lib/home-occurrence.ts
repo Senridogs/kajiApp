@@ -32,6 +32,10 @@ type HomeProgressRecordInput = {
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const JA_COLLATOR = new Intl.Collator("ja");
 
+function isLastPerformedFallbackEnabled() {
+  return process.env.NEXT_PUBLIC_ENABLE_HOME_PROGRESS_LAST_PERFORMED_FALLBACK === "true";
+}
+
 function scheduledDayOffset(
   chore: Pick<ChoreWithComputed, "dueAt">,
   targetDate: Date,
@@ -225,7 +229,7 @@ export function buildHomeRowsByDate(params: {
 
   for (const chore of chores) {
     let entry = progressByChore[chore.id];
-    if (!entry) {
+    if (!entry && isLastPerformedFallbackEnabled()) {
       const performedDateKey =
         chore.lastPerformedAt && !chore.lastRecordIsInitial
           ? toJstDateKey(startOfJstDay(new Date(chore.lastPerformedAt)))
@@ -246,9 +250,13 @@ export function buildHomeRowsByDate(params: {
         pending: 0,
         latestState: isCompletedOnDate ? (chore.lastRecordSkipped ? "skipped" : "done") : "pending",
       }, { totalIsPending: usesOverrideSchedule });
-    } else {
-      entry = sanitizeEntry(entry);
     }
+
+    if (!entry) {
+      continue;
+    }
+
+    entry = sanitizeEntry(entry);
 
     if (entry.total <= 0 && entry.completed <= 0 && entry.skipped <= 0) {
       continue;
