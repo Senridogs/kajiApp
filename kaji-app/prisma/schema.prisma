@@ -71,6 +71,7 @@ model Chore {
   records           ChoreRecord[]
   assignments       ChoreAssignment[]
   scheduleOverrides ChoreScheduleOverride[]
+  occurrences       ChoreOccurrence[]
 }
 
 model ChoreAssignment {
@@ -130,6 +131,22 @@ model ChoreScheduleOverride {
 
   @@unique([choreId, date])
   @@index([choreId])
+}
+
+
+model ChoreOccurrence {
+  id         String   @id @default(cuid())
+  choreId    String
+  dateKey    String
+  status     String   @default("pending")
+  sourceType String   @default("generator")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  chore      Chore    @relation(fields: [choreId], references: [id], onDelete: Cascade)
+
+  @@index([choreId, dateKey])
+  @@index([choreId, status, dateKey])
+  @@index([choreId, dateKey, status, sourceType])
 }
 
 model PushSubscription {
