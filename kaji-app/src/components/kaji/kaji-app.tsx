@@ -96,6 +96,9 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PULL_REFRESH_TRIGGER_PX = 74;
 const PULL_REFRESH_MAX_PX = 128;
 const PULL_REFRESH_HOLD_PX = 28;
+const PULL_START_DIRECTION_RATIO = 1.05;
+const PULL_START_MIN_MOVEMENT_PX = 5;
+const PULL_HORIZONTAL_CANCEL_RATIO = 1.1;
 const REMINDER_HOUR_CHOICES = Array.from({ length: 18 }, (_, idx) => `${String(6 + idx).padStart(2, "0")}:00`);
 const REACTION_CHOICES = ["👏", "❤️", "✨", "🎉"] as const;
 const REACTION_ICON_MAP: Record<(typeof REACTION_CHOICES)[number], { icon: string; color: string }> = {
@@ -839,6 +842,7 @@ export function KajiApp() {
   const [pullDragging, setPullDragging] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshAnimationSeed, setRefreshAnimationSeed] = useState(0);
+  const pullRefreshEnabled = true;
 
   const sessionUser = boot?.sessionUser ?? null;
   const chores = boot?.chores ?? [];
@@ -1670,20 +1674,24 @@ export function KajiApp() {
 
   useEffect(() => {
     if (typeof document === "undefined") return;
+    if (!pullRefreshEnabled || assignmentOpen || settingsOpen) return;
+
     const html = document.documentElement;
     const body = document.body;
     const previousHtmlOverscrollY = html.style.overscrollBehaviorY;
     const previousBodyOverscrollY = body.style.overscrollBehaviorY;
     const previousBodyOverflow = body.style.overflow;
+
     html.style.overscrollBehaviorY = "none";
     body.style.overscrollBehaviorY = "none";
     body.style.overflow = "hidden";
+
     return () => {
       html.style.overscrollBehaviorY = previousHtmlOverscrollY;
       body.style.overscrollBehaviorY = previousBodyOverscrollY;
       body.style.overflow = previousBodyOverflow;
     };
-  }, []);
+  }, [assignmentOpen, pullRefreshEnabled, settingsOpen]);
 
   useEffect(() => {
     const scroller = mainScrollRef.current;
@@ -1698,7 +1706,7 @@ export function KajiApp() {
 
       const dx = touch.clientX - pullStartXRef.current;
       const dy = touch.clientY - pullStartYRef.current;
-      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * 1.2;
+      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * PULL_START_DIRECTION_RATIO;
       const canRefreshBySwipe =
         pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
 
@@ -3266,7 +3274,14 @@ export function KajiApp() {
     }
   };
 
-  const pullRefreshEnabled = true;
+  const logPullGuard = useCallback((stage: string, reason: string, details: Record<string, unknown> = {}) => {
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem("kaji_pull_debug") !== "1") return;
+    console.info("[kaji:pull-guard]", { stage, reason, ...details });
+  }, []);
+
+  // Safari/Chrome 実機回帰観点: 「スクロールのみ」「更新のみ」「横スワイプのみ」。
+
   const executePullRefresh = useCallback(async () => {
     if (!pullRefreshEnabled) return;
     if (pullRefreshing) return;
@@ -3289,13 +3304,27 @@ export function KajiApp() {
 
   const handleMainScrollTouchStart = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
-      if (pullRefreshing || assignmentOpen || settingsOpen) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchstart", "disabled");
+        return;
+      }
+      if (pullRefreshing) {
+        logPullGuard("touchstart", "refreshing");
+        return;
+      }
+      if (assignmentOpen || settingsOpen) {
+        logPullGuard("touchstart", "blocked_by_sheet", { assignmentOpen, settingsOpen });
+        return;
+      }
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
-      if (!touch || !scroller) return;
+      if (!touch || !scroller) {
+        logPullGuard("touchstart", "missing_touch_or_scroller", { hasTouch: Boolean(touch), hasScroller: Boolean(scroller) });
+        return;
+      }
       pullStartScrollTopRef.current = scroller.scrollTop;
       if (scroller.scrollTop > 0) {
+        logPullGuard("touchstart", "scroll_not_at_top", { scrollTop: scroller.scrollTop });
         pullEligibleRef.current = false;
         pullDraggingRef.current = false;
         setPullDragging(false);
@@ -3303,23 +3332,38 @@ export function KajiApp() {
       }
 
       pullEligibleRef.current = true;
+      logPullGuard("touchstart", "eligible");
       pullDraggingRef.current = false;
       setPullDragging(false);
       pullStartYRef.current = touch.clientY;
       pullStartXRef.current = touch.clientX;
     },
-    [assignmentOpen, pullRefreshing, settingsOpen],
+    [assignmentOpen, logPullGuard, pullRefreshEnabled, pullRefreshing, settingsOpen],
   );
 
   const handleMainScrollTouchMove = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
-      if (!pullEligibleRef.current || pullRefreshing) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchmove", "disabled");
+        return;
+      }
+      if (pullRefreshing) {
+        logPullGuard("touchmove", "refreshing");
+        return;
+      }
+      if (!pullEligibleRef.current) {
+        logPullGuard("touchmove", "not_eligible");
+        return;
+      }
       const touch = event.touches[0];
       const scroller = mainScrollRef.current;
-      if (!touch || !scroller) return;
+      if (!touch || !scroller) {
+        logPullGuard("touchmove", "missing_touch_or_scroller", { hasTouch: Boolean(touch), hasScroller: Boolean(scroller) });
+        return;
+      }
 
       if (scroller.scrollTop > 0) {
+        logPullGuard("touchmove", "lost_top_position", { scrollTop: scroller.scrollTop });
         pullEligibleRef.current = false;
         pullDraggingRef.current = false;
         setPullDragging(false);
@@ -3329,7 +3373,7 @@ export function KajiApp() {
 
       const dx = touch.clientX - pullStartXRef.current;
       const dy = touch.clientY - pullStartYRef.current;
-      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * 1.2;
+      const isMostlyVertical = Math.abs(dy) > Math.abs(dx) * PULL_START_DIRECTION_RATIO;
       const canRefreshBySwipe = pullStartScrollTopRef.current <= 0 && scroller.scrollTop <= 0;
 
       if (dy > 0 && isMostlyVertical && canRefreshBySwipe) {
@@ -3337,8 +3381,9 @@ export function KajiApp() {
       }
 
       if (!pullDraggingRef.current) {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * 0.9) {
+        if (Math.abs(dx) < PULL_START_MIN_MOVEMENT_PX && Math.abs(dy) < PULL_START_MIN_MOVEMENT_PX) return;
+        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * PULL_HORIZONTAL_CANCEL_RATIO) {
+          logPullGuard("touchmove", "direction_rejected", { dx, dy });
           pullEligibleRef.current = false;
           pullDraggingRef.current = false;
           setPullDragging(false);
@@ -3347,6 +3392,7 @@ export function KajiApp() {
         }
         pullDraggingRef.current = true;
         setPullDragging(true);
+        logPullGuard("touchmove", "drag_started", { dx, dy });
       }
 
       if (dy <= 0) {
@@ -3358,7 +3404,7 @@ export function KajiApp() {
       event.preventDefault();
       event.stopPropagation();
     },
-    [pullRefreshing],
+    [logPullGuard, pullRefreshEnabled, pullRefreshing],
   );
 
   // React 17+ registers onTouchMove as passive, preventing preventDefault().
@@ -3376,7 +3422,10 @@ export function KajiApp() {
     const shouldHandle = pullDraggingRef.current || pullDistance > 0;
     pullEligibleRef.current = false;
 
-    if (!shouldHandle) return;
+    if (!shouldHandle) {
+      logPullGuard("touchend", "no_pull_state", { pullDistance, pullDragging: pullDraggingRef.current });
+      return;
+    }
 
     pullDraggingRef.current = false;
     setPullDragging(false);
@@ -3387,28 +3436,36 @@ export function KajiApp() {
     }
 
     setPullDistance(0);
-  }, [executePullRefresh, pullDistance, pullRefreshEnabled]);
+  }, [executePullRefresh, logPullGuard, pullDistance, pullRefreshEnabled]);
 
   const handleMainScrollTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchend", "disabled");
+        return;
+      }
       if (pullDraggingRef.current || pullDistance > 0) {
+        logPullGuard("touchend", "gesture_end", { pullDistance });
         event.stopPropagation();
       }
       endMainScrollPullGesture();
     },
-    [endMainScrollPullGesture, pullDistance],
+    [endMainScrollPullGesture, logPullGuard, pullDistance, pullRefreshEnabled],
   );
 
   const handleMainScrollTouchCancel = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (!pullRefreshEnabled) return;
+      if (!pullRefreshEnabled) {
+        logPullGuard("touchcancel", "disabled");
+        return;
+      }
       if (pullDraggingRef.current || pullDistance > 0) {
+        logPullGuard("touchcancel", "gesture_cancel", { pullDistance });
         event.stopPropagation();
       }
       endMainScrollPullGesture();
     },
-    [endMainScrollPullGesture, pullDistance],
+    [endMainScrollPullGesture, logPullGuard, pullDistance, pullRefreshEnabled],
   );
 
   const historyUsers = useMemo(() => boot?.users ?? [], [boot?.users]);
@@ -5390,15 +5447,18 @@ export function KajiApp() {
           if (start && t) {
             const dx = Math.abs(t.clientX - start.x);
             const dy = Math.abs(t.clientY - start.y);
-            const isDownwardPull = t.clientY > start.y && dy > dx * 1.05;
+            const isDownwardPull = t.clientY > start.y && dy > dx * PULL_START_DIRECTION_RATIO;
+
+            // pull-to-refresh candidate のときは section 側では preventDefault せず、
+            // mainScrollRef の native touchmove 側だけで preventDefault する。
             if (pullEligibleRef.current && isDownwardPull) {
               sectionSwipeSuppressedRef.current = true;
               swipe.onTouchCancel();
               return;
             }
-            // Skip swipe handlers for clearly vertical gestures so they do not
-            // interfere with the pull-to-refresh native touchmove listener.
-            if (dy > dx * 1.5) return;
+
+            // 明らかな縦スクロールはタブスワイプ抑止のみ行い、スクロール/Pull 判定を優先する。
+            if (dy > dx * 1.3) return;
           }
           swipe.onTouchMove(e);
           assignmentEdgeSwipe.onTouchMove(e);
