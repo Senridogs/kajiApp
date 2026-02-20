@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { computeChore, splitChoresForHome } from "@/lib/dashboard";
 import { ensureDemoDataForHousehold } from "@/lib/dummy-data";
-import { buildHomeProgressByDate } from "@/lib/home-occurrence";
+import { buildOccurrenceReadModelByDate } from "@/lib/occurrence-read-model";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { addDays, buildHomeDateKeys, startOfJstDay } from "@/lib/time";
@@ -148,22 +148,41 @@ export async function GET() {
           },
         })
         : [];
-    const homeProgressByDate = buildHomeProgressByDate({
-      chores: computed,
+    const homeOccurrenceReadModelByDate = buildOccurrenceReadModelByDate({
       dateKeys: homeDateKeys,
-      scheduleOverridesByChore: new Map(
-        Array.from(scheduleOverridesByChore.entries()).map(([choreId, values]) => [
-          choreId,
-          values.map((value) => ({
-            id: value.id,
-            choreId: value.choreId,
-            date: value.date,
-            createdAt: value.createdAt.toISOString(),
-          })),
-        ]),
-      ),
+      chores: computed.map((chore) => ({
+        id: chore.id,
+        intervalDays: chore.intervalDays,
+        dailyTargetCount: chore.dailyTargetCount,
+        dueAt: chore.dueAt ? new Date(chore.dueAt) : null,
+        scheduleOverrides: (scheduleOverridesByChore.get(chore.id) ?? []).map((override) => ({ date: override.date })),
+      })),
       records: homeProgressRecords,
     });
+    const homeProgressByDate = Object.fromEntries(
+      Object.entries(homeOccurrenceReadModelByDate).map(([dateKey, byChore]) => [
+        dateKey,
+        Object.fromEntries(
+          Object.entries(byChore).map(([choreId, entry]) => [
+            choreId,
+            {
+              total: entry.scheduled,
+              completed: entry.completed,
+              skipped: entry.skipped,
+              pending: entry.pending,
+              latestState:
+                entry.pending > 0
+                  ? "pending"
+                  : entry.completed > 0
+                    ? "done"
+                    : entry.skipped > 0
+                      ? "skipped"
+                      : "pending",
+            },
+          ]),
+        ),
+      ]),
+    );
 
     return NextResponse.json({
       needsRegistration: false,
@@ -231,4 +250,3 @@ export async function GET() {
     );
   }
 }
-

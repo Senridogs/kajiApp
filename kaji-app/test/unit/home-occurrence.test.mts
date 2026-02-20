@@ -254,6 +254,33 @@ test("buildHomeProgressByDate keeps denominator fixed for mixed done/skip", () =
   });
 });
 
+
+import {
+  OCCURRENCE_TEST_DATE_KEYS,
+  homeFixtureChores,
+  homeFixtureOverrides,
+} from "./fixtures/occurrence-consistency.fixture.mts";
+
+test("shared fixture count matches calendar summary expectations", () => {
+  const progress = buildHomeProgressByDate({
+    chores: homeFixtureChores,
+    dateKeys: OCCURRENCE_TEST_DATE_KEYS,
+    scheduleOverridesByChore: homeFixtureOverrides,
+    records: [],
+  });
+
+  const picked = Object.fromEntries(
+    OCCURRENCE_TEST_DATE_KEYS.map((dateKey) => [
+      dateKey,
+      Object.values(progress[dateKey] ?? {}).reduce((sum, entry) => sum + entry.total, 0),
+    ]),
+  );
+
+  assert.deepEqual(picked, {
+    "2026-03-05": 1,
+    "2026-03-10": 1,
+    "2026-03-12": 1,
+  });
 test("buildHomeProgressByDate does not mix same chore completion across dates", () => {
   const yesterday = "2026-02-20";
   const today = "2026-02-21";
