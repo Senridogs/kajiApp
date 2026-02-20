@@ -80,7 +80,6 @@ import {
 } from "@/lib/home-occurrence";
 import { addDateKeyDays, addDays, compareDateKey, formatDateKey, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
 import { countScheduledOccurrencesOnDate as countScheduledOccurrencesOnDateByReadModel } from "@/lib/occurrence-read-model";
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const JA_COLLATOR = new Intl.Collator("ja");
 type ListSortKey = "kana" | "due" | "icon";
@@ -1040,10 +1039,6 @@ export function KajiApp() {
       return homeEntry.total;
     }
 
-    const targetDate = parseDateKey(dateKey);
-    if (!targetDate) return 0;
-    return isScheduledOnDate(chore, targetDate) ? Math.max(1, chore.dailyTargetCount) : 0;
-  }, [chores, scheduleOverridesByChore]);
     const chore = chores.find((item) => item.id === choreId);
     if (!chore) return 0;
     return countScheduledOccurrencesOnDateByReadModel({
@@ -2906,7 +2901,6 @@ export function KajiApp() {
     const performedAt = resolvedPerformedAt.performedAt;
     const performedAtIso = performedAt.toISOString();
     const performedAtDateKey = resolvedPerformedAt.scheduledDateKey;
-    const performedAtDateKey = toJstDateKey(startOfJstDay(performedAt));
     const mutationDateKey = sourceDateKey ?? performedAtDateKey;
     const mutationKey = buildRecordMutationKey(targetId, mutationDateKey);
     const mutationId = beginRecordMutation(mutationKey);
