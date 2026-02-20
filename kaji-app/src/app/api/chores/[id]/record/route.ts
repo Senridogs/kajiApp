@@ -18,6 +18,7 @@ type Body = {
   skipped?: boolean;
   skipCount?: number;
   sourceDate?: string;
+  scheduledDate?: string;
   recalculateFuture?: boolean;
   mergeIfDuplicate?: boolean;
 };
@@ -29,6 +30,7 @@ const SKIP_COUNT_REQUIRES_SOURCE_DATE = "skipCount requires sourceDate.";
 const SKIP_COUNT_ONLY_FOR_SKIP = "skipCount can be used only when skipped=true.";
 const SKIP_COUNT_INVALID = "skipCount must be an integer greater than or equal to 1.";
 const SKIP_COUNT_OUT_OF_RANGE = "skipCount exceeds pending occurrences on sourceDate.";
+const SOURCE_DATE_REQUIRES_SCHEDULED_DATE = "scheduledDate is required when sourceDate is provided.";
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { session, response } = await requireSession();
@@ -73,6 +75,14 @@ export async function POST(request: Request, { params }: RouteParams) {
     return badRequest("sourceDate must be in YYYY-MM-DD format.");
   }
 
+  const scheduledDate = body?.scheduledDate?.trim();
+  if (scheduledDate && !isDateKey(scheduledDate)) {
+    return badRequest("scheduledDate must be in YYYY-MM-DD format.");
+  }
+  if (sourceDate && !scheduledDate) {
+    return badRequest(SOURCE_DATE_REQUIRES_SCHEDULED_DATE);
+  }
+
   const memo = body?.memo?.trim() || null;
   if (memo && memo.length > 500) {
     return badRequest("メモは500文字以内で入力してください。");
@@ -93,8 +103,9 @@ export async function POST(request: Request, { params }: RouteParams) {
     return badRequest(SKIP_COUNT_REQUIRES_SOURCE_DATE);
   }
 
-  const consumeCount = skipped ? requestedSkipCount : 1;
-    const performedAt = requestedPerformedAt;
+  const consumeCount = skipped ? requestedSk
+  const performedAt = requestedPerformedAt;
+  const isFutureScheduledDate = targetDateKey > toJstDateKey(todayStart);
   const targetDateKey = toJstDateKey(startOfJstDay(performedAt));
 
   let record: { id: string; performedAt: Date; memo: string | null };
@@ -121,7 +132,7 @@ export async function POST(request: Request, { params }: RouteParams) {
             choreId: chore.id,
             userId: user.id,
             memo,
-            scheduledDate: sourceDate || null,
+            scheduledDate: targetDateKey,
             performedAt: new Date(performedAt.getTime() + i),
             isSkipped: skipped,
           },
@@ -135,6 +146,36 @@ export async function POST(request: Request, { params }: RouteParams) {
       const latestCreated = createdRecords[createdRecords.length - 1]!;
 
       if (sourceDate) {
+        const shouldApplySchedulePolicy =
+          sourceDate !== targetDateKey ||
+          isFutureScheduledDate ||
+          currentOverrides.length > 0 ||
+          chore.dailyTargetCount > 1 ||
+          consumeCount > 1;
+
+        if (!shouldApplySchedulePolicy) {
+          await consumeOverrideOccurrencesOnDate(tx, chore.id, targetDateKey, consumeCount);
+          return latestCreated;
+        }
+
+        const window = resolveScheduleWindow(sourceDate, targetDateKey);
+        let nextDateKeys = [...currentDateKeys];
+        for (let i = 0; i < consumeCount; i += 1) {
+          if (!recalculateFuture && sourceDate === targetDateKey) {
+            nextDateKeys = removeOneOccurrence(nextDateKeys, targetDateKey);
+            continue;
+          }
+          nextDateKeys = rebuildScheduleDateKeys({
+            currentDateKeys: nextDateKeys,
+            sourceDateKey: sourceDate,
+            targetDateKey,
+            recalculateFuture,
+            mergeIfDuplicate,
+            intervalDays: chore.intervalDays,
+            dailyTargetCount: chore.dailyTargetCount,
+            window,
+          });
+          nextDateKeys = removeOneOccurrence(nextDateKeys, targetDateKey);
         const consumed = await consumePendingOccurrences(tx, chore.id, sourceDate, consumeCount);
         if (consumed < consumeCount) {
           throw new Error(SKIP_COUNT_OUT_OF_RANGE);

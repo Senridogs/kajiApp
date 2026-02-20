@@ -1,4 +1,4 @@
-import { addDays, startOfJstDay, toJstDateKey } from "@/lib/time";
+import { addDays, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
 
 const FUTURE_WINDOW_DAYS = 730;
 const PAST_WINDOW_DAYS = 45;
@@ -14,7 +14,7 @@ export function isDateKey(value: string) {
 }
 
 export function dateKeyToJstDate(dateKey: string) {
-  return new Date(`${dateKey}T00:00:00+09:00`);
+  return parseDateKey(dateKey) ?? new Date(Number.NaN);
 }
 
 export function uniqueSortedDateKeys(dateKeys: string[]) {
