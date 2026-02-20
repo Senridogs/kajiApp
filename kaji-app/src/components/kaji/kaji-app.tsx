@@ -163,11 +163,6 @@ type PendingRecordDateChoice = {
 type PerformedAtMode = "today" | "source";
 type MemoFlowMode = "default" | "calendar-quick";
 type CalendarBlankActionMode = "choice" | "record";
-type PendingCalendarPlanDuplicateConfirm = {
-  choreId: string;
-  choreTitle: string;
-  dateKey: string;
-};
 type StandaloneScreenKey = "manage" | "my-report" | "my-records";
 type StandaloneOriginKey = "settings" | "list" | "stats" | "records";
 type TimelineRecordGroup = {
@@ -661,8 +656,6 @@ export function KajiApp() {
   const [calendarBlankActionOpen, setCalendarBlankActionOpen] = useState(false);
   const [calendarBlankActionDateKey, setCalendarBlankActionDateKey] = useState<string | null>(null);
   const [calendarBlankActionMode, setCalendarBlankActionMode] = useState<CalendarBlankActionMode>("choice");
-  const [pendingCalendarPlanDuplicateConfirm, setPendingCalendarPlanDuplicateConfirm] =
-    useState<PendingCalendarPlanDuplicateConfirm | null>(null);
   const [undoConfirmTarget, setUndoConfirmTarget] = useState<ChoreWithComputed | null>(null);
   const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
   const [reactionUpdatingId, setReactionUpdatingId] = useState<string | null>(null);
@@ -2714,7 +2707,6 @@ export function KajiApp() {
   const addCalendarPlannedOccurrence = useCallback(async (
     chore: ChoreWithComputed,
     dateKey: string,
-    allowDuplicate = false,
   ) => {
     const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
     if (compareDateKey(dateKey, todayDateKey) < 0) {
@@ -2731,10 +2723,8 @@ export function KajiApp() {
           choreId: chore.id,
           date: dateKey,
           mode: "add",
-          allowDuplicate,
         }),
       });
-      setPendingCalendarPlanDuplicateConfirm(null);
       await Promise.all([
         loadBootstrap(),
         loadCalendarMonthSummary(calendarMonthKeyRef.current),
@@ -2743,17 +2733,6 @@ export function KajiApp() {
       closeCalendarBlankActionSheet();
     } catch (err: unknown) {
       const message = (err as Error).message ?? "予定登録に失敗しました。";
-      if (
-        !allowDuplicate &&
-        message.includes("その日には同じ家事がすでに登録されています。")
-      ) {
-        setPendingCalendarPlanDuplicateConfirm({
-          choreId: chore.id,
-          choreTitle: chore.title,
-          dateKey,
-        });
-        return;
-      }
       setError(message);
     } finally {
       setRecordUpdating(chore.id, false);
@@ -2764,19 +2743,6 @@ export function KajiApp() {
     loadCalendarMonthSummary,
     setRecordUpdating,
   ]);
-
-  const resolveCalendarPlanDuplicateConfirm = useCallback((allowDuplicate: boolean) => {
-    if (!pendingCalendarPlanDuplicateConfirm) return;
-    const pending = pendingCalendarPlanDuplicateConfirm;
-    setPendingCalendarPlanDuplicateConfirm(null);
-    if (!allowDuplicate) return;
-    const target = chores.find((chore) => chore.id === pending.choreId);
-    if (!target) {
-      setError("対象の家事が見つかりません。");
-      return;
-    }
-    void addCalendarPlannedOccurrence(target, pending.dateKey, true);
-  }, [addCalendarPlannedOccurrence, chores]);
 
   const handleCalendarBlankComplete = useCallback((chore: ChoreWithComputed, dateKey: string) => {
     const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
@@ -2790,7 +2756,7 @@ export function KajiApp() {
   }, [closeCalendarBlankActionSheet, openCalendarQuickMemo, submitCalendarQuickCompletion]);
 
   const handleCalendarBlankPlanned = useCallback((chore: ChoreWithComputed, dateKey: string) => {
-    void addCalendarPlannedOccurrence(chore, dateKey, false);
+    void addCalendarPlannedOccurrence(chore, dateKey);
   }, [addCalendarPlannedOccurrence]);
 
   const submitMemoAction = useCallback(async ({
@@ -6189,22 +6155,6 @@ export function KajiApp() {
           />
         );
       })() : null}
-
-      {pendingCalendarPlanDuplicateConfirm ? (
-        <ConfirmDialog
-          open={Boolean(pendingCalendarPlanDuplicateConfirm)}
-          onClose={() => setPendingCalendarPlanDuplicateConfirm(null)}
-          onCancel={() => resolveCalendarPlanDuplicateConfirm(false)}
-          onConfirm={() => resolveCalendarPlanDuplicateConfirm(true)}
-          title="同じ日に同じ家事があります"
-          description={`「${pendingCalendarPlanDuplicateConfirm.choreTitle}」を追加しますか？`}
-          detail={`${pendingCalendarPlanDuplicateConfirm.dateKey} に重複登録します`}
-          cancelLabel="やめる"
-          confirmLabel="追加する"
-          confirmVariant="success"
-          loading={recordUpdatingIds.includes(pendingCalendarPlanDuplicateConfirm.choreId)}
-        />
-      ) : null}
 
       {pendingMergeDuplicateConfirm ? (() => {
         const copy = mergeDuplicateDialogCopy({
