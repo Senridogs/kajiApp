@@ -4703,8 +4703,8 @@ export function KajiApp() {
                           const chore = row.chore;
                           const disableTomorrowDailyCheck = false;
                           const progressLabel =
-                            row.scheduledTotal > 1
-                              ? `${row.completed + row.skipped}/${row.scheduledTotal}`
+                            row.total > 1
+                              ? `${row.completed + row.skipped}/${row.total}`
                               : undefined;
                           const displayChore = chore;
                           const isHomeDropTarget =
