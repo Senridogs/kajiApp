@@ -46,7 +46,6 @@ export function iconByName(name: string): LucideIcon {
 }
 
 export function labelForDue(chore: ChoreWithComputed) {
-  if (chore.doneToday) return "実施済み";
   if (chore.isOverdue) return `${chore.overdueDays}日遅れ`;
   if (chore.isDueToday) return "今日";
   if (chore.isDueTomorrow) return "明日";

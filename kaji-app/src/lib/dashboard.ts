@@ -31,7 +31,6 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
   const overdueDays = isOverdue && dueAt ? diffDaysFloor(dueAt, todayStart) : 0;
   const daysSinceLast = lastPerformedAt ? diffDaysFloor(lastPerformedAt, now) : null;
   const isInitial = latest?.isInitial ?? false;
-  const doneToday = !!latest && !isInitial && latest.performedAt >= todayStart;
 
   const latestWithOptionalSkip = latest as ChoreRecordWithOptionalSkip | undefined;
   const isSkipped = latestWithOptionalSkip?.isSkipped ?? false;
@@ -59,7 +58,6 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
     isOverdue,
     overdueDays,
     daysSinceLast,
-    doneToday,
   };
 }
 

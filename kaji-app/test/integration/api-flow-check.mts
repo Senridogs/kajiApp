@@ -82,7 +82,6 @@ async function readBootstrapChore(choreId: string) {
   assert.ok(chore);
   return chore as {
     id: string;
-    doneToday: boolean;
     lastRecordSkipped: boolean;
     lastRecordId: string | null;
   };
@@ -547,63 +546,54 @@ async function main() {
     name: string;
     steps: Array<"complete" | "skip" | "undo">;
     expectedOverrides: number;
-    expectedDoneToday: boolean;
     expectedSkipped: boolean;
   }> = [
       {
         name: "complete-only",
         steps: ["complete"],
         expectedOverrides: 1,
-        expectedDoneToday: true,
         expectedSkipped: false,
       },
       {
         name: "skip-only",
         steps: ["skip"],
         expectedOverrides: 1,
-        expectedDoneToday: true,
         expectedSkipped: true,
       },
       {
         name: "complete-undo",
         steps: ["complete", "undo"],
         expectedOverrides: 2,
-        expectedDoneToday: false,
         expectedSkipped: false,
       },
       {
         name: "skip-undo",
         steps: ["skip", "undo"],
         expectedOverrides: 2,
-        expectedDoneToday: false,
         expectedSkipped: false,
       },
       {
         name: "complete-skip",
         steps: ["complete", "skip"],
         expectedOverrides: 0,
-        expectedDoneToday: true,
         expectedSkipped: true,
       },
       {
         name: "skip-complete",
         steps: ["skip", "complete"],
         expectedOverrides: 0,
-        expectedDoneToday: true,
         expectedSkipped: false,
       },
       {
         name: "complete-undo-skip",
         steps: ["complete", "undo", "skip"],
         expectedOverrides: 1,
-        expectedDoneToday: true,
         expectedSkipped: true,
       },
       {
         name: "skip-undo-complete",
         steps: ["skip", "undo", "complete"],
         expectedOverrides: 1,
-        expectedDoneToday: true,
         expectedSkipped: false,
       },
     ];
@@ -671,7 +661,6 @@ async function main() {
       sequenceCase.expectedOverrides,
     );
     const latestChore = await readBootstrapChore(sequenceChoreId);
-    assert.equal(latestChore.doneToday, sequenceCase.expectedDoneToday);
     assert.equal(latestChore.lastRecordSkipped, sequenceCase.expectedSkipped);
   }
 

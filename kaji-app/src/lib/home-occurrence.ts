@@ -110,20 +110,17 @@ function toDisplayChore(chore: ChoreWithComputed, state: HomeProgressState): Cho
   if (state === "pending") {
     return {
       ...chore,
-      doneToday: false,
       lastRecordSkipped: false,
     };
   }
   if (state === "skipped") {
     return {
       ...chore,
-      doneToday: true,
       lastRecordSkipped: true,
     };
   }
   return {
     ...chore,
-    doneToday: true,
     lastRecordSkipped: false,
   };
 }
