@@ -4692,9 +4692,9 @@ export function KajiApp() {
                               key={homeRowKey}
                               data-home-drop-date={sectionDateKey}
                               data-home-drop-chore-id={chore.id}
-                              className={`${showDropBefore ? "border-t-2 border-[var(--primary)] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[var(--primary)] pb-1" : ""}`}
+                              className={`select-none ${showDropBefore ? "border-t-2 border-[var(--primary)] pt-1" : ""} ${showDropAfter ? "border-b-2 border-[var(--primary)] pb-1" : ""}`}
                               onPointerDown={(event) => handleChorePointerDown(displayChore, sectionDateKey, event)}
-                              style={{ touchAction: "pan-y" }}
+                              style={{ touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none" }}
                             >
                               <HomeTaskRow
                                 chore={displayChore}
@@ -4797,8 +4797,8 @@ export function KajiApp() {
               openReschedule(chore, dateKey, isCompleted);
             }}
             onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
-            className={`inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
-            style={{ touchAction: "pan-y", ...doneStyle }}
+            className={`select-none inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
+            style={{ touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", ...doneStyle }}
           >
             <ChipIcon size={13} color={chore.iconColor} />
             <span>{chore.title}</span>
