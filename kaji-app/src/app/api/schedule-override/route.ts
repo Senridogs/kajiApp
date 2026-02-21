@@ -106,7 +106,10 @@ export async function POST(request: Request) {
       await ensureOccurrenceBackfill(tx, choreId);
       await tx.choreRecord.update({
         where: { id: sourceRecordId },
-        data: { performedAt: moveDateKeepingTimeOfDay(record.performedAt, date) },
+        data: {
+          performedAt: moveDateKeepingTimeOfDay(record.performedAt, date),
+          scheduledDate: date,
+        },
       });
       await tx.choreOccurrence.create({
         data: {
