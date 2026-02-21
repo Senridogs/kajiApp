@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
-import { computeChore, splitChoresForHome } from "@/lib/dashboard";
+import { computeChore, splitChoresForHomeByProgress } from "@/lib/dashboard";
 import { ensureDemoDataForHousehold } from "@/lib/dummy-data";
 import { buildOccurrenceReadModelByDate } from "@/lib/occurrence-read-model";
 import { prisma } from "@/lib/prisma";
@@ -87,7 +87,6 @@ export async function GET() {
     ]);
 
     const computed = chores.map((c) => computeChore(c));
-    const homeSplit = splitChoresForHome(computed);
     const todayStart = startOfJstDay(new Date());
     const yesterdayStart = addDays(todayStart, -1);
     const dayAfterTomorrowStart = addDays(todayStart, 2);
@@ -176,6 +175,7 @@ export async function GET() {
         ),
       ]),
     );
+    const homeSplit = splitChoresForHomeByProgress(computed, homeProgressByDate);
 
     return NextResponse.json({
       needsRegistration: false,

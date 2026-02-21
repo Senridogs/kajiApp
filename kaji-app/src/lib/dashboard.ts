@@ -1,7 +1,7 @@
 import type { Chore, ChoreRecord, User } from "@prisma/client";
 
-import { addDays, diffDaysFloor, startOfJstDay } from "@/lib/time";
-import type { ChoreWithComputed, StatsPeriodKey } from "@/lib/types";
+import { addDays, buildHomeDateKeys, diffDaysFloor, startOfJstDay } from "@/lib/time";
+import type { ChoreWithComputed, HomeProgressEntry, StatsPeriodKey } from "@/lib/types";
 
 type ChoreWithLatest = Chore & {
   records: (ChoreRecord & { user: Pick<User, "id" | "name"> })[];
@@ -64,12 +64,23 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
 }
 
 export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()) {
+  return splitChoresForHomeByProgress(chores, {}, now);
+}
+
+export function splitChoresForHomeByProgress(
+  chores: ChoreWithComputed[],
+  homeProgressByDate: Record<string, Record<string, Pick<HomeProgressEntry, "completed" | "pending" | "skipped">>>,
+  now = new Date(),
+) {
+  const { today: todayDateKey } = buildHomeDateKeys(now);
+  const progressByChore = homeProgressByDate[todayDateKey] ?? {};
+  const hasCompletionToday = (choreId: string) => (progressByChore[choreId]?.completed ?? 0) > 0;
   const todayChores = chores.filter(
-    (c) => c.isDueToday || c.isOverdue || c.doneToday,
+    (c) => c.isDueToday || c.isOverdue || hasCompletionToday(c.id),
   );
   const tomorrowChores = chores.filter(
     (c) =>
-      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || c.doneToday)),
+      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || hasCompletionToday(c.id))),
   );
   return { todayChores, tomorrowChores };
 }

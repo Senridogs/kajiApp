@@ -1,7 +1,7 @@
 ﻿import assert from "node:assert/strict";
 import test from "node:test";
 
-import { computeChore, getStatsRange, splitChoresForHome } from "../../src/lib/dashboard.js";
+import { computeChore, getStatsRange, splitChoresForHome, splitChoresForHomeByProgress } from "../../src/lib/dashboard.js";
 
 test("computeChore marks due today and doneToday correctly", () => {
   const now = new Date("2026-02-15T03:00:00.000Z"); // JST: 12:00
@@ -227,7 +227,7 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
   assert.equal(split.tomorrowChores.length, 2);
 });
 
-test("splitChoresForHome keeps doneToday daily chore in both today and tomorrow", () => {
+test("splitChoresForHome no longer uses doneToday fallback without progress", () => {
   const now = new Date("2026-02-15T03:00:00.000Z");
   const doneTodayAndDueTomorrow = {
     id: "done",
@@ -256,6 +256,48 @@ test("splitChoresForHome keeps doneToday daily chore in both today and tomorrow"
   };
 
   const split = splitChoresForHome([doneTodayAndDueTomorrow], now);
+  assert.equal(split.todayChores.length, 0);
+  assert.equal(split.tomorrowChores.length, 1);
+  assert.equal(split.tomorrowChores[0]?.id, "done");
+});
+
+test("splitChoresForHomeByProgress keeps completed daily chore in both today and tomorrow", () => {
+  const now = new Date("2026-02-15T03:00:00.000Z");
+  const doneTodayAndDueTomorrow = {
+    id: "done",
+    title: "done",
+    icon: "",
+    iconColor: "",
+    bgColor: "",
+    intervalDays: 1,
+    dailyTargetCount: 1,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
+    archived: false,
+    lastPerformedAt: "2026-02-14T15:30:00.000Z",
+    lastPerformerName: "A",
+    lastPerformerId: "u1",
+    lastRecordId: "r",
+    lastRecordIsInitial: false,
+    lastRecordSkipped: false,
+    dueAt: "2026-02-15T15:30:00.000Z",
+    isDueToday: false,
+    isDueTomorrow: true,
+    isOverdue: false,
+    overdueDays: 0,
+    daysSinceLast: 0,
+    doneToday: false,
+  };
+
+  const split = splitChoresForHomeByProgress(
+    [doneTodayAndDueTomorrow],
+    {
+      "2026-02-15": {
+        done: { completed: 1, pending: 0, skipped: 0 },
+      },
+    },
+    now,
+  );
   assert.equal(split.todayChores.length, 1);
   assert.equal(split.todayChores[0]?.id, "done");
   assert.equal(split.tomorrowChores.length, 1);
