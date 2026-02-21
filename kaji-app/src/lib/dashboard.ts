@@ -74,9 +74,14 @@ export function splitChoresForHomeByProgress(
 ) {
   const { today: todayDateKey } = buildHomeDateKeys(now);
   const progressByChore = homeProgressByDate[todayDateKey] ?? {};
+  const hasAnyTodayOccurrence = (choreId: string) => {
+    const entry = progressByChore[choreId];
+    if (!entry) return false;
+    return (entry.pending ?? 0) > 0 || (entry.completed ?? 0) > 0 || (entry.skipped ?? 0) > 0;
+  };
   const hasCompletionToday = (choreId: string) => (progressByChore[choreId]?.completed ?? 0) > 0;
   const todayChores = chores.filter(
-    (c) => c.isDueToday || c.isOverdue || hasCompletionToday(c.id),
+    (c) => c.isDueToday || c.isOverdue || hasAnyTodayOccurrence(c.id),
   );
   const tomorrowChores = chores.filter(
     (c) =>
