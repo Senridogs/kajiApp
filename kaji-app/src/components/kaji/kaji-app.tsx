@@ -2509,7 +2509,7 @@ export function KajiApp() {
   // グローバルポインターイベント — タッチデバイスでのドラッグ&ドロップ対応
   // 週ナビゲーションホバー・自動スクロールも含む
   useEffect(() => {
-    const SCROLL_ZONE = 100;   // 端からこのpx内でスクロール発動
+    const SCROLL_ZONE = 28;   // 端ギリギリまで移動した時のみスクロール発動
     const MAX_SCROLL_SPEED = 12; // px/frame
 
     const startScrollLoop = () => {
