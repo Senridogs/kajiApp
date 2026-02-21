@@ -67,6 +67,7 @@ import {
   StatsPeriodKey,
   StatsResponse,
 } from "@/lib/types";
+import { splitChoresForHomeByProgress } from "@/lib/dashboard";
 import {
   applyHomeStoredOrder,
   sanitizeHomeOrderByDate,
@@ -393,22 +394,12 @@ function formatDateKeyMonthDayWeekday(dateKey: string) {
  * - ホーム画面: state 優先（本ファイルで実施）
  * - 他画面: doneToday の暫定互換を許容しつつ段階移行
  */
-function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
-  const todayStart = startOfJstDay(new Date());
-  const tomorrowStart = addDays(todayStart, 1);
-  const wasPerformedToday = (chore: ChoreWithComputed) => {
-    if (!chore.lastPerformedAt || chore.lastRecordIsInitial) return false;
-    const performedAt = new Date(chore.lastPerformedAt);
-    if (Number.isNaN(performedAt.getTime())) return false;
-    return performedAt >= todayStart && performedAt < tomorrowStart;
-  };
-
-  const todayChores = chores.filter((c) => c.isDueToday || c.isOverdue || wasPerformedToday(c));
-  const tomorrowChores = chores.filter(
-    (c) =>
-      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || wasPerformedToday(c))),
-  );
-  return { todayChores, tomorrowChores };
+function splitComputedChoresForHome(
+  chores: ChoreWithComputed[],
+  homeProgressByDate: Record<string, Record<string, Pick<HomeProgressEntry, "completed" | "pending" | "skipped">>> = {},
+  now = new Date(),
+) {
+  return splitChoresForHomeByProgress(chores, homeProgressByDate, now);
 }
 
 function sortHomeSectionChores(
@@ -468,7 +459,7 @@ function removeChoreFromBootstrap(
   const nextChores = previous.chores.filter((chore) => chore.id !== choreId);
   if (nextChores.length === previous.chores.length) return previous;
 
-  const split = splitComputedChoresForHome(nextChores);
+  const split = splitComputedChoresForHome(nextChores, previous.homeProgressByDate);
   return {
     ...previous,
     chores: nextChores,
@@ -485,7 +476,7 @@ function restoreChoreToBootstrap(
   if (previous.chores.some((item) => item.id === chore.id)) return previous;
 
   const nextChores = [...previous.chores, chore];
-  const split = splitComputedChoresForHome(nextChores);
+  const split = splitComputedChoresForHome(nextChores, previous.homeProgressByDate);
   return {
     ...previous,
     chores: nextChores,
@@ -1814,7 +1805,6 @@ export function KajiApp() {
       const nextChores = patch.chore
         ? prev.chores.map((chore) => (chore.id === choreId ? patch.chore! : chore))
         : prev.chores;
-      const split = patch.chore ? splitComputedChoresForHome(nextChores) : null;
       const nextHomeProgressByDate = { ...prev.homeProgressByDate };
       if (patch.homeProgressEntry !== undefined) {
         const currentDateProgress = { ...(nextHomeProgressByDate[dateKey] ?? {}) };
@@ -1829,6 +1819,7 @@ export function KajiApp() {
           delete nextHomeProgressByDate[dateKey];
         }
       }
+      const split = patch.chore ? splitComputedChoresForHome(nextChores, nextHomeProgressByDate) : null;
       const nextScheduleOverrides = patch.scheduleOverrides
         ? [
           ...prev.scheduleOverrides.filter((override) => override.choreId !== choreId),
@@ -1852,7 +1843,7 @@ export function KajiApp() {
       setBoot((prev) => {
         if (!prev || prev.needsRegistration) return prev;
         const nextChores = prev.chores.map((chore) => (chore.id === choreId ? updater(chore) : chore));
-        const split = splitComputedChoresForHome(nextChores);
+        const split = splitComputedChoresForHome(nextChores, prev.homeProgressByDate);
         return {
           ...prev,
           chores: nextChores,
