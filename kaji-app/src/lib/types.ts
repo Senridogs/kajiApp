@@ -52,7 +52,8 @@ export type ChoreWithComputed = {
 export type HomeProgressState = "done" | "skipped" | "pending";
 
 export type HomeProgressEntry = {
-  total: number;
+  scheduledTotal: number;
+  pendingTotal: number;
   completed: number;
   skipped: number;
   pending: number;

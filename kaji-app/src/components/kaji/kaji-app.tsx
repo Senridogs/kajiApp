@@ -1116,7 +1116,7 @@ export function KajiApp() {
     }
     const homeEntry = boot?.homeProgressByDate?.[dateKey]?.[choreId];
     if (homeEntry) {
-      return homeEntry.total;
+      return homeEntry.scheduledTotal;
     }
 
     const chore = chores.find((item) => item.id === choreId);
@@ -2742,7 +2742,7 @@ export function KajiApp() {
       let optimisticChore: ChoreWithComputed | null = null;
       const scheduledCount = countScheduledOccurrencesOnDate(targetId, dateKey);
       const currentProgress = boot?.homeProgressByDate?.[dateKey]?.[targetId] ?? null;
-      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseTotal = currentProgress?.scheduledTotal ?? scheduledCount;
       const baseCompleted = currentProgress?.completed ?? 0;
       const baseSkipped = currentProgress?.skipped ?? 0;
       const nextCompleted = Math.min(baseTotal, baseCompleted + 1);
@@ -2775,7 +2775,8 @@ export function KajiApp() {
         patchBootForRecordMutation(targetId, dateKey, {
           chore: optimisticChore,
           homeProgressEntry: {
-            total: baseTotal,
+            scheduledTotal: baseTotal,
+            pendingTotal: nextPending,
             completed: nextCompleted,
             skipped: baseSkipped,
             pending: nextPending,
@@ -2984,7 +2985,7 @@ export function KajiApp() {
       let optimisticChore: ChoreWithComputed | null = null;
       const scheduledCount = countScheduledOccurrencesOnDate(targetId, mutationDateKey);
       const currentProgress = boot?.homeProgressByDate?.[mutationDateKey]?.[targetId] ?? null;
-      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseTotal = currentProgress?.scheduledTotal ?? scheduledCount;
       const baseCompleted = currentProgress?.completed ?? 0;
       const baseSkipped = currentProgress?.skipped ?? 0;
       const consume = skipped
@@ -3023,7 +3024,8 @@ export function KajiApp() {
         patchBootForRecordMutation(targetId, mutationDateKey, {
           chore: optimisticChore,
           homeProgressEntry: {
-            total: baseTotal,
+            scheduledTotal: baseTotal,
+            pendingTotal: nextPending,
             completed: nextCompleted,
             skipped: nextSkipped,
             pending: nextPending,
@@ -4686,8 +4688,8 @@ export function KajiApp() {
                           const chore = row.chore;
                           const disableTomorrowDailyCheck = false;
                           const progressLabel =
-                            row.total > 1
-                              ? `${row.completed + row.skipped}/${row.total}`
+                            row.scheduledTotal > 1
+                              ? `${row.completed + row.skipped}/${row.scheduledTotal}`
                               : undefined;
                           const displayChore = chore;
                           const isHomeDropTarget =
