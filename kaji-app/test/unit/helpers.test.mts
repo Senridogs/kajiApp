@@ -36,7 +36,6 @@ test("dueInDaysLabel returns future/today/overdue labels", () => {
     isOverdue: false,
     overdueDays: 0,
     daysSinceLast: null,
-    doneToday: false,
   };
 
   assert.equal(
@@ -85,7 +84,6 @@ test("labelForDue uses explicit state over doneToday", () => {
     isOverdue: false,
     overdueDays: 0,
     daysSinceLast: null,
-    doneToday: false,
     dueAt: "2026-02-14T15:30:00.000Z",
   };
 

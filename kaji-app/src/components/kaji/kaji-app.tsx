@@ -386,14 +386,6 @@ function formatDateKeyMonthDayWeekday(dateKey: string) {
   return `${month}/${day}(${weekday})`;
 }
 
-/**
- * Home 描画経路では chore.doneToday を一次判定に使わない。
- * Lint 指針: no-restricted-properties で `chore.doneToday` を禁止し、
- * 判定は必ず homeProgressByDate / HomeRowProjection.state を参照すること。
- * 移行フェーズ（期限: 2026-03-31）:
- * - ホーム画面: state 優先（本ファイルで実施）
- * - 他画面: doneToday の暫定互換を許容しつつ段階移行
- */
 function splitComputedChoresForHome(
   chores: ChoreWithComputed[],
   homeProgressByDate: Record<string, Record<string, Pick<HomeProgressEntry, "completed" | "pending" | "skipped">>> = {},
@@ -2756,7 +2748,6 @@ export function KajiApp() {
         const nextDueAtTime = nextDueAt.getTime();
         optimisticChore = {
           ...current,
-          doneToday: nextPending === 0,
           lastPerformedAt: performedAtIso,
           lastPerformerName: sessionUser.name,
           lastPerformerId: sessionUser.id,
@@ -3005,7 +2996,6 @@ export function KajiApp() {
         const nextDueAtTime = nextDueAt.getTime();
         optimisticChore = {
           ...chore,
-          doneToday: nextPending === 0,
           lastPerformedAt: performedAtIso,
           lastPerformerName: skipped ? "スキップ" : sessionUser.name,
           lastPerformerId: sessionUser.id,
@@ -3293,7 +3283,6 @@ export function KajiApp() {
 
     updateBootChoreOptimistically(chore.id, (current) => ({
       ...current,
-      doneToday: false,
       lastRecordId: null,
       lastRecordSkipped: false,
       dueAt: origDueAt,
