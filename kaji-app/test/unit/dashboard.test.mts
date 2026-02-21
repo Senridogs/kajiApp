@@ -383,6 +383,79 @@ test("splitChoresForHomeByProgress keeps pending future-due chore visible in tod
   assert.equal(split.tomorrowChores.length, 1);
   assert.equal(split.tomorrowChores[0]?.id, "pending");
 });
+
+
+test("splitChoresForHomeByProgress treats empty date snapshot as authoritative", () => {
+  const now = new Date("2026-02-15T03:00:00.000Z");
+  const dueTodayChore = {
+    id: "today",
+    title: "today",
+    icon: "",
+    iconColor: "",
+    bgColor: "",
+    intervalDays: 1,
+    dailyTargetCount: 1,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
+    archived: false,
+    lastPerformedAt: null,
+    lastPerformerName: null,
+    lastPerformerId: null,
+    lastRecordId: null,
+    lastRecordIsInitial: false,
+    lastRecordSkipped: false,
+    dueAt: "2026-02-15T15:00:00.000Z",
+    isDueToday: true,
+    isDueTomorrow: false,
+    isOverdue: false,
+    overdueDays: 0,
+    daysSinceLast: null,
+  };
+
+  const split = splitChoresForHomeByProgress(
+    [dueTodayChore],
+    {
+      "2026-02-15": {},
+    },
+    now,
+  );
+
+  assert.equal(split.todayChores.length, 0);
+});
+
+test("splitChoresForHomeByProgress falls back to due only when date snapshot is absent", () => {
+  const now = new Date("2026-02-15T03:00:00.000Z");
+  const dueTodayChore = {
+    id: "today",
+    title: "today",
+    icon: "",
+    iconColor: "",
+    bgColor: "",
+    intervalDays: 1,
+    dailyTargetCount: 1,
+    defaultAssigneeId: null,
+    defaultAssigneeName: null,
+    archived: false,
+    lastPerformedAt: null,
+    lastPerformerName: null,
+    lastPerformerId: null,
+    lastRecordId: null,
+    lastRecordIsInitial: false,
+    lastRecordSkipped: false,
+    dueAt: "2026-02-15T15:00:00.000Z",
+    isDueToday: true,
+    isDueTomorrow: false,
+    isOverdue: false,
+    overdueDays: 0,
+    daysSinceLast: null,
+  };
+
+  const split = splitChoresForHomeByProgress([dueTodayChore], {}, now);
+
+  assert.equal(split.todayChores.length, 1);
+  assert.equal(split.todayChores[0]?.id, "today");
+});
+
 test("getStatsRange validates custom range and returns end-of-day", () => {
   const now = new Date("2026-02-15T00:00:00.000Z");
   assert.equal(getStatsRange("custom", now), null);
