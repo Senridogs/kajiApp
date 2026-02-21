@@ -101,7 +101,6 @@ export async function POST(request: Request) {
     });
     if (!record) return badRequest("対象の記録が見つかりません。", 404);
 
-    const sourceRecordDateKey = toJstDateKey(startOfJstDay(new Date(record.performedAt)));
     const saved = await prisma.$transaction(async (tx) => {
       await ensureOccurrenceBackfill(tx, choreId);
       await tx.choreRecord.update({
@@ -109,14 +108,6 @@ export async function POST(request: Request) {
         data: {
           performedAt: moveDateKeepingTimeOfDay(record.performedAt, date),
           scheduledDate: date,
-        },
-      });
-      await tx.choreOccurrence.create({
-        data: {
-          choreId,
-          dateKey: sourceRecordDateKey,
-          status: OCCURRENCE_STATUS_PENDING,
-          sourceType: OCCURRENCE_SOURCE_OVERRIDE,
         },
       });
       const consumed = await tx.choreOccurrence.findFirst({
