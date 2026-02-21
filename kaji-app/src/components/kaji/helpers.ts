@@ -1,7 +1,17 @@
-import { icons, type LucideIcon } from "lucide-react";
+﻿import { icons, type LucideIcon } from "lucide-react";
 
 import { startOfJstDay } from "@/lib/time";
-import type { ChoreWithComputed } from "@/lib/types";
+import type { ChoreWithComputed, HomeProgressEntry, HomeProgressState } from "@/lib/types";
+
+type ProgressStateInput = Pick<HomeProgressEntry, "pending" | "completed" | "skipped"> | null | undefined;
+
+export function homeProgressState(input: ProgressStateInput): HomeProgressState {
+  if (!input) return "pending";
+  if (input.pending > 0) return "pending";
+  if (input.completed > 0) return "done";
+  if (input.skipped > 0) return "skipped";
+  return "pending";
+}
 
 export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -45,7 +55,12 @@ export function iconByName(name: string): LucideIcon {
   return (icons[key] as LucideIcon) ?? (icons.Sparkles as LucideIcon);
 }
 
-export function labelForDue(chore: ChoreWithComputed) {
+export function labelForDue(
+  chore: ChoreWithComputed,
+  options: { state?: HomeProgressState | null } = {},
+) {
+  const state = options.state ?? "pending";
+  if (state !== "pending") return "実施済み";
   if (chore.isOverdue) return `${chore.overdueDays}日遅れ`;
   if (chore.isDueToday) return "今日";
   if (chore.isDueTomorrow) return "明日";

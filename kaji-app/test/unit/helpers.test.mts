@@ -1,7 +1,7 @@
 ﻿import assert from "node:assert/strict";
 import test from "node:test";
 
-import { dueInDaysLabel, labelForDue, relativeLastPerformed } from "../../src/components/kaji/helpers.js";
+import { dueInDaysLabel, homeProgressState, labelForDue, relativeLastPerformed } from "../../src/components/kaji/helpers.js";
 
 test("relativeLastPerformed returns today/yesterday/NDays ago", () => {
   const now = new Date("2026-02-15T06:00:00.000Z");
@@ -53,7 +53,15 @@ test("dueInDaysLabel returns future/today/overdue labels", () => {
   assert.equal(dueInDaysLabel({ ...base, dueAt: null }, now), "\u671f\u9650\u672a\u8a2d\u5b9a");
 });
 
-test("labelForDue formats due date in JST", () => {
+test("homeProgressState resolves pending/done/skipped consistently", () => {
+  assert.equal(homeProgressState(undefined), "pending");
+  assert.equal(homeProgressState({ pending: 1, completed: 5, skipped: 10 }), "pending");
+  assert.equal(homeProgressState({ pending: 0, completed: 1, skipped: 0 }), "done");
+  assert.equal(homeProgressState({ pending: 0, completed: 0, skipped: 2 }), "skipped");
+  assert.equal(homeProgressState({ pending: 0, completed: 0, skipped: 0 }), "pending");
+});
+
+test("labelForDue uses explicit state over doneToday", () => {
   const base = {
     id: "c",
     title: "test",
@@ -71,14 +79,16 @@ test("labelForDue formats due date in JST", () => {
     lastRecordId: null,
     lastRecordIsInitial: false,
     lastRecordSkipped: false,
-    isDueToday: false,
+    isDueToday: true,
     isDueTomorrow: false,
     isOverdue: false,
     overdueDays: 0,
     daysSinceLast: null,
+    dueAt: "2026-02-14T15:30:00.000Z",
   };
 
-  const label = labelForDue({ ...base, dueAt: "2026-02-14T15:30:00.000Z" });
-  assert.match(label, /02\/15/);
+  assert.equal(labelForDue(base, { state: "done" }), "\u5b9f\u65bd\u6e08\u307f");
+  assert.equal(labelForDue({ ...base, doneToday: true }, { state: "pending" }), "\u4eca\u65e5");
+  assert.equal(labelForDue({ ...base, doneToday: true }), "\u4eca\u65e5");
+  assert.match(labelForDue({ ...base, isDueToday: false, dueAt: "2026-02-14T15:30:00.000Z" }, { state: "pending" }), /02\/15/);
 });
-
