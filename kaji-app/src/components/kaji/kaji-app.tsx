@@ -36,6 +36,7 @@ import {
   formatJpDate,
   homeProgressState,
   iconByName,
+  formatMonthDay,
   labelForDue,
   relativeLastPerformed,
   urlBase64ToUint8Array,
