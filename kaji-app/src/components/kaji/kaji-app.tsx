@@ -6093,6 +6093,9 @@ export function KajiApp() {
             : `${WEEKDAY_SHORT[new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDay()]} ${new Date(selectedDate.getTime() + 9 * 60 * 60 * 1000).getUTCDate()}`;
           const todayDateKey = toJstDateKey(startOfJstDay(new Date()));
           const isPastDate = compareDateKey(calendarBlankActionDateKey, todayDateKey) < 0;
+          const calendarBlankActionItemsByChoreId = new Map(
+            (calendarScheduleMap.get(calendarBlankActionDateKey) ?? []).map((item) => [item.chore.id, item]),
+          );
 
           return (
             <div className="space-y-4 pb-2">
@@ -6146,6 +6149,8 @@ export function KajiApp() {
                     calendarQuickRecordChores.map((chore) => {
                       const TaskIcon = iconByName(chore.icon);
                       const updating = recordUpdatingIds.includes(buildRecordMutationKey(chore.id, calendarBlankActionDateKey));
+                      const scheduleEntry = calendarBlankActionItemsByChoreId.get(chore.id);
+                      const isCompleted = scheduleEntry ? scheduleEntry.pending === 0 && scheduleEntry.completed > 0 : false;
                       return (
                         <div
                           key={`calendar-blank-record-${calendarBlankActionDateKey}-${chore.id}`}
@@ -6160,11 +6165,16 @@ export function KajiApp() {
                               type="button"
                               disabled={updating}
                               onClick={() => {
+                                if (isCompleted) {
+                                  closeCalendarBlankActionSheet();
+                                  openReschedule(chore, calendarBlankActionDateKey, true);
+                                  return;
+                                }
                                 handleCalendarBlankComplete(chore, calendarBlankActionDateKey);
                               }}
-                              className="rounded-[10px] bg-[var(--primary)] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                              className={`rounded-[10px] px-3 py-2 text-[13px] font-bold text-white disabled:opacity-60 ${isCompleted ? "bg-[var(--app-text-tertiary)]" : "bg-[var(--primary)]"}`}
                             >
-                              完了にする
+                              {isCompleted ? "完了を取り下げる" : "完了にする"}
                             </button>
                             <button
                               type="button"
