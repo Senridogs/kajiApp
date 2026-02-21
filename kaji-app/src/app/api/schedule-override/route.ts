@@ -176,11 +176,45 @@ export async function POST(request: Request) {
         },
       });
     } else {
-      const sourceOccurrences = await tx.choreOccurrence.findMany({
+      let sourceOccurrences = await tx.choreOccurrence.findMany({
         where: { choreId, dateKey: sourceDate, status: OCCURRENCE_STATUS_PENDING },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: { id: true },
       });
+
+      if (sourceOccurrences.length === 0) {
+        const hasPendingOccurrence = await tx.choreOccurrence.findFirst({
+          where: { choreId, status: OCCURRENCE_STATUS_PENDING },
+          select: { id: true },
+        });
+
+        if (!hasPendingOccurrence) {
+          const generatedDateKeys = buildRecurrenceDateKeys({
+            dueDateKey,
+            intervalDays: chore.intervalDays,
+            dailyTargetCount: chore.dailyTargetCount,
+            fromDateKey: window.fromDateKey,
+            toDateKey: window.toDateKey,
+          });
+          if (generatedDateKeys.length > 0) {
+            await tx.choreOccurrence.createMany({
+              data: generatedDateKeys.map((dateKey) => ({
+                choreId,
+                dateKey,
+                status: OCCURRENCE_STATUS_PENDING,
+                sourceType: OCCURRENCE_SOURCE_GENERATOR,
+              })),
+            });
+          }
+        }
+
+        sourceOccurrences = await tx.choreOccurrence.findMany({
+          where: { choreId, dateKey: sourceDate, status: OCCURRENCE_STATUS_PENDING },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          select: { id: true },
+        });
+      }
+
       if (sourceOccurrences.length === 0) {
         return [];
       }
