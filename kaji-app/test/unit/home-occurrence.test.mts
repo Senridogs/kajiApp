@@ -47,7 +47,8 @@ test("buildHomeRowsByDate keeps row pending while some occurrences remain", () =
     homeProgressByDate: {
       [dateKey]: {
         a: {
-          total: 5,
+          scheduledTotal: 5,
+          pendingTotal: 2,
           completed: 2,
           skipped: 1,
           pending: 2,
@@ -59,7 +60,7 @@ test("buildHomeRowsByDate keeps row pending while some occurrences remain", () =
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].state, "pending");
-  assert.equal(rows[0].total, 5);
+  assert.equal(rows[0].scheduledTotal, 5);
   assert.equal(rows[0].completed, 2);
   assert.equal(rows[0].skipped, 1);
   assert.equal(rows[0].pending, 2);
@@ -84,7 +85,8 @@ test("buildHomeRowsByDate keeps dailyTargetCount=2 chore pending after first com
     homeProgressByDate: {
       [dateKey]: {
         twice: {
-          total: 2,
+          scheduledTotal: 2,
+          pendingTotal: 1,
           completed: 1,
           skipped: 0,
           pending: 1,
@@ -97,7 +99,7 @@ test("buildHomeRowsByDate keeps dailyTargetCount=2 chore pending after first com
   assert.equal(rows.length, 1);
   assert.equal(rows[0].state, "pending");
   assert.equal(rows[0].completed, 1);
-  assert.equal(rows[0].total, 2);
+  assert.equal(rows[0].scheduledTotal, 2);
   assert.equal(rows[0].pending, 1);
   assert.equal(rows[0].chore.doneToday, false);
   assert.equal(rows[0].chore.lastRecordSkipped, false);
@@ -112,7 +114,8 @@ test("buildHomeRowsByDate prioritizes done when done/skip mixed and pending=0", 
     homeProgressByDate: {
       [dateKey]: {
         a: {
-          total: 3,
+          scheduledTotal: 3,
+          pendingTotal: 0,
           completed: 1,
           skipped: 2,
           pending: 0,
@@ -151,7 +154,7 @@ test("buildHomeRowsByDate keeps fallback behind feature flag", () => {
 
     assert.equal(rows.length, 1);
     assert.equal(rows[0].state, "pending");
-    assert.equal(rows[0].total, 3);
+    assert.equal(rows[0].scheduledTotal, 3);
     assert.equal(rows[0].pending, 3);
   } finally {
     if (original === undefined) {
@@ -195,7 +198,8 @@ test("buildHomeProgressByDate keeps total fixed when duplicate pending is consum
     ],
   });
   assert.deepEqual(progressAfterFirstDone[dateKey]?.dup, {
-    total: 4,
+    scheduledTotal: 4,
+    pendingTotal: 3,
     completed: 1,
     skipped: 0,
     pending: 3,
@@ -232,7 +236,8 @@ test("buildHomeProgressByDate keeps total fixed when duplicate pending is consum
     ],
   });
   assert.deepEqual(progressAfterSecondDone[dateKey]?.dup, {
-    total: 4,
+    scheduledTotal: 4,
+    pendingTotal: 2,
     completed: 2,
     skipped: 0,
     pending: 2,
@@ -280,12 +285,128 @@ test("buildHomeProgressByDate keeps denominator fixed for mixed done/skip", () =
   });
 
   assert.deepEqual(progress[dateKey]?.mix, {
-    total: 4,
+    scheduledTotal: 4,
+    pendingTotal: 2,
     completed: 1,
     skipped: 1,
     pending: 2,
     latestState: "pending",
   });
+});
+
+
+test("buildHomeProgressByDate keeps 1/3→2/3→3/3 semantics without override", () => {
+  const dateKey = "2026-02-24";
+  const chore = makeChore({
+    id: "triple",
+    dueAt: "2026-02-24T00:00:00.000Z",
+    intervalDays: 1,
+    dailyTargetCount: 3,
+  });
+
+  const oneDone = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [dateKey],
+    scheduleOverridesByChore: new Map(),
+    records: [
+      { choreId: "triple", scheduledDate: dateKey, performedAt: "2026-02-24T01:00:00.000Z", isSkipped: false },
+    ],
+  })[dateKey]?.triple;
+  assert.equal(oneDone?.completed, 1);
+  assert.equal(oneDone?.scheduledTotal, 3);
+  assert.equal(oneDone?.pending, 2);
+  assert.equal(oneDone?.latestState, "pending");
+
+  const twoDone = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [dateKey],
+    scheduleOverridesByChore: new Map(),
+    records: [
+      { choreId: "triple", scheduledDate: dateKey, performedAt: "2026-02-24T01:00:00.000Z", isSkipped: false },
+      { choreId: "triple", scheduledDate: dateKey, performedAt: "2026-02-24T02:00:00.000Z", isSkipped: false },
+    ],
+  })[dateKey]?.triple;
+  assert.equal(twoDone?.completed, 2);
+  assert.equal(twoDone?.scheduledTotal, 3);
+  assert.equal(twoDone?.pending, 1);
+  assert.equal(twoDone?.latestState, "pending");
+
+  const threeDone = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [dateKey],
+    scheduleOverridesByChore: new Map(),
+    records: [
+      { choreId: "triple", scheduledDate: dateKey, performedAt: "2026-02-24T01:00:00.000Z", isSkipped: false },
+      { choreId: "triple", scheduledDate: dateKey, performedAt: "2026-02-24T02:00:00.000Z", isSkipped: false },
+      { choreId: "triple", scheduledDate: dateKey, performedAt: "2026-02-24T03:00:00.000Z", isSkipped: false },
+    ],
+  })[dateKey]?.triple;
+  assert.equal(threeDone?.completed, 3);
+  assert.equal(threeDone?.scheduledTotal, 3);
+  assert.equal(threeDone?.pending, 0);
+  assert.equal(threeDone?.latestState, "done");
+});
+
+test("buildHomeProgressByDate keeps 1/3→2/3→3/3 semantics with override", () => {
+  const dateKey = "2026-02-25";
+  const chore = makeChore({
+    id: "triple-override",
+    dueAt: "2026-02-25T00:00:00.000Z",
+    intervalDays: 1,
+    dailyTargetCount: 3,
+  });
+
+  const overrides = (count: number) => new Map<string, ChoreScheduleOverride[]>([[
+    "triple-override",
+    Array.from({ length: count }, (_, idx) => ({
+      id: `ov-${count}-${idx}`,
+      choreId: "triple-override",
+      date: dateKey,
+      createdAt: "2026-02-25T00:00:00.000Z",
+    })),
+  ]]);
+
+  const oneDone = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [dateKey],
+    scheduleOverridesByChore: overrides(2),
+    records: [
+      { choreId: "triple-override", scheduledDate: dateKey, performedAt: "2026-02-25T01:00:00.000Z", isSkipped: false },
+    ],
+  })[dateKey]?.["triple-override"];
+  assert.equal(oneDone?.completed, 1);
+  assert.equal(oneDone?.scheduledTotal, 3);
+  assert.equal(oneDone?.pending, 2);
+  assert.equal(oneDone?.latestState, "pending");
+
+  const twoDone = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [dateKey],
+    scheduleOverridesByChore: overrides(1),
+    records: [
+      { choreId: "triple-override", scheduledDate: dateKey, performedAt: "2026-02-25T01:00:00.000Z", isSkipped: false },
+      { choreId: "triple-override", scheduledDate: dateKey, performedAt: "2026-02-25T02:00:00.000Z", isSkipped: false },
+    ],
+  })[dateKey]?.["triple-override"];
+  assert.equal(twoDone?.completed, 2);
+  assert.equal(twoDone?.scheduledTotal, 3);
+  assert.equal(twoDone?.pending, 1);
+  assert.equal(twoDone?.latestState, "pending");
+
+  const threeDone = buildHomeProgressByDate({
+    chores: [chore],
+    dateKeys: [dateKey],
+    scheduleOverridesByChore: overrides(0),
+    records: [
+      { choreId: "triple-override", scheduledDate: dateKey, performedAt: "2026-02-25T01:00:00.000Z", isSkipped: false },
+      { choreId: "triple-override", scheduledDate: dateKey, performedAt: "2026-02-25T02:00:00.000Z", isSkipped: false },
+      { choreId: "triple-override", scheduledDate: dateKey, performedAt: "2026-02-25T03:00:00.000Z", isSkipped: false },
+    ],
+  })[dateKey]?.["triple-override"];
+  assert.equal(threeDone?.completed, 3);
+  assert.equal(threeDone?.scheduledTotal, 3);
+  assert.equal(threeDone?.pending, 0);
+  assert.equal(threeDone?.latestState, "done");
 });
 
 
@@ -306,7 +427,7 @@ test("shared fixture count matches calendar summary expectations", () => {
   const picked = Object.fromEntries(
     OCCURRENCE_TEST_DATE_KEYS.map((dateKey) => [
       dateKey,
-      Object.values(progress[dateKey] ?? {}).reduce((sum, entry) => sum + entry.total, 0),
+      Object.values(progress[dateKey] ?? {}).reduce((sum, entry) => sum + entry.scheduledTotal, 0),
     ]),
   );
 
