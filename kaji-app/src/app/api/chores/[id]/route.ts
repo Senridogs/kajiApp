@@ -72,10 +72,10 @@ export async function GET(request: Request, { params }: RouteParams) {
   if (!chore) return badRequest("Chore not found.", 404);
 
   const computed = computeChore(chore);
-  const scheduleOverrides = await prisma.choreScheduleOverride.findMany({
-    where: { choreId: id },
-    orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-    select: { id: true, choreId: true, date: true, createdAt: true },
+  const scheduleOverrides = await prisma.choreOccurrence.findMany({
+    where: { choreId: id, status: "pending" },
+    orderBy: [{ dateKey: "asc" }, { createdAt: "asc" }],
+    select: { id: true, choreId: true, dateKey: true, createdAt: true },
   });
 
   let homeProgressEntry = null;
@@ -111,7 +111,7 @@ export async function GET(request: Request, { params }: RouteParams) {
           scheduleOverrides.map((override) => ({
             id: override.id,
             choreId: override.choreId,
-            date: override.date,
+            date: override.dateKey,
             createdAt: override.createdAt.toISOString(),
           })),
         ],
@@ -127,7 +127,7 @@ export async function GET(request: Request, { params }: RouteParams) {
     scheduleOverrides: scheduleOverrides.map((override) => ({
       id: override.id,
       choreId: override.choreId,
-      date: override.date,
+      date: override.dateKey,
       createdAt: override.createdAt.toISOString(),
     })),
     homeProgressEntry,

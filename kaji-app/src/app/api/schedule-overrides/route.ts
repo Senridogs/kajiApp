@@ -14,29 +14,12 @@ export async function GET() {
     select: { id: true, choreId: true, dateKey: true, createdAt: true },
   });
 
-  if (occurrences.length > 0) {
-    return Response.json({
-      overrides: occurrences.map((occurrence) => ({
-        id: occurrence.id,
-        choreId: occurrence.choreId,
-        date: occurrence.dateKey,
-        createdAt: occurrence.createdAt.toISOString(),
-      })),
-    });
-  }
-
-  const overrides = await prisma.choreScheduleOverride.findMany({
-    where: { chore: { householdId: session.householdId, archived: false } },
-    orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-    select: { id: true, choreId: true, date: true, createdAt: true },
-  });
-
   return Response.json({
-    overrides: overrides.map((override) => ({
-      id: override.id,
-      choreId: override.choreId,
-      date: override.date,
-      createdAt: override.createdAt.toISOString(),
+    overrides: occurrences.map((occurrence) => ({
+      id: occurrence.id,
+      choreId: occurrence.choreId,
+      date: occurrence.dateKey,
+      createdAt: occurrence.createdAt.toISOString(),
     })),
   });
 }

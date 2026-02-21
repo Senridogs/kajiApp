@@ -102,18 +102,6 @@ export async function GET() {
       list.push({ id: override.id, choreId: override.choreId, date: override.dateKey, createdAt: override.createdAt });
       scheduleOverridesByChore.set(override.choreId, list);
     }
-    if (scheduleOverridesByChore.size === 0) {
-      const legacyOverrides = await prisma.choreScheduleOverride.findMany({
-        where: { chore: { householdId: household.id, archived: false } },
-        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-        select: { id: true, choreId: true, date: true, createdAt: true },
-      });
-      for (const override of legacyOverrides) {
-        const list = scheduleOverridesByChore.get(override.choreId) ?? [];
-        list.push({ id: override.id, choreId: override.choreId, date: override.date, createdAt: override.createdAt });
-        scheduleOverridesByChore.set(override.choreId, list);
-      }
-    }
     const choreIds = computed.map((chore) => chore.id);
     const homeProgressRecords =
       choreIds.length > 0

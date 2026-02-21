@@ -70,20 +70,27 @@ export function splitChoresForHomeByProgress(
   homeProgressByDate: Record<string, Record<string, Pick<HomeProgressEntry, "completed" | "pending" | "skipped">>>,
   now = new Date(),
 ) {
-  const { today: todayDateKey } = buildHomeDateKeys(now);
-  const progressByChore = homeProgressByDate[todayDateKey] ?? {};
-  const hasAnyTodayOccurrence = (choreId: string) => {
+  const { today: todayDateKey, tomorrow: tomorrowDateKey } = buildHomeDateKeys(now);
+  const todayProgressByChore = homeProgressByDate[todayDateKey] ?? {};
+  const tomorrowProgressByChore = homeProgressByDate[tomorrowDateKey] ?? {};
+  const hasProgressSnapshotForDate = (dateKey: string) => Object.prototype.hasOwnProperty.call(homeProgressByDate, dateKey);
+  const hasAnyOccurrence = (
+    progressByChore: Record<string, Pick<HomeProgressEntry, "completed" | "pending" | "skipped">>,
+    choreId: string,
+  ) => {
     const entry = progressByChore[choreId];
     if (!entry) return false;
     return (entry.pending ?? 0) > 0 || (entry.completed ?? 0) > 0 || (entry.skipped ?? 0) > 0;
   };
-  const hasCompletionToday = (choreId: string) => (progressByChore[choreId]?.completed ?? 0) > 0;
+
+  const hasTodayProgress = hasProgressSnapshotForDate(todayDateKey);
+  const hasTomorrowProgress = hasProgressSnapshotForDate(tomorrowDateKey);
+
   const todayChores = chores.filter(
-    (c) => c.isDueToday || c.isOverdue || hasAnyTodayOccurrence(c.id),
+    (c) => (hasTodayProgress ? hasAnyOccurrence(todayProgressByChore, c.id) : (c.isDueToday || c.isOverdue)),
   );
   const tomorrowChores = chores.filter(
-    (c) =>
-      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || hasCompletionToday(c.id))),
+    (c) => (hasTomorrowProgress ? hasAnyOccurrence(tomorrowProgressByChore, c.id) : c.isDueTomorrow),
   );
   return { todayChores, tomorrowChores };
 }

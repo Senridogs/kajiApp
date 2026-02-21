@@ -9,26 +9,25 @@ function read(relativePath: string) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
 }
 
-test("重複追加: addモードの重複登録は統一した409コード/メッセージを返す", () => {
+test("重複追加: addモード重複時は409でエラーを返す", () => {
   const route = read("src/app/api/schedule-override/route.ts");
 
   assert.match(route, /mode === "add"/);
-  assert.match(route, /scheduledCount > 0/);
-  assert.match(route, /duplicateScheduleConflictResponse\(\)/);
-  assert.match(route, /SCHEDULE_OVERRIDE_DUPLICATE/);
-  assert.match(route, /その日には同じ家事がすでに登録されています。/);
+  assert.match(route, /scheduledCount > 0 && !allowDuplicate/);
+  assert.match(route, /DUPLICATE_SCHEDULE_MESSAGE/);
+  assert.match(route, /return badRequest\(DUPLICATE_SCHEDULE_MESSAGE, 409\)/);
 });
 
-test("重複禁止: Prisma schemaで choreId\+date の一意制約を持つ", () => {
-  const schema = read("prisma/schema.prisma");
-
-  assert.match(schema, /model ChoreScheduleOverride[\s\S]*@@unique\(\[choreId, date\]\)/);
-});
-
-test("並行追加: DBの一意制約衝突\(P2002\)でも統一した409コード/メッセージを返す", () => {
+test("移動: sourceRecordId 指定時は元日へ pending を再生成しない", () => {
   const route = read("src/app/api/schedule-override/route.ts");
 
-  assert.match(route, /isDuplicateScheduleOverrideError/);
-  assert.match(route, /error\.code !== "P2002"/);
-  assert.match(route, /if \(isDuplicateScheduleOverrideError\(error\)\) \{\s*return duplicateScheduleConflictResponse\(\);\s*\}/);
+  assert.match(route, /if \(sourceRecordId\)/);
+  assert.doesNotMatch(route, /dateKey: sourceRecordDateKey/);
+});
+
+test("override 読み取りAPIは legacy table にフォールバックしない", () => {
+  const route = read("src/app/api/schedule-overrides/route.ts");
+
+  assert.match(route, /prisma\.choreOccurrence\.findMany/);
+  assert.doesNotMatch(route, /choreScheduleOverride/);
 });
