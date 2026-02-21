@@ -1,4 +1,4 @@
-import { icons, type LucideIcon } from "lucide-react";
+﻿import { icons, type LucideIcon } from "lucide-react";
 
 import { startOfJstDay } from "@/lib/time";
 import type { ChoreWithComputed, HomeProgressEntry, HomeProgressState } from "@/lib/types";
@@ -59,7 +59,7 @@ export function labelForDue(
   chore: ChoreWithComputed,
   options: { state?: HomeProgressState | null } = {},
 ) {
-  const state = options.state ?? (chore.doneToday ? "done" : "pending");
+  const state = options.state ?? "pending";
   if (state !== "pending") return "実施済み";
   if (chore.isOverdue) return `${chore.overdueDays}日遅れ`;
   if (chore.isDueToday) return "今日";

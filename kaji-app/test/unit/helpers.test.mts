@@ -91,5 +91,6 @@ test("labelForDue uses explicit state over doneToday", () => {
 
   assert.equal(labelForDue(base, { state: "done" }), "\u5b9f\u65bd\u6e08\u307f");
   assert.equal(labelForDue({ ...base, doneToday: true }, { state: "pending" }), "\u4eca\u65e5");
+  assert.equal(labelForDue({ ...base, doneToday: true }), "\u4eca\u65e5");
   assert.match(labelForDue({ ...base, isDueToday: false, dueAt: "2026-02-14T15:30:00.000Z" }, { state: "pending" }), /02\/15/);
 });
