@@ -46,6 +46,7 @@ export type ChoreWithComputed = {
   isOverdue: boolean;
   overdueDays: number;
   daysSinceLast: number | null;
+  // 表示の一次判定には使わない互換フラグ（ホーム画面は homeProgressByDate 由来の state を優先する）。
   doneToday: boolean;
 };
 

@@ -385,6 +385,14 @@ function formatDateKeyMonthDayWeekday(dateKey: string) {
   return `${month}/${day}(${weekday})`;
 }
 
+/**
+ * Home 描画経路では chore.doneToday を一次判定に使わない。
+ * Lint 指針: no-restricted-properties で `chore.doneToday` を禁止し、
+ * 判定は必ず homeProgressByDate / HomeRowProjection.state を参照すること。
+ * 移行フェーズ（期限: 2026-03-31）:
+ * - ホーム画面: state 優先（本ファイルで実施）
+ * - 他画面: doneToday の暫定互換を許容しつつ段階移行
+ */
 function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
   const todayStart = startOfJstDay(new Date());
   const tomorrowStart = addDays(todayStart, 1);
@@ -1015,8 +1023,13 @@ export function KajiApp() {
   const todayMissionCompletedForBanner = useMemo(() => {
     if (!boot || boot.needsRegistration) return false;
     if (!boot.todayChores || boot.todayChores.length === 0) return false;
-    return boot.todayChores.every((chore) => chore.doneToday);
-  }, [boot]);
+    const todayProgressByChore = boot.homeProgressByDate?.[homeDateKeys.today] ?? {};
+    return boot.todayChores.every((chore) => {
+      const entry = todayProgressByChore[chore.id];
+      if (!entry) return false;
+      return entry.pending === 0;
+    });
+  }, [boot, homeDateKeys.today]);
 
   const showTaskBanner = useCallback((message: string, tone: "green" | "blue" = "green") => {
     setTaskBanner({ message, tone });
@@ -2822,7 +2835,9 @@ export function KajiApp() {
         loadCalendarMonthSummary(calendarMonthKeyRef.current),
       ]);
 
-      if (!chore.doneToday && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
+      const wasPendingBeforeMutation =
+        (previousHomeProgressEntry?.pending ?? countScheduledOccurrencesOnDate(targetId, dateKey)) > 0;
+      if (wasPendingBeforeMutation && completedTomorrowTask && performedAtDateKey === toJstDateKey(todayStart)) {
         showTaskBanner("明日のものをやってえらい！", "blue");
       }
 
