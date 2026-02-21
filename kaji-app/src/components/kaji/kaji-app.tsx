@@ -386,10 +386,19 @@ function formatDateKeyMonthDayWeekday(dateKey: string) {
 }
 
 function splitComputedChoresForHome(chores: ChoreWithComputed[]) {
-  const todayChores = chores.filter((c) => c.isDueToday || c.isOverdue || c.doneToday);
+  const todayStart = startOfJstDay(new Date());
+  const tomorrowStart = addDays(todayStart, 1);
+  const wasPerformedToday = (chore: ChoreWithComputed) => {
+    if (!chore.lastPerformedAt || chore.lastRecordIsInitial) return false;
+    const performedAt = new Date(chore.lastPerformedAt);
+    if (Number.isNaN(performedAt.getTime())) return false;
+    return performedAt >= todayStart && performedAt < tomorrowStart;
+  };
+
+  const todayChores = chores.filter((c) => c.isDueToday || c.isOverdue || wasPerformedToday(c));
   const tomorrowChores = chores.filter(
     (c) =>
-      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || c.doneToday)),
+      c.isDueTomorrow || (c.intervalDays === 1 && (c.isDueToday || c.isOverdue || wasPerformedToday(c))),
   );
   return { todayChores, tomorrowChores };
 }
@@ -2731,12 +2740,19 @@ export function KajiApp() {
 
     if (sessionUser) {
       let optimisticChore: ChoreWithComputed | null = null;
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, dateKey);
+      const currentProgress = boot?.homeProgressByDate?.[dateKey]?.[targetId] ?? null;
+      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseCompleted = currentProgress?.completed ?? 0;
+      const baseSkipped = currentProgress?.skipped ?? 0;
+      const nextCompleted = Math.min(baseTotal, baseCompleted + 1);
+      const nextPending = Math.max(0, baseTotal - nextCompleted - baseSkipped);
       updateBootChoreOptimistically(targetId, (current) => {
         const nextDueAt = addDays(performedAt, current.intervalDays);
         const nextDueAtTime = nextDueAt.getTime();
         optimisticChore = {
           ...current,
-          doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
+          doneToday: nextPending === 0,
           lastPerformedAt: performedAtIso,
           lastPerformerName: sessionUser.name,
           lastPerformerId: sessionUser.id,
@@ -2755,13 +2771,6 @@ export function KajiApp() {
         };
         return optimisticChore;
       });
-      const scheduledCount = countScheduledOccurrencesOnDate(targetId, dateKey);
-      const currentProgress = boot?.homeProgressByDate?.[dateKey]?.[targetId] ?? null;
-      const baseTotal = currentProgress?.total ?? scheduledCount;
-      const baseCompleted = currentProgress?.completed ?? 0;
-      const baseSkipped = currentProgress?.skipped ?? 0;
-      const nextCompleted = Math.min(baseTotal, baseCompleted + 1);
-      const nextPending = Math.max(0, baseTotal - nextCompleted - baseSkipped);
       if (optimisticChore) {
         patchBootForRecordMutation(targetId, dateKey, {
           chore: optimisticChore,
@@ -2973,12 +2982,23 @@ export function KajiApp() {
 
     if (sessionUser) {
       let optimisticChore: ChoreWithComputed | null = null;
+      const scheduledCount = countScheduledOccurrencesOnDate(targetId, mutationDateKey);
+      const currentProgress = boot?.homeProgressByDate?.[mutationDateKey]?.[targetId] ?? null;
+      const baseTotal = currentProgress?.total ?? scheduledCount;
+      const baseCompleted = currentProgress?.completed ?? 0;
+      const baseSkipped = currentProgress?.skipped ?? 0;
+      const consume = skipped
+        ? Math.max(1, Math.min(skipCount ?? 1, skipCountMax))
+        : Math.max(1, Math.min(completeCount ?? 1, completeCountMax));
+      const nextCompleted = skipped ? baseCompleted : Math.min(baseTotal, baseCompleted + consume);
+      const nextSkipped = skipped ? Math.min(baseTotal, baseSkipped + consume) : baseSkipped;
+      const nextPending = Math.max(0, baseTotal - nextCompleted - nextSkipped);
       updateBootChoreOptimistically(targetId, (chore) => {
         const nextDueAt = addDays(performedAt, chore.intervalDays);
         const nextDueAtTime = nextDueAt.getTime();
         optimisticChore = {
           ...chore,
-          doneToday: performedAt >= todayStart && performedAt < tomorrowStart,
+          doneToday: nextPending === 0,
           lastPerformedAt: performedAtIso,
           lastPerformerName: skipped ? "スキップ" : sessionUser.name,
           lastPerformerId: sessionUser.id,
@@ -2999,17 +3019,6 @@ export function KajiApp() {
         };
         return optimisticChore;
       });
-      const scheduledCount = countScheduledOccurrencesOnDate(targetId, mutationDateKey);
-      const currentProgress = boot?.homeProgressByDate?.[mutationDateKey]?.[targetId] ?? null;
-      const baseTotal = currentProgress?.total ?? scheduledCount;
-      const baseCompleted = currentProgress?.completed ?? 0;
-      const baseSkipped = currentProgress?.skipped ?? 0;
-      const consume = skipped
-        ? Math.max(1, Math.min(skipCount ?? 1, skipCountMax))
-        : Math.max(1, Math.min(completeCount ?? 1, completeCountMax));
-      const nextCompleted = skipped ? baseCompleted : Math.min(baseTotal, baseCompleted + consume);
-      const nextSkipped = skipped ? Math.min(baseTotal, baseSkipped + consume) : baseSkipped;
-      const nextPending = Math.max(0, baseTotal - nextCompleted - nextSkipped);
       if (optimisticChore) {
         patchBootForRecordMutation(targetId, mutationDateKey, {
           chore: optimisticChore,
@@ -4698,6 +4707,7 @@ export function KajiApp() {
                             >
                               <HomeTaskRow
                                 chore={displayChore}
+                                state={row.state}
                                 onRecord={(target) => openMemo(target, sectionDateKey)}
                                 onUndo={requestUndoRecord}
                                 progressLabel={progressLabel}
