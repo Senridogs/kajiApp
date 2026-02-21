@@ -41,8 +41,7 @@ test("computeChore handles skipped status correctly", () => {
 
     assert.equal(computed.lastRecordSkipped, true);
     assert.equal(computed.lastPerformerName, "\u30b9\u30ad\u30c3\u30d7");
-    assert.equal(computed.doneToday, true);
-    assert.equal(computed.isDueToday, false);
+      assert.equal(computed.isDueToday, false);
     assert.equal(computed.isDueTomorrow, true);
     assert.equal(computed.isOverdue, false);
 });

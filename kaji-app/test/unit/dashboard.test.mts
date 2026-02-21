@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { computeChore, getStatsRange, splitChoresForHome, splitChoresForHomeByProgress } from "../../src/lib/dashboard.js";
 
-test("computeChore marks due today and doneToday correctly", () => {
+test("computeChore marks due today flags correctly", () => {
   const now = new Date("2026-02-15T03:00:00.000Z"); // JST: 12:00
   const performedAt = new Date("2026-02-14T15:30:00.000Z"); // JST: 02/15 00:30
 
@@ -38,7 +38,6 @@ test("computeChore marks due today and doneToday correctly", () => {
   };
 
   const computed = computeChore(chore, now);
-  assert.equal(computed.doneToday, true);
   assert.equal(computed.isDueToday, false);
   assert.equal(computed.isDueTomorrow, true);
   assert.equal(computed.isOverdue, false);
@@ -81,7 +80,6 @@ test("computeChore keeps initial record as not-done and flags lastRecordIsInitia
 
   const computed = computeChore(chore, now);
   assert.equal(computed.lastRecordIsInitial, true);
-  assert.equal(computed.doneToday, false);
   assert.equal(computed.isDueToday, false);
   assert.equal(computed.isDueTomorrow, true);
 });
@@ -160,7 +158,6 @@ test("computeChore ignores future completion records and treats them as pending"
   };
 
   const computed = computeChore(chore, now);
-  assert.equal(computed.doneToday, false);
   assert.equal(computed.lastPerformedAt, null);
   assert.equal(computed.lastRecordId, null);
   assert.equal(computed.isDueToday, true);
@@ -193,8 +190,7 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
       isOverdue: false,
       overdueDays: 0,
       daysSinceLast: null,
-      doneToday: false,
-    },
+      },
     {
       id: "tomorrow",
       title: "tomorrow",
@@ -218,8 +214,7 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
       isOverdue: false,
       overdueDays: 0,
       daysSinceLast: null,
-      doneToday: false,
-    },
+      },
   ];
 
   const split = splitChoresForHome(chores, now);
@@ -227,9 +222,9 @@ test("splitChoresForHome returns today/tomorrow and drops big section grouping",
   assert.equal(split.tomorrowChores.length, 2);
 });
 
-test("splitChoresForHome no longer uses doneToday fallback without progress", () => {
+test("splitChoresForHome no longer uses completion fallback without progress", () => {
   const now = new Date("2026-02-15T03:00:00.000Z");
-  const doneTodayAndDueTomorrow = {
+  const dueTomorrowChore = {
     id: "done",
     title: "done",
     icon: "",
@@ -252,10 +247,9 @@ test("splitChoresForHome no longer uses doneToday fallback without progress", ()
     isOverdue: false,
     overdueDays: 0,
     daysSinceLast: 0,
-    doneToday: true,
   };
 
-  const split = splitChoresForHome([doneTodayAndDueTomorrow], now);
+  const split = splitChoresForHome([dueTomorrowChore], now);
   assert.equal(split.todayChores.length, 0);
   assert.equal(split.tomorrowChores.length, 1);
   assert.equal(split.tomorrowChores[0]?.id, "done");
@@ -263,7 +257,7 @@ test("splitChoresForHome no longer uses doneToday fallback without progress", ()
 
 test("splitChoresForHomeByProgress keeps completed daily chore in both today and tomorrow", () => {
   const now = new Date("2026-02-15T03:00:00.000Z");
-  const doneTodayAndDueTomorrow = {
+  const dueTomorrowChore = {
     id: "done",
     title: "done",
     icon: "",
@@ -286,11 +280,10 @@ test("splitChoresForHomeByProgress keeps completed daily chore in both today and
     isOverdue: false,
     overdueDays: 0,
     daysSinceLast: 0,
-    doneToday: false,
   };
 
   const split = splitChoresForHomeByProgress(
-    [doneTodayAndDueTomorrow],
+    [dueTomorrowChore],
     {
       "2026-02-15": {
         done: { completed: 1, pending: 0, skipped: 0 },

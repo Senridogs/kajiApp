@@ -36,7 +36,6 @@ test("dueInDaysLabel returns future/today/overdue labels", () => {
     isOverdue: false,
     overdueDays: 0,
     daysSinceLast: null,
-    doneToday: false,
   };
 
   assert.equal(
@@ -77,7 +76,6 @@ test("labelForDue formats due date in JST", () => {
     isOverdue: false,
     overdueDays: 0,
     daysSinceLast: null,
-    doneToday: false,
   };
 
   const label = labelForDue({ ...base, dueAt: "2026-02-14T15:30:00.000Z" });

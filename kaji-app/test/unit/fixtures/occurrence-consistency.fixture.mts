@@ -50,7 +50,6 @@ export const homeFixtureChores: ChoreWithComputed[] = [
     isOverdue: false,
     overdueDays: 0,
     daysSinceLast: 0,
-    doneToday: false,
   },
   {
     id: "c2",
@@ -75,7 +74,6 @@ export const homeFixtureChores: ChoreWithComputed[] = [
     isOverdue: false,
     overdueDays: 0,
     daysSinceLast: 0,
-    doneToday: false,
   },
 ];
 

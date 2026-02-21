@@ -33,7 +33,6 @@ function makeChore(overrides: Partial<ChoreWithComputed> = {}): ChoreWithCompute
     isOverdue: overrides.isOverdue ?? false,
     overdueDays: overrides.overdueDays ?? 0,
     daysSinceLast: overrides.daysSinceLast ?? 0,
-    doneToday: overrides.doneToday ?? false,
   };
 }
 
@@ -64,7 +63,6 @@ test("buildHomeRowsByDate keeps row pending while some occurrences remain", () =
   assert.equal(rows[0].completed, 2);
   assert.equal(rows[0].skipped, 1);
   assert.equal(rows[0].pending, 2);
-  assert.equal(rows[0].chore.doneToday, false);
   assert.equal(countDoneHomeOccurrences(rows), 3);
   assert.equal(countTotalHomeOccurrences(rows), 5);
 });
@@ -74,7 +72,6 @@ test("buildHomeRowsByDate keeps dailyTargetCount=2 chore pending after first com
   const chore = makeChore({
     id: "twice",
     dailyTargetCount: 2,
-    doneToday: true,
     lastRecordSkipped: false,
   });
 
@@ -101,9 +98,42 @@ test("buildHomeRowsByDate keeps dailyTargetCount=2 chore pending after first com
   assert.equal(rows[0].completed, 1);
   assert.equal(rows[0].scheduledTotal, 2);
   assert.equal(rows[0].pending, 1);
-  assert.equal(rows[0].chore.doneToday, false);
   assert.equal(rows[0].chore.lastRecordSkipped, false);
 });
+
+test("buildHomeRowsByDate keeps state pending when 1 of 3 occurrences is done", () => {
+  const dateKey = "2026-02-23";
+  const chore = makeChore({
+    id: "one-of-three",
+    dailyTargetCount: 3,
+    lastRecordSkipped: false,
+  });
+
+  const rows = buildHomeRowsByDate({
+    chores: [chore],
+    dateKey,
+    scheduleOverridesByChore: new Map<string, ChoreScheduleOverride[]>(),
+    homeProgressByDate: {
+      [dateKey]: {
+        "one-of-three": {
+          scheduledTotal: 3,
+          pendingTotal: 2,
+          completed: 1,
+          skipped: 0,
+          pending: 2,
+          latestState: "done",
+        },
+      },
+    },
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].state, "pending");
+  assert.equal(rows[0].completed, 1);
+  assert.equal(rows[0].pending, 2);
+  assert.equal(rows[0].scheduledTotal, 3);
+});
+
 test("buildHomeRowsByDate prioritizes done when done/skip mixed and pending=0", () => {
   const dateKey = "2026-02-20";
   const chore = makeChore({ id: "a" });
@@ -127,7 +157,6 @@ test("buildHomeRowsByDate prioritizes done when done/skip mixed and pending=0", 
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].state, "done");
-  assert.equal(rows[0].chore.doneToday, true);
   assert.equal(rows[0].chore.lastRecordSkipped, false);
 });
 
@@ -141,8 +170,7 @@ test("buildHomeRowsByDate keeps fallback behind feature flag", () => {
       dueAt: "2026-02-20T00:00:00.000Z",
       intervalDays: 2,
       dailyTargetCount: 3,
-      doneToday: false,
-      lastPerformedAt: null,
+        lastPerformedAt: null,
       lastRecordId: null,
     });
 
