@@ -68,6 +68,40 @@ test("buildHomeRowsByDate keeps row pending while some occurrences remain", () =
   assert.equal(countTotalHomeOccurrences(rows), 5);
 });
 
+test("buildHomeRowsByDate keeps dailyTargetCount=2 chore pending after first completion", () => {
+  const dateKey = "2026-02-22";
+  const chore = makeChore({
+    id: "twice",
+    dailyTargetCount: 2,
+    doneToday: true,
+    lastRecordSkipped: false,
+  });
+
+  const rows = buildHomeRowsByDate({
+    chores: [chore],
+    dateKey,
+    scheduleOverridesByChore: new Map<string, ChoreScheduleOverride[]>(),
+    homeProgressByDate: {
+      [dateKey]: {
+        twice: {
+          total: 2,
+          completed: 1,
+          skipped: 0,
+          pending: 1,
+          latestState: "done",
+        },
+      },
+    },
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].state, "pending");
+  assert.equal(rows[0].completed, 1);
+  assert.equal(rows[0].total, 2);
+  assert.equal(rows[0].pending, 1);
+  assert.equal(rows[0].chore.doneToday, false);
+  assert.equal(rows[0].chore.lastRecordSkipped, false);
+});
 test("buildHomeRowsByDate prioritizes done when done/skip mixed and pending=0", () => {
   const dateKey = "2026-02-20";
   const chore = makeChore({ id: "a" });
@@ -281,6 +315,8 @@ test("shared fixture count matches calendar summary expectations", () => {
     "2026-03-10": 1,
     "2026-03-12": 1,
   });
+});
+
 test("buildHomeProgressByDate does not mix same chore completion across dates", () => {
   const yesterday = "2026-02-20";
   const today = "2026-02-21";

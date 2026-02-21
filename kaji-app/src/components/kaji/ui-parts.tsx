@@ -61,6 +61,7 @@ export function HomeSectionTitle({ title }: { title: string }) {
 
 export function HomeTaskRow({
   chore,
+  state,
   onRecord,
   onUndo,
   progressLabel,
@@ -68,14 +69,16 @@ export function HomeTaskRow({
   isUpdating = false,
 }: {
   chore: ChoreWithComputed;
+  state?: "pending" | "done" | "skipped";
   onRecord: (chore: ChoreWithComputed) => void;
   onUndo?: (chore: ChoreWithComputed) => void;
   progressLabel?: string;
   recordDisabled?: boolean;
   isUpdating?: boolean;
 }) {
-  const done = chore.doneToday;
-  const skipped = chore.lastRecordSkipped;
+  const resolvedState = state ?? (chore.doneToday ? (chore.lastRecordSkipped ? "skipped" : "done") : "pending");
+  const done = resolvedState !== "pending";
+  const skipped = resolvedState === "skipped";
   const title = chore.title;
   const disableRecordAction = isUpdating || (!done && recordDisabled);
 
