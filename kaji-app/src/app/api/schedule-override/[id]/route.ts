@@ -13,22 +13,12 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     where: { id, status: "pending", chore: { householdId: session.householdId } },
     select: { id: true },
   });
-  if (occurrence) {
-    await prisma.choreOccurrence.update({
-      where: { id: occurrence.id },
-      data: { status: "consumed" },
-    });
-    await touchHousehold(session.householdId);
-    return Response.json({ ok: true });
-  }
+  if (!occurrence) return badRequest("対象のオーバーライドが見つかりません。", 404);
 
-  const override = await prisma.choreScheduleOverride.findFirst({
-    where: { id, chore: { householdId: session.householdId } },
-    select: { id: true },
+  await prisma.choreOccurrence.update({
+    where: { id: occurrence.id },
+    data: { status: "consumed" },
   });
-  if (!override) return badRequest("対象のオーバーライドが見つかりません。", 404);
-
-  await prisma.choreScheduleOverride.delete({ where: { id: override.id } });
   await touchHousehold(session.householdId);
 
   return Response.json({ ok: true });
