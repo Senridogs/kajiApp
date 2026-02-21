@@ -159,7 +159,8 @@ export async function GET() {
           Object.entries(byChore).map(([choreId, entry]) => [
             choreId,
             {
-              total: entry.scheduled,
+              scheduledTotal: entry.scheduled,
+              pendingTotal: entry.pending,
               completed: entry.completed,
               skipped: entry.skipped,
               pending: entry.pending,
