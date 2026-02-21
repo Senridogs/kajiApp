@@ -69,16 +69,15 @@ export function HomeTaskRow({
   isUpdating = false,
 }: {
   chore: ChoreWithComputed;
-  state?: "pending" | "done" | "skipped";
+  state: "pending" | "done" | "skipped";
   onRecord: (chore: ChoreWithComputed) => void;
   onUndo?: (chore: ChoreWithComputed) => void;
   progressLabel?: string;
   recordDisabled?: boolean;
   isUpdating?: boolean;
 }) {
-  const resolvedState = state ?? (chore.doneToday ? (chore.lastRecordSkipped ? "skipped" : "done") : "pending");
-  const done = resolvedState !== "pending";
-  const skipped = resolvedState === "skipped";
+  const done = state !== "pending";
+  const skipped = state === "skipped";
   const title = chore.title;
   const disableRecordAction = isUpdating || (!done && recordDisabled);
 
@@ -585,7 +584,6 @@ export function UndoToast({
     </div>
   );
 }
-
 
 
 

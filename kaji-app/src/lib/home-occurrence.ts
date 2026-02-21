@@ -10,6 +10,7 @@ export type HomeRowProjection = {
   chore: ChoreWithComputed;
   state: HomeProgressState;
   scheduledTotal: number;
+  total: number;
   completed: number;
   skipped: number;
   pending: number;
@@ -273,6 +274,7 @@ export function buildHomeRowsByDate(params: {
       chore: toDisplayChore(chore, state),
       state,
       scheduledTotal: entry.scheduledTotal,
+      total: entry.scheduledTotal,
       completed: entry.completed,
       skipped: entry.skipped,
       pending: entry.pending,
@@ -288,5 +290,5 @@ export function countDoneHomeOccurrences(rows: HomeRowProjection[]) {
 }
 
 export function countTotalHomeOccurrences(rows: HomeRowProjection[]) {
-  return rows.reduce((sum, row) => sum + row.scheduledTotal, 0);
+  return rows.reduce((sum, row) => sum + row.total, 0);
 }
