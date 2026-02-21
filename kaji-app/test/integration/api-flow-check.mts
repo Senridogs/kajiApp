@@ -864,6 +864,11 @@ async function main() {
   });
   assert.equal(moveRecordNoRecalcRes.status, 200);
 
+  const movedRecordNoRecalcRes = await request(`/api/records/${recordMoveNoRecalcRecordId}`);
+  assert.equal(movedRecordNoRecalcRes.status, 200);
+  const movedRecordNoRecalcBody = await movedRecordNoRecalcRes.json();
+  assert.equal(movedRecordNoRecalcBody.record.scheduledDate, recordMoveTargetDateKey);
+
   const overridesAfterRecordNoRecalcRes = await request("/api/schedule-overrides");
   assert.equal(overridesAfterRecordNoRecalcRes.status, 200);
   const overridesAfterRecordNoRecalcBody = await overridesAfterRecordNoRecalcRes.json();
