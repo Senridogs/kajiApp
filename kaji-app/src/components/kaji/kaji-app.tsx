@@ -33,10 +33,10 @@ import {
 import {
   apiFetch,
   darkenColor,
-  dueInDaysLabel,
   formatJpDate,
-  formatMonthDay,
+  homeProgressState,
   iconByName,
+  labelForDue,
   relativeLastPerformed,
   urlBase64ToUint8Array,
   lightenColor,
@@ -4795,7 +4795,9 @@ export function KajiApp() {
           ? boot.users.find((user) => user.id === chore.lastPerformerId)
           : null;
         const doneColor = performerUser?.color ?? PRIMARY_COLOR;
-        const isCompleted = item.pending === 0 && item.completed > 0;
+        const state = homeProgressState(item);
+        const isCompleted = state !== "pending";
+        const dueLabel = labelForDue(chore, { state });
         const chipClass = isCompleted
           ? "border"
           : "border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]";
@@ -4816,6 +4818,7 @@ export function KajiApp() {
             }}
             onPointerDown={(event) => handleChorePointerDown(chore, dateKey, event)}
             className={`select-none inline-flex items-center gap-1 rounded-[10px] px-[10px] py-[6px] text-[12px] font-semibold ${chipClass}`}
+            aria-label={`${chore.title} ${dueLabel}`}
             style={{ touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", ...doneStyle }}
           >
             <ChipIcon size={13} color={chore.iconColor} />
@@ -6168,7 +6171,7 @@ export function KajiApp() {
                       const TaskIcon = iconByName(chore.icon);
                       const updating = recordUpdatingIds.includes(buildRecordMutationKey(chore.id, calendarBlankActionDateKey));
                       const scheduleEntry = calendarBlankActionItemsByChoreId.get(chore.id);
-                      const isCompleted = scheduleEntry ? scheduleEntry.pending === 0 && scheduleEntry.completed > 0 : false;
+                      const isCompleted = homeProgressState(scheduleEntry) !== "pending";
                       return (
                         <div
                           key={`calendar-blank-record-${calendarBlankActionDateKey}-${chore.id}`}
