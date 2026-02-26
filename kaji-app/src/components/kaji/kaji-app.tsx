@@ -4761,12 +4761,9 @@ export function KajiApp() {
                       }).format(new Date(latestRecordItem.performedAt))}
                     </p>
                   </div>
-                  {latestRecordItem.memo ? (
-                    <p className="px-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{latestRecordItem.memo}」</p>
-                  ) : null}
                 </div>
-              </div>
-            ) : null}
+              );
+            })() : null}
           </div>
         </div>
       );
