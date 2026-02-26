@@ -2644,11 +2644,22 @@ export function KajiApp() {
       clearDragState();
     };
 
+    // ドラッグ中はtouchmoveのデフォルト動作（スクロール）を抑制する。
+    // touchAction: "pan-y" が設定された要素では pointermove の preventDefault() が
+    // ブラウザのネイティブスクロールを止められないため、touchmove で明示的に抑制する。
+    const handleTouchMove = (event: TouchEvent) => {
+      if (touchDragInfoRef.current?.active) {
+        event.preventDefault();
+      }
+    };
+
     document.addEventListener("pointermove", handlePointerMove, { passive: false });
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
     document.addEventListener("pointerup", handlePointerUp);
     document.addEventListener("pointercancel", handlePointerCancel);
     return () => {
       document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("touchmove", handleTouchMove);
       document.removeEventListener("pointerup", handlePointerUp);
       document.removeEventListener("pointercancel", handlePointerCancel);
       stopScrollLoop();
