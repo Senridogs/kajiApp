@@ -4741,30 +4741,91 @@ export function KajiApp() {
                 </button>
               </div>
             )}
-            {latestRecordItem ? (
-              <div className="space-y-2">
-                <div className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]" style={{ top: 0 }}>
-                  <HomeSectionTitle title="さいしんのきろく" />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
-                    <span className="material-symbols-rounded text-[14px] text-[var(--primary)]">check</span>
-                    <p className="text-[13.5px] font-bold text-[var(--foreground)]">{latestRecordItem.chore.title}</p>
-                    <p className="text-[12px] font-semibold text-[var(--muted-foreground)]">{latestRecordItem.user.name}</p>
-                    <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
-                      {new Intl.DateTimeFormat("ja-JP", {
-                        timeZone: "Asia/Tokyo",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      }).format(new Date(latestRecordItem.performedAt))}
-                    </p>
+            {latestRecordItem ? (() => {
+              const latestMyReaction = (latestRecordItem.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
+              const latestReactionCounts = (latestRecordItem.reactions ?? []).reduce<Record<string, number>>((acc, reaction) => {
+                acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
+                return acc;
+              }, {});
+              const latestVisibleReactions = REACTION_CHOICES.filter((emoji) => (latestReactionCounts[emoji] ?? 0) > 0);
+              return (
+                <div className="space-y-2">
+                  <div className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]" style={{ top: 0 }}>
+                    <HomeSectionTitle title="さいしんのきろく" />
                   </div>
-                  {latestRecordItem.memo ? (
-                    <p className="px-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{latestRecordItem.memo}」</p>
-                  ) : null}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
+                      <span className="material-symbols-rounded text-[14px] text-[var(--primary)]">check</span>
+                      <p className="text-[13.5px] font-bold text-[var(--foreground)]">{latestRecordItem.chore.title}</p>
+                      <p className="text-[12px] font-semibold text-[var(--muted-foreground)]">{latestRecordItem.user.name}</p>
+                      <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
+                        {new Intl.DateTimeFormat("ja-JP", {
+                          timeZone: "Asia/Tokyo",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }).format(new Date(latestRecordItem.performedAt))}
+                      </p>
+                    </div>
+                    {latestRecordItem.memo ? (
+                      <p className="px-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{latestRecordItem.memo}」</p>
+                    ) : null}
+                    <div className="flex flex-wrap items-center gap-2 px-1">
+                      {latestVisibleReactions.map((emoji) => {
+                        const mapped = REACTION_ICON_MAP[emoji];
+                        const selected = latestMyReaction?.emoji === emoji;
+                        const count = latestReactionCounts[emoji] ?? 0;
+                        return (
+                          <button
+                            key={`latest-${latestRecordItem.id}-${emoji}`}
+                            type="button"
+                            onClick={() => { void toggleReaction(latestRecordItem, emoji); }}
+                            disabled={reactionUpdatingId === latestRecordItem.id}
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold ${selected ? "bg-[var(--app-surface-soft)]" : "bg-transparent"} disabled:opacity-50`}
+                          >
+                            <span className="material-symbols-rounded text-[18px]" style={{ color: mapped?.color ?? "var(--muted-foreground)" }}>
+                              {mapped?.icon ?? "add_reaction"}
+                            </span>
+                            {count > 1 ? <span className="text-[11px] text-[var(--muted-foreground)]">{count}</span> : null}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => { setReactionPickerRecordId((prev) => (prev === latestRecordItem.id ? null : latestRecordItem.id)); }}
+                        disabled={reactionUpdatingId === latestRecordItem.id}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[var(--app-text-tertiary)] disabled:opacity-50"
+                      >
+                        <span className="material-symbols-rounded text-[18px]">add_reaction</span>
+                      </button>
+                    </div>
+                    {reactionPickerRecordId === latestRecordItem.id ? (
+                      <div className="flex items-center gap-2 px-1">
+                        {REACTION_CHOICES.map((emoji) => {
+                          const mapped = REACTION_ICON_MAP[emoji];
+                          const selected = latestMyReaction?.emoji === emoji;
+                          return (
+                            <button
+                              key={`latest-picker-${latestRecordItem.id}-${emoji}`}
+                              type="button"
+                              onClick={() => {
+                                void toggleReaction(latestRecordItem, emoji);
+                                setReactionPickerRecordId(null);
+                              }}
+                              disabled={reactionUpdatingId === latestRecordItem.id}
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${selected ? "bg-[var(--app-surface-soft)]" : "bg-[var(--card)]"} disabled:opacity-50`}
+                            >
+                              <span className="material-symbols-rounded text-[18px]" style={{ color: mapped.color }}>
+                                {mapped.icon}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              );
+            })() : null}
           </div>
         </div>
       );
