@@ -64,18 +64,12 @@ export async function PUT(request: Request, { params }: RouteParams) {
   await touchHousehold(session.householdId);
 
   if (record.user.id !== session.userId && canSendPush()) {
-    const [household, subs] = await Promise.all([
-      prisma.household.findUnique({
-        where: { id: session.householdId },
-        select: { notifyCompletion: true },
-      }),
-      prisma.pushSubscription.findMany({
-        where: { householdId: session.householdId, enabled: true, userId: record.user.id },
-        select: { id: true, endpoint: true, p256dh: true, auth: true },
-      }),
-    ]);
+    const subs = await prisma.pushSubscription.findMany({
+      where: { householdId: session.householdId, enabled: true, userId: record.user.id },
+      select: { id: true, endpoint: true, p256dh: true, auth: true },
+    });
 
-    if (household?.notifyCompletion && subs.length > 0) {
+    if (subs.length > 0) {
       const payload = buildReactionPayload({
         reactorName: reactor.name,
         emoji,
