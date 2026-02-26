@@ -105,13 +105,6 @@ const PULL_START_MIN_MOVEMENT_PX = 5;
 const PULL_HORIZONTAL_CANCEL_RATIO = 1.1;
 const PULL_SCROLL_TOP_EPSILON = 1;
 const REMINDER_HOUR_CHOICES = Array.from({ length: 18 }, (_, idx) => `${String(6 + idx).padStart(2, "0")}:00`);
-const REACTION_CHOICES = ["👏", "❤️", "✨", "🎉"] as const;
-const REACTION_ICON_MAP: Record<(typeof REACTION_CHOICES)[number], { icon: string; color: string }> = {
-  "👏": { icon: "thumb_up", color: PRIMARY_COLOR },
-  "❤️": { icon: "favorite", color: PRIMARY_COLOR },
-  "✨": { icon: "celebration", color: PRIMARY_COLOR },
-  "🎉": { icon: "star", color: PRIMARY_COLOR },
-};
 const WEEKDAY_SHORT = ["日", "月", "火", "水", "木", "金", "土"] as const;
 const REPORT_MONTH_OFFSETS = [2, 1, 0] as const;
 const REPORT_MONTH_LABELS: Record<(typeof REPORT_MONTH_OFFSETS)[number], string> = {
@@ -607,8 +600,6 @@ export function KajiApp() {
   const handleHomeDropRef = useRef<(drop: HomeDropInsert) => void>(() => { });
   const homeSectionChoreIdsRef = useRef<Record<string, string[]>>({});
   const [homeOrderByDate, setHomeOrderByDate] = useState<HomeOrderByDate>({});
-  const [reactionPickerRecordId, setReactionPickerRecordId] = useState<string | null>(null);
-
   const [registerName, setRegisterName] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
   const [registerInviteCode, setRegisterInviteCode] = useState("");
@@ -652,7 +643,6 @@ export function KajiApp() {
   const [recordUpdatingIds, setRecordUpdatingIds] = useState<string[]>([]);
   const recordMutationSequenceRef = useRef(0);
   const latestRecordMutationByKeyRef = useRef<Record<string, number>>({});
-  const [reactionUpdatingId, setReactionUpdatingId] = useState<string | null>(null);
   const [manageDetailChoreId, setManageDetailChoreId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState("all");
   const [pendingSwipeDeletes, setPendingSwipeDeletes] = useState<PendingSwipeDelete[]>([]);
@@ -3338,35 +3328,6 @@ export function KajiApp() {
     setHistoryFilter("all");
   };
 
-  const toggleReaction = useCallback(
-    async (record: ChoreRecordItem, emoji: (typeof REACTION_CHOICES)[number]) => {
-      if (!sessionUser) return;
-      if (reactionUpdatingId === record.id) return;
-      const current = (record.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
-      try {
-        setReactionUpdatingId(record.id);
-        setError("");
-        if (current?.emoji === emoji) {
-          await apiFetch(`/api/records/${record.id}/reaction`, {
-            method: "DELETE",
-            body: "{}",
-          });
-        } else {
-          await apiFetch(`/api/records/${record.id}/reaction`, {
-            method: "PUT",
-            body: JSON.stringify({ emoji }),
-          });
-        }
-        await loadHistory();
-      } catch (err: unknown) {
-        setError((err as Error).message ?? "リアクションの更新に失敗しました。");
-      } finally {
-        setReactionUpdatingId(null);
-      }
-    },
-    [loadHistory, reactionUpdatingId, sessionUser],
-  );
-
   const updateNotificationSettings = async (next: NotificationSettings) => {
     const previous = notificationSettings;
     if (!previous) return;
@@ -4561,88 +4522,23 @@ export function KajiApp() {
           {group.items.map((record) => {
             const choreForIcon = chores.find((ch) => ch.id === record.chore.id);
             const RecordIcon = iconByName(choreForIcon?.icon ?? "sparkles");
-            const myReaction = (record.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
-            const reactionCounts = (record.reactions ?? []).reduce<Record<string, number>>((acc, reaction) => {
-              acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
-              return acc;
-            }, {});
-            const visibleReactions = REACTION_CHOICES.filter((emoji) => (reactionCounts[emoji] ?? 0) > 0);
             return (
-              <div key={record.id} className="space-y-1">
-                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-3 py-3">
-                  <div className="flex items-center gap-2">
-                    <RecordIcon size={16} color={choreForIcon?.iconColor ?? "var(--muted-foreground)"} />
-                    <p className="text-[15px] font-bold text-[var(--foreground)]">{record.chore.title}</p>
-                    <span className="text-[12px] text-[var(--app-text-tertiary)]">──</span>
-                    <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">{record.user.name}</p>
-                    <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
-                      {new Intl.DateTimeFormat("ja-JP", {
-                        timeZone: "Asia/Tokyo",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      }).format(new Date(record.performedAt))}
-                    </p>
-                  </div>
-                  {record.memo ? (
-                    <p className="mt-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{record.memo}」</p>
-                  ) : null}
+              <div key={record.id} className="rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-3 py-3">
+                <div className="flex items-center gap-2">
+                  <RecordIcon size={16} color={choreForIcon?.iconColor ?? "var(--muted-foreground)"} />
+                  <p className="text-[15px] font-bold text-[var(--foreground)]">{record.chore.title}</p>
+                  <span className="text-[12px] text-[var(--app-text-tertiary)]">──</span>
+                  <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">{record.user.name}</p>
+                  <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
+                    {new Intl.DateTimeFormat("ja-JP", {
+                      timeZone: "Asia/Tokyo",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }).format(new Date(record.performedAt))}
+                  </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 px-1">
-                  {visibleReactions.map((emoji) => {
-                    const mapped = REACTION_ICON_MAP[emoji];
-                    const selected = myReaction?.emoji === emoji;
-                    const count = reactionCounts[emoji] ?? 0;
-                    return (
-                      <button
-                        key={`${record.id}-${emoji}`}
-                        type="button"
-                        onClick={() => {
-                          void toggleReaction(record, emoji);
-                        }}
-                        disabled={reactionUpdatingId === record.id}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold ${selected ? "bg-[var(--app-surface-soft)]" : "bg-transparent"} disabled:opacity-50`}
-                      >
-                        <span className="material-symbols-rounded text-[18px]" style={{ color: mapped?.color ?? "var(--muted-foreground)" }}>
-                          {mapped?.icon ?? "add_reaction"}
-                        </span>
-                        {count > 1 ? <span className="text-[11px] text-[var(--muted-foreground)]">{count}</span> : null}
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReactionPickerRecordId((prev) => (prev === record.id ? null : record.id));
-                    }}
-                    disabled={reactionUpdatingId === record.id}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[var(--app-text-tertiary)] disabled:opacity-50"
-                  >
-                    <span className="material-symbols-rounded text-[18px]">add_reaction</span>
-                  </button>
-                </div>
-                {reactionPickerRecordId === record.id ? (
-                  <div className="flex items-center gap-2 px-1">
-                    {REACTION_CHOICES.map((emoji) => {
-                      const mapped = REACTION_ICON_MAP[emoji];
-                      const selected = myReaction?.emoji === emoji;
-                      return (
-                        <button
-                          key={`${record.id}-picker-${emoji}`}
-                          type="button"
-                          onClick={() => {
-                            void toggleReaction(record, emoji);
-                            setReactionPickerRecordId(null);
-                          }}
-                          disabled={reactionUpdatingId === record.id}
-                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${selected ? "bg-[var(--app-surface-soft)]" : "bg-[var(--card)]"} disabled:opacity-50`}
-                        >
-                          <span className="material-symbols-rounded text-[18px]" style={{ color: mapped.color }}>
-                            {mapped.icon}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                {record.memo ? (
+                  <p className="mt-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{record.memo}」</p>
                 ) : null}
               </div>
             );
