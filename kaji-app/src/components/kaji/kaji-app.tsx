@@ -4675,7 +4675,7 @@ export function KajiApp() {
                       className={`space-y-2 rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[var(--app-surface-soft)] px-1 py-1" : ""}`}
                     >
                       <div
-                        className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]"
+                        className="sticky z-20 bg-[var(--app-canvas)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-canvas)]"
                         style={{ top: 0 }}
                       >
                         <HomeSectionTitle title={section.title} />
@@ -4741,87 +4741,25 @@ export function KajiApp() {
                 </button>
               </div>
             )}
-            {latestRecordItem ? (() => {
-              const latestMyReaction = (latestRecordItem.reactions ?? []).find((reaction) => reaction.userId === sessionUser.id);
-              const latestReactionCounts = (latestRecordItem.reactions ?? []).reduce<Record<string, number>>((acc, reaction) => {
-                acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
-                return acc;
-              }, {});
-              const latestVisibleReactions = REACTION_CHOICES.filter((emoji) => (latestReactionCounts[emoji] ?? 0) > 0);
-              return (
-                <div className="space-y-2">
-                  <div className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]" style={{ top: 0 }}>
-                    <HomeSectionTitle title="さいしんのきろく" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
-                      <span className="material-symbols-rounded text-[14px] text-[var(--primary)]">check</span>
-                      <p className="text-[13.5px] font-bold text-[var(--foreground)]">{latestRecordItem.chore.title}</p>
-                      <p className="text-[12px] font-semibold text-[var(--muted-foreground)]">{latestRecordItem.user.name}</p>
-                      <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
-                        {new Intl.DateTimeFormat("ja-JP", {
-                          timeZone: "Asia/Tokyo",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        }).format(new Date(latestRecordItem.performedAt))}
-                      </p>
-                    </div>
-                    {latestRecordItem.memo ? (
-                      <p className="px-1 text-[12px] font-medium text-[var(--muted-foreground)]">「{latestRecordItem.memo}」</p>
-                    ) : null}
-                    <div className="flex flex-wrap items-center gap-2 px-1">
-                      {latestVisibleReactions.map((emoji) => {
-                        const mapped = REACTION_ICON_MAP[emoji];
-                        const selected = latestMyReaction?.emoji === emoji;
-                        const count = latestReactionCounts[emoji] ?? 0;
-                        return (
-                          <button
-                            key={`latest-${latestRecordItem.id}-${emoji}`}
-                            type="button"
-                            onClick={() => { void toggleReaction(latestRecordItem, emoji); }}
-                            disabled={reactionUpdatingId === latestRecordItem.id}
-                            className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold ${selected ? "bg-[var(--app-surface-soft)]" : "bg-transparent"} disabled:opacity-50`}
-                          >
-                            <span className="material-symbols-rounded text-[18px]" style={{ color: mapped?.color ?? "var(--muted-foreground)" }}>
-                              {mapped?.icon ?? "add_reaction"}
-                            </span>
-                            {count > 1 ? <span className="text-[11px] text-[var(--muted-foreground)]">{count}</span> : null}
-                          </button>
-                        );
-                      })}
-                      <button
-                        type="button"
-                        onClick={() => { setReactionPickerRecordId((prev) => (prev === latestRecordItem.id ? null : latestRecordItem.id)); }}
-                        disabled={reactionUpdatingId === latestRecordItem.id}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[var(--app-text-tertiary)] disabled:opacity-50"
-                      >
-                        <span className="material-symbols-rounded text-[18px]">add_reaction</span>
-                      </button>
-                    </div>
-                    {reactionPickerRecordId === latestRecordItem.id ? (
-                      <div className="flex items-center gap-2 px-1">
-                        {REACTION_CHOICES.map((emoji) => {
-                          const mapped = REACTION_ICON_MAP[emoji];
-                          const selected = latestMyReaction?.emoji === emoji;
-                          return (
-                            <button
-                              key={`latest-picker-${latestRecordItem.id}-${emoji}`}
-                              type="button"
-                              onClick={() => {
-                                void toggleReaction(latestRecordItem, emoji);
-                                setReactionPickerRecordId(null);
-                              }}
-                              disabled={reactionUpdatingId === latestRecordItem.id}
-                              className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${selected ? "bg-[var(--app-surface-soft)]" : "bg-[var(--card)]"} disabled:opacity-50`}
-                            >
-                              <span className="material-symbols-rounded text-[18px]" style={{ color: mapped.color }}>
-                                {mapped.icon}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
+            {latestRecordItem ? (
+              <div className="space-y-2">
+                <div className="sticky z-20 bg-[var(--app-canvas)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-canvas)]" style={{ top: 0 }}>
+                  <HomeSectionTitle title="さいしんのきろく" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 rounded-[12px] border border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
+                    <span className="material-symbols-rounded text-[14px] text-[var(--primary)]">check</span>
+                    <p className="text-[13.5px] font-bold text-[var(--foreground)]">{latestRecordItem.chore.title}</p>
+                    <p className="text-[12px] font-semibold text-[var(--muted-foreground)]">{latestRecordItem.user.name}</p>
+                    <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
+                      {new Intl.DateTimeFormat("ja-JP", {
+                        timeZone: "Asia/Tokyo",
+                        month: "numeric",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }).format(new Date(latestRecordItem.performedAt))}
+                    </p>
                   </div>
                 </div>
               );
@@ -4932,7 +4870,7 @@ export function KajiApp() {
                     const dateKey = toJstDateKey(date);
                     const monthKey = toMonthKey(date);
                     const inMonth = monthKey === currentMonthKey;
-                    const isSelected = dateKey === calendarSelectedDateKey;
+                    const isToday = dateKey === todayKey;
                     const dayOfWeek = new Date(date.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
                     const weekendClass =
                       dayOfWeek === 0 ? "text-[var(--app-text-tertiary)]" : dayOfWeek === 6 ? "text-[var(--primary)]" : "text-[var(--foreground)]";
@@ -4947,7 +4885,7 @@ export function KajiApp() {
                         className="flex min-h-[36px] flex-col items-center justify-center py-1"
                       >
                         <span
-                          className={`rounded-[8px] px-[6px] py-[1px] text-[13px] font-bold leading-none ${isSelected
+                          className={`rounded-[8px] px-[6px] py-[1px] text-[13px] font-bold leading-none ${isToday
                             ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]"
                             : inMonth
                               ? weekendClass
@@ -4985,7 +4923,7 @@ export function KajiApp() {
                     const entryDateJst = new Date(entry.date.getTime() + 9 * 60 * 60 * 1000);
                     const weekday = WEEKDAY_SHORT[entryDateJst.getUTCDay()];
                     const dayNumber = entryDateJst.getUTCDate();
-                    const isSelected = entry.dateKey === calendarSelectedDateKey;
+                    const isToday = entry.dateKey === todayKey;
                     const isSun = entryDateJst.getUTCDay() === 0;
                     const isSat = entryDateJst.getUTCDay() === 6;
                     return (
@@ -4998,7 +4936,7 @@ export function KajiApp() {
                         <span className={`text-[10px] font-medium ${isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--app-text-tertiary)]"}`}>
                           {weekday}
                         </span>
-                        <span className={`rounded-[16px] px-2 py-[2px] text-[16px] font-bold leading-none ${isSelected ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]" : isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--foreground)]"}`}>
+                        <span className={`rounded-[16px] px-2 py-[2px] text-[16px] font-bold leading-none ${isToday ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]" : isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--foreground)]"}`}>
                           {dayNumber}
                         </span>
                         {renderDayDots(entry.dateKey)}
@@ -5035,7 +4973,7 @@ export function KajiApp() {
                   <div
                     key={`week-group-${entry.dateKey}`}
                     data-drop-date={entry.dateKey}
-                    className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[var(--app-surface-soft)]" : entry.dateKey === calendarSelectedDateKey ? "bg-[var(--app-surface-soft)]" : ""}`}
+                    className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[var(--app-surface-soft)]" : entry.dateKey === todayKey ? "bg-[var(--app-surface-soft)]" : ""}`}
                     onClick={(event) => {
                       handleCalendarSurfaceTap(event, entry.dateKey);
                     }}
@@ -6056,7 +5994,7 @@ export function KajiApp() {
       {!settingsOpen ? (
         <div
           aria-hidden
-          className="pointer-events-none fixed bottom-0 left-0 right-0 z-[74] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
+          className="pointer-events-none fixed bottom-0 left-0 right-0 z-[74] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-[var(--background)]/90 via-[var(--background)]/65 to-transparent"
         />
       ) : null}
 
