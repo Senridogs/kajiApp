@@ -4773,8 +4773,8 @@ export function KajiApp() {
                     </p>
                   </div>
                 </div>
-              );
-            })() : null}
+              </div>
+            ) : null}
           </div>
         </div>
       );
