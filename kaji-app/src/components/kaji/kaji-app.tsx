@@ -4669,7 +4669,7 @@ export function KajiApp() {
                       className={`space-y-2 rounded-[10px] ${dragTargetDateKey === sectionDateKey ? "bg-[var(--app-surface-soft)] px-1 py-1" : ""}`}
                     >
                       <div
-                        className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]"
+                        className="sticky z-20 bg-[var(--app-canvas)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-canvas)]"
                         style={{ top: 0 }}
                       >
                         <HomeSectionTitle title={section.title} />
@@ -4737,7 +4737,7 @@ export function KajiApp() {
             )}
             {latestRecordItem ? (
               <div className="space-y-2">
-                <div className="sticky z-20 bg-[var(--app-header-bg)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-header-bg)]" style={{ top: 0 }}>
+                <div className="sticky z-20 bg-[var(--app-canvas)] pb-1 pt-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--app-canvas)]" style={{ top: 0 }}>
                   <HomeSectionTitle title="さいしんのきろく" />
                 </div>
                 <div className="space-y-1">
@@ -4748,6 +4748,8 @@ export function KajiApp() {
                     <p className="ml-auto text-[11px] font-medium text-[var(--app-text-tertiary)]">
                       {new Intl.DateTimeFormat("ja-JP", {
                         timeZone: "Asia/Tokyo",
+                        month: "numeric",
+                        day: "numeric",
                         hour: "2-digit",
                         minute: "2-digit",
                       }).format(new Date(latestRecordItem.performedAt))}
@@ -4865,7 +4867,7 @@ export function KajiApp() {
                     const dateKey = toJstDateKey(date);
                     const monthKey = toMonthKey(date);
                     const inMonth = monthKey === currentMonthKey;
-                    const isSelected = dateKey === calendarSelectedDateKey;
+                    const isToday = dateKey === todayKey;
                     const dayOfWeek = new Date(date.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
                     const weekendClass =
                       dayOfWeek === 0 ? "text-[var(--app-text-tertiary)]" : dayOfWeek === 6 ? "text-[var(--primary)]" : "text-[var(--foreground)]";
@@ -4880,7 +4882,7 @@ export function KajiApp() {
                         className="flex min-h-[36px] flex-col items-center justify-center py-1"
                       >
                         <span
-                          className={`rounded-[8px] px-[6px] py-[1px] text-[13px] font-bold leading-none ${isSelected
+                          className={`rounded-[8px] px-[6px] py-[1px] text-[13px] font-bold leading-none ${isToday
                             ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]"
                             : inMonth
                               ? weekendClass
@@ -4918,7 +4920,7 @@ export function KajiApp() {
                     const entryDateJst = new Date(entry.date.getTime() + 9 * 60 * 60 * 1000);
                     const weekday = WEEKDAY_SHORT[entryDateJst.getUTCDay()];
                     const dayNumber = entryDateJst.getUTCDate();
-                    const isSelected = entry.dateKey === calendarSelectedDateKey;
+                    const isToday = entry.dateKey === todayKey;
                     const isSun = entryDateJst.getUTCDay() === 0;
                     const isSat = entryDateJst.getUTCDay() === 6;
                     return (
@@ -4931,7 +4933,7 @@ export function KajiApp() {
                         <span className={`text-[10px] font-medium ${isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--app-text-tertiary)]"}`}>
                           {weekday}
                         </span>
-                        <span className={`rounded-[16px] px-2 py-[2px] text-[16px] font-bold leading-none ${isSelected ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]" : isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--foreground)]"}`}>
+                        <span className={`rounded-[16px] px-2 py-[2px] text-[16px] font-bold leading-none ${isToday ? "bg-[var(--app-surface-soft)] text-[var(--foreground)]" : isSun ? "text-[var(--app-text-tertiary)]" : isSat ? "text-[var(--primary)]" : "text-[var(--foreground)]"}`}>
                           {dayNumber}
                         </span>
                         {renderDayDots(entry.dateKey)}
@@ -4968,7 +4970,7 @@ export function KajiApp() {
                   <div
                     key={`week-group-${entry.dateKey}`}
                     data-drop-date={entry.dateKey}
-                    className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[var(--app-surface-soft)]" : entry.dateKey === calendarSelectedDateKey ? "bg-[var(--app-surface-soft)]" : ""}`}
+                    className={`space-y-2 rounded-[10px] px-1 py-1 ${dragTargetDateKey === entry.dateKey ? "bg-[var(--app-surface-soft)]" : entry.dateKey === todayKey ? "bg-[var(--app-surface-soft)]" : ""}`}
                     onClick={(event) => {
                       handleCalendarSurfaceTap(event, entry.dateKey);
                     }}
