@@ -2647,7 +2647,7 @@ export function KajiApp() {
     // ドラッグ中はtouchmoveのデフォルト動作（スクロール）を抑制する。
     // touchAction: "pan-y" が設定された要素では pointermove の preventDefault() が
     // ブラウザのネイティブスクロールを止められないため、touchmove で明示的に抑制する。
-    const handleTouchMove = (event: TouchEvent) => {
+    const handleTouchMove = (event: Event) => {
       if (touchDragInfoRef.current?.active) {
         event.preventDefault();
       }
