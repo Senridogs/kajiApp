@@ -5997,7 +5997,7 @@ export function KajiApp() {
       {!settingsOpen ? (
         <div
           aria-hidden
-          className="pointer-events-none fixed bottom-0 left-0 right-0 z-[74] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-white/90 via-white/65 to-transparent"
+          className="pointer-events-none fixed bottom-0 left-0 right-0 z-[74] mx-auto h-20 max-w-[430px] bg-gradient-to-t from-[var(--background)]/90 via-[var(--background)]/65 to-transparent"
         />
       ) : null}
 
