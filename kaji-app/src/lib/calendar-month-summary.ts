@@ -1,5 +1,8 @@
-import { addDays, toJstDateKey } from "@/lib/time";
+import { addDays, parseDateKey, toJstDateKey } from "@/lib/time";
 import { buildOccurrenceReadModelByDate } from "@/lib/occurrence-read-model";
+
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const CALENDAR_GRID_DAYS = 42; // 6 weeks
 
 const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
 
@@ -37,6 +40,25 @@ function monthDateKeys(monthInfo: MonthInfo): string[] {
   });
 }
 
+/**
+ * Returns the 42 date keys (6 weeks × 7 days) for the calendar grid of the
+ * given month, starting from the Monday of the week that contains the 1st.
+ * This includes overflow days from the previous and next months that are
+ * visible in the calendar grid.
+ */
+export function calendarGridDateKeys(month: string): string[] {
+  const monthInfo = parseMonthKey(month);
+  if (!monthInfo) return [];
+  const firstOfMonth = parseDateKey(`${monthInfo.month}-01`);
+  if (!firstOfMonth) return monthDateKeys(monthInfo);
+  const jstDay = new Date(firstOfMonth.getTime() + JST_OFFSET_MS).getUTCDay();
+  const diff = jstDay === 0 ? -6 : 1 - jstDay;
+  const gridStart = addDays(firstOfMonth, diff);
+  return Array.from({ length: CALENDAR_GRID_DAYS }, (_, index) =>
+    toJstDateKey(addDays(gridStart, index)),
+  );
+}
+
 export function isValidMonthKey(month: string): boolean {
   return parseMonthKey(month) !== null;
 }
@@ -62,7 +84,7 @@ export function buildCalendarMonthReadModelByDate(
   if (!monthInfo) {
     throw new Error(`Invalid month key: ${month}`);
   }
-  const dateKeys = monthDateKeys(monthInfo);
+  const dateKeys = calendarGridDateKeys(month);
   const readModel = buildOccurrenceReadModelByDate({
     dateKeys,
     chores: chores.map((chore) => ({

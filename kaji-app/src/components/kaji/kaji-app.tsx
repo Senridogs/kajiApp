@@ -4913,7 +4913,7 @@ export function KajiApp() {
                         >
                           {date.getDate()}
                         </span>
-                        {inMonth ? renderDayDots(dateKey) : <span className="h-1 w-1" />}
+                        {renderDayDots(dateKey)}
                       </button>
                     );
                   })}
