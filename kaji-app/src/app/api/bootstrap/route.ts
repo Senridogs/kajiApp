@@ -103,9 +103,9 @@ export async function GET() {
       scheduleOverridesByChore.set(override.choreId, list);
     }
     const choreIds = computed.map((chore) => chore.id);
-    const homeProgressRecords =
+    const [homeProgressRecords, homeRangeConsumedOccurrences] = await Promise.all([
       choreIds.length > 0
-        ? await prisma.choreRecord.findMany({
+        ? prisma.choreRecord.findMany({
           where: {
             householdId: household.id,
             choreId: { in: choreIds },
@@ -127,7 +127,31 @@ export async function GET() {
             isInitial: true,
           },
         })
-        : [];
+        : Promise.resolve([]),
+      choreIds.length > 0
+        ? prisma.choreOccurrence.findMany({
+          where: {
+            status: "consumed",
+            choreId: { in: choreIds },
+            dateKey: { in: homeDateKeys },
+          },
+          select: { choreId: true, dateKey: true },
+        })
+        : Promise.resolve([]),
+    ]);
+    // Build a map that includes both pending and consumed occurrences within the home date range,
+    // so that scheduledTotal correctly reflects the full count even after some completions.
+    const progressOverridesByChore = new Map<string, Array<{ date: string }>>(
+      Array.from(scheduleOverridesByChore.entries()).map(([choreId, overrides]) => [
+        choreId,
+        overrides.map((o) => ({ date: o.date })),
+      ]),
+    );
+    for (const occ of homeRangeConsumedOccurrences) {
+      const list = progressOverridesByChore.get(occ.choreId) ?? [];
+      list.push({ date: occ.dateKey });
+      progressOverridesByChore.set(occ.choreId, list);
+    }
     const homeOccurrenceReadModelByDate = buildOccurrenceReadModelByDate({
       dateKeys: homeDateKeys,
       chores: computed.map((chore) => ({
@@ -135,7 +159,7 @@ export async function GET() {
         intervalDays: chore.intervalDays,
         dailyTargetCount: chore.dailyTargetCount,
         dueAt: chore.dueAt ? new Date(chore.dueAt) : null,
-        scheduleOverrides: (scheduleOverridesByChore.get(chore.id) ?? []).map((override) => ({ date: override.date })),
+        scheduleOverrides: progressOverridesByChore.get(chore.id) ?? [],
       })),
       records: homeProgressRecords,
     });

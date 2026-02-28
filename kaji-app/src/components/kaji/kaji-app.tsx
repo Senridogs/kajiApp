@@ -3153,7 +3153,7 @@ export function KajiApp() {
     setPendingRecordDateChoice(null);
     setPendingCompletePerformedAtMode(performedAtMode);
     setCompleteCountMax(memoPendingCount);
-    setCompleteCountValue(memoPendingCount);
+    setCompleteCountValue(1);
     setCompleteCountDialogOpen(true);
   }, [memoBaseDateKey, memoPendingCount, submitMemoAction]);
 
@@ -3196,7 +3196,7 @@ export function KajiApp() {
       return;
     }
     setSkipCountMax(defaultCount);
-    setSkipCountValue(defaultCount);
+    setSkipCountValue(1);
     setSkipCountDialogOpen(true);
   }, [memoPendingCount, memoTarget, submitMemoAction]);
 
