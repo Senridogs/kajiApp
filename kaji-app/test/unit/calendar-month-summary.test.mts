@@ -3,8 +3,51 @@ import test from "node:test";
 
 import {
   buildCalendarMonthCountsByDate,
+  calendarGridDateKeys,
   isValidMonthKey,
 } from "../../src/lib/calendar-month-summary.js";
+
+test("calendarGridDateKeys returns 42 dates starting from Monday of first week", () => {
+  // 2026-03-01 is a Sunday → grid starts on 2026-02-23 (Monday)
+  const keys = calendarGridDateKeys("2026-03");
+  assert.equal(keys.length, 42);
+  assert.equal(keys[0], "2026-02-23");
+  assert.equal(keys[41], "2026-04-05");
+});
+
+test("calendarGridDateKeys includes overflow days from previous and next months", () => {
+  const keys = calendarGridDateKeys("2026-03");
+  // Previous month overflow
+  assert.ok(keys.includes("2026-02-23"));
+  assert.ok(keys.includes("2026-02-28"));
+  // Current month
+  assert.ok(keys.includes("2026-03-01"));
+  assert.ok(keys.includes("2026-03-31"));
+  // Next month overflow
+  assert.ok(keys.includes("2026-04-01"));
+  assert.ok(keys.includes("2026-04-05"));
+});
+
+test("buildCalendarMonthCountsByDate includes task counts for overflow days from prev/next months", () => {
+  const counts = buildCalendarMonthCountsByDate("2026-03", [
+    {
+      id: "c1",
+      intervalDays: 7,
+      createdAt: new Date("2026-02-01T00:00:00+09:00"),
+      latestRecord: {
+        // dueAt = 2026-02-26 → scheduled on 2026-02-26, 2026-03-05, ...
+        performedAt: new Date("2026-02-19T09:00:00+09:00"),
+        isSkipped: false,
+      },
+      scheduleOverrides: [],
+    },
+  ]);
+
+  // 2026-02-26 is in the grid (prev month overflow) and should have a scheduled task
+  assert.equal(counts["2026-02-26"], 1);
+  // Current month dates still work
+  assert.equal(counts["2026-03-05"], 1);
+});
 
 test("month key validation accepts YYYY-MM and rejects invalid formats", () => {
   assert.equal(isValidMonthKey("2026-03"), true);
