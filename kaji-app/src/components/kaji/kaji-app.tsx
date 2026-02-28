@@ -3192,13 +3192,17 @@ export function KajiApp() {
     const defaultCount = Math.max(1, memoPendingCount);
     setPendingRecordDateChoice(null);
     if (defaultCount <= 1) {
-      void submitMemoAction({ skipped: true, skipCount: 1 });
+      void submitMemoAction({
+        skipped: true,
+        skipCount: 1,
+        performedAtMode: memoBaseDateKey ? "source" : "today",
+      });
       return;
     }
     setSkipCountMax(defaultCount);
     setSkipCountValue(defaultCount);
     setSkipCountDialogOpen(true);
-  }, [memoPendingCount, memoTarget, submitMemoAction]);
+  }, [memoBaseDateKey, memoPendingCount, memoTarget, submitMemoAction]);
 
   const confirmCompleteWithCount = useCallback(() => {
     const completeCount = Math.max(1, Math.min(completeCountValue, completeCountMax));
@@ -3220,8 +3224,12 @@ export function KajiApp() {
     const skipCount = Math.max(1, Math.min(skipCountValue, skipCountMax));
     setPendingRecordDateChoice(null);
     setSkipCountDialogOpen(false);
-    void submitMemoAction({ skipped: true, skipCount });
-  }, [skipCountMax, skipCountValue, submitMemoAction]);
+    void submitMemoAction({
+      skipped: true,
+      skipCount,
+      performedAtMode: memoBaseDateKey ? "source" : "today",
+    });
+  }, [memoBaseDateKey, skipCountMax, skipCountValue, submitMemoAction]);
 
   const confirmPendingReschedule = useCallback(async (recalculateFuture: boolean) => {
     if (!pendingRescheduleConfirm || rescheduleConfirmLoading) return;
