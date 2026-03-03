@@ -73,8 +73,6 @@ export function splitChoresForHomeByProgress(
   const { today: todayDateKey, tomorrow: tomorrowDateKey } = buildHomeDateKeys(now);
   const todayProgressByChore = homeProgressByDate[todayDateKey] ?? {};
   const tomorrowProgressByChore = homeProgressByDate[tomorrowDateKey] ?? {};
-  const hasProgressForDate = (progressByChore: Record<string, Pick<HomeProgressEntry, "completed" | "pending" | "skipped">>) =>
-    Object.keys(progressByChore).length > 0;
   const hasAnyOccurrence = (
     progressByChore: Record<string, Pick<HomeProgressEntry, "completed" | "pending" | "skipped">>,
     choreId: string,
@@ -84,15 +82,19 @@ export function splitChoresForHomeByProgress(
     return (entry.pending ?? 0) > 0 || (entry.completed ?? 0) > 0 || (entry.skipped ?? 0) > 0;
   };
 
-  const hasTodayProgress = hasProgressForDate(todayProgressByChore);
-  const hasTomorrowProgress = hasProgressForDate(tomorrowProgressByChore);
-
-  const todayChores = chores.filter(
-    (c) => (hasTodayProgress ? hasAnyOccurrence(todayProgressByChore, c.id) : (c.isDueToday || c.isOverdue)),
-  );
-  const tomorrowChores = chores.filter(
-    (c) => (hasTomorrowProgress ? hasAnyOccurrence(tomorrowProgressByChore, c.id) : c.isDueTomorrow),
-  );
+  // Per-chore check: if the chore has an entry in homeProgressByDate (either a real
+  // occurrence or a sentinel added for occurrence-system chores), use hasAnyOccurrence.
+  // Otherwise fall back to recurrence-based fields (isDueToday/isOverdue/isDueTomorrow).
+  // This prevents occurrence-system chores from appearing via recurrence on days where
+  // they have no actual ChoreOccurrence scheduled.
+  const todayChores = chores.filter((c) => {
+    if (c.id in todayProgressByChore) return hasAnyOccurrence(todayProgressByChore, c.id);
+    return c.isDueToday || c.isOverdue;
+  });
+  const tomorrowChores = chores.filter((c) => {
+    if (c.id in tomorrowProgressByChore) return hasAnyOccurrence(tomorrowProgressByChore, c.id);
+    return c.isDueTomorrow;
+  });
   return { todayChores, tomorrowChores };
 }
 

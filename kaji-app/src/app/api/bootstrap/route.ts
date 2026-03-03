@@ -197,6 +197,24 @@ export async function GET() {
         ),
       ]),
     );
+    // Add sentinel entries (0 counts) for chores that are in the ChoreOccurrence system
+    // but have no occurrence scheduled for today/tomorrow. Without this, those chores
+    // would fall back to recurrence-based display in splitChoresForHomeByProgress,
+    // causing them to appear on days where they have no actual occurrence.
+    for (const dateKey of [homeDateKeyRange.today, homeDateKeyRange.tomorrow]) {
+      for (const choreId of progressOverridesByChore.keys()) {
+        if (!(choreId in homeProgressByDate[dateKey])) {
+          homeProgressByDate[dateKey][choreId] = {
+            scheduledTotal: 0,
+            pendingTotal: 0,
+            completed: 0,
+            skipped: 0,
+            pending: 0,
+            latestState: "pending",
+          };
+        }
+      }
+    }
     const homeSplit = splitChoresForHomeByProgress(computed, homeProgressByDate);
 
     return NextResponse.json({
