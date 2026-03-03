@@ -3939,6 +3939,7 @@ export function KajiApp() {
                 autoComplete="current-password"
                 className="w-full rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[16.8px] font-semibold text-[var(--foreground)] outline-none placeholder:text-[14px] placeholder:font-medium placeholder:text-[var(--app-text-tertiary)]"
               />
+              <p className="text-[11px] font-medium text-[var(--app-text-tertiary)]">パスワード設定前に登録した方は空白のままでログインできます</p>
             </div>
             <div className="space-y-2 pt-1">
               <div className="flex items-center gap-1.5">

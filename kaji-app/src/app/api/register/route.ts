@@ -118,9 +118,9 @@ export async function POST(request: Request) {
 
     if (!name) return badRequest("ユーザー名を入力してください。");
     if (name.length > 24) return badRequest("ユーザー名は24文字以内で入力してください。");
-    if (!password) return badRequest("パスワードを入力してください。");
-    if (password.length < 8) return badRequest("パスワードは8文字以上で入力してください。");
-    if (password.length > 128) return badRequest("パスワードが長すぎます。");
+    // Password length validation only when a password is provided
+    if (password && password.length < 8) return badRequest("パスワードは8文字以上で入力してください。");
+    if (password && password.length > 128) return badRequest("パスワードが長すぎます。");
 
     const existingUser = await prisma.user.findUnique({
       where: { name },
@@ -130,27 +130,31 @@ export async function POST(request: Request) {
     if (existingUser) {
       if (existingUser.passwordHash) {
         // Password already set: verify it
+        if (!password) return badRequest("パスワードを入力してください。");
         if (!verifyPassword(password, existingUser.passwordHash)) {
           return badRequest("パスワードが正しくありません。");
         }
       } else {
-        // Migration path: first login after password feature was added.
-        // Use WHERE passwordHash IS NULL to prevent race condition when
-        // two concurrent requests try to set the password simultaneously.
-        const updated = await prisma.user.updateMany({
-          where: { id: existingUser.id, passwordHash: null },
-          data: { passwordHash: hashPassword(password) },
-        });
-        if (updated.count === 0) {
-          // Another concurrent request already set the hash; fetch it and verify.
-          const fresh = await prisma.user.findUnique({
-            where: { id: existingUser.id },
-            select: { passwordHash: true },
+        // Legacy user with no password set yet.
+        if (password) {
+          // Use WHERE passwordHash IS NULL to prevent race condition when
+          // two concurrent requests try to set the password simultaneously.
+          const updated = await prisma.user.updateMany({
+            where: { id: existingUser.id, passwordHash: null },
+            data: { passwordHash: hashPassword(password) },
           });
-          if (!fresh?.passwordHash || !verifyPassword(password, fresh.passwordHash)) {
-            return badRequest("パスワードが正しくありません。");
+          if (updated.count === 0) {
+            // Another concurrent request already set the hash; fetch it and verify.
+            const fresh = await prisma.user.findUnique({
+              where: { id: existingUser.id },
+              select: { passwordHash: true },
+            });
+            if (!fresh?.passwordHash || !verifyPassword(password, fresh.passwordHash)) {
+              return badRequest("パスワードが正しくありません。");
+            }
           }
         }
+        // If no password provided, allow login without password (legacy passwordless user).
       }
 
       await setSession(
@@ -166,7 +170,9 @@ export async function POST(request: Request) {
       });
     }
 
-    // New user
+    // New user: password is required
+    if (!password) return badRequest("パスワードを入力してください。");
+
     let household = inviteCodeInput
       ? await prisma.household.findUnique({ where: { inviteCode: inviteCodeInput } })
       : null;
