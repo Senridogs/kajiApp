@@ -69,6 +69,7 @@ export async function GET() {
             orderBy: { performedAt: "desc" },
             include: { user: { select: { id: true, name: true } } },
           },
+          scheduleOverrides: { select: { date: true } },
         },
       }),
       prisma.customIcon.findMany({
@@ -101,6 +102,12 @@ export async function GET() {
       const list = scheduleOverridesByChore.get(override.choreId) ?? [];
       list.push({ id: override.id, choreId: override.choreId, date: override.dateKey, createdAt: override.createdAt });
       scheduleOverridesByChore.set(override.choreId, list);
+    }
+    const legacyScheduleOverridesByChore = new Map<string, Array<{ date: string }>>();
+    for (const chore of chores) {
+      if (chore.scheduleOverrides.length > 0) {
+        legacyScheduleOverridesByChore.set(chore.id, chore.scheduleOverrides);
+      }
     }
     const choreIds = computed.map((chore) => chore.id);
     const [homeProgressRecords, homeRangeConsumedOccurrences] = await Promise.all([
@@ -159,7 +166,9 @@ export async function GET() {
         intervalDays: chore.intervalDays,
         dailyTargetCount: chore.dailyTargetCount,
         dueAt: chore.dueAt ? new Date(chore.dueAt) : null,
-        scheduleOverrides: progressOverridesByChore.get(chore.id) ?? [],
+        scheduleOverrides: progressOverridesByChore.has(chore.id)
+          ? progressOverridesByChore.get(chore.id)!
+          : legacyScheduleOverridesByChore.get(chore.id) ?? [],
       })),
       records: homeProgressRecords,
     });
