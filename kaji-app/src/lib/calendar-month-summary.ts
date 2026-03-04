@@ -1,5 +1,6 @@
 import { addDays, parseDateKey, toJstDateKey } from "@/lib/time";
 import { buildOccurrenceReadModelByDate } from "@/lib/occurrence-read-model";
+import type { OccurrenceSourceRecord } from "@/lib/occurrence-read-model";
 
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const CALENDAR_GRID_DAYS = 42; // 6 weeks
@@ -79,13 +80,14 @@ export function buildCalendarMonthCountsByDate(
 export function buildCalendarMonthReadModelByDate(
   month: string,
   chores: CalendarSummaryChoreSource[],
+  records: OccurrenceSourceRecord[] = [],
 ) {
   const monthInfo = parseMonthKey(month);
   if (!monthInfo) {
     throw new Error(`Invalid month key: ${month}`);
   }
   const dateKeys = calendarGridDateKeys(month);
-  const readModel = buildOccurrenceReadModelByDate({
+  return buildOccurrenceReadModelByDate({
     dateKeys,
     chores: chores.map((chore) => ({
       id: chore.id,
@@ -94,17 +96,6 @@ export function buildCalendarMonthReadModelByDate(
       dueAt: addDays(chore.latestRecord?.performedAt ?? chore.createdAt, chore.intervalDays),
       scheduleOverrides: chore.scheduleOverrides,
     })),
-    records: [],
+    records,
   });
-
-  for (const chore of chores) {
-    if (!chore.latestRecord || chore.latestRecord.isSkipped) continue;
-    const dateKey = toJstDateKey(chore.latestRecord.performedAt);
-    if (!(dateKey in readModel)) continue;
-    const current = readModel[dateKey][chore.id] ?? { scheduled: 0, completed: 0, skipped: 0, pending: 0 };
-    current.scheduled += 1;
-    readModel[dateKey][chore.id] = current;
-  }
-
-  return readModel;
 }

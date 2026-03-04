@@ -1,6 +1,7 @@
 import { badRequest, requireSession } from "@/lib/api";
 import {
   buildCalendarMonthReadModelByDate,
+  calendarGridDateKeys,
   isValidMonthKey,
 } from "@/lib/calendar-month-summary";
 import { prisma } from "@/lib/prisma";
@@ -17,7 +18,11 @@ export async function GET(request: Request) {
     return badRequest("対象月は YYYY-MM 形式で指定してください。");
   }
 
-  const [chores, pendingOccurrences] = await Promise.all([
+  const gridDateKeys = calendarGridDateKeys(month);
+  const gridStart = new Date(`${gridDateKeys[0]}T00:00:00+09:00`);
+  const gridEnd = addDays(new Date(`${gridDateKeys[gridDateKeys.length - 1]}T00:00:00+09:00`), 1);
+
+  const [chores, pendingOccurrences, calendarRecords] = await Promise.all([
     prisma.chore.findMany({
       where: {
         householdId: session.householdId,
@@ -37,9 +42,6 @@ export async function GET(request: Request) {
             isSkipped: true,
           },
         },
-        scheduleOverrides: {
-          select: { date: true },
-        },
       },
     }),
     prisma.choreOccurrence.findMany({
@@ -48,6 +50,24 @@ export async function GET(request: Request) {
         chore: { householdId: session.householdId, archived: false },
       },
       select: { choreId: true, dateKey: true },
+    }),
+    prisma.choreRecord.findMany({
+      where: {
+        householdId: session.householdId,
+        isInitial: false,
+        chore: { householdId: session.householdId, archived: false },
+        OR: [
+          { scheduledDate: { in: gridDateKeys } },
+          { scheduledDate: null, performedAt: { gte: gridStart, lt: gridEnd } },
+        ],
+      },
+      select: {
+        choreId: true,
+        scheduledDate: true,
+        performedAt: true,
+        isSkipped: true,
+        isInitial: true,
+      },
     }),
   ]);
 
@@ -75,11 +95,9 @@ export async function GET(request: Request) {
           isSkipped: chore.records[0].isSkipped,
         }
         : null,
-      // Prefer ChoreOccurrence (reflects reschedules); fall back to ChoreScheduleOverride for legacy chores.
-      scheduleOverrides: occurrencesByChore.has(chore.id)
-        ? (occurrencesByChore.get(chore.id) ?? []).map((dateKey) => ({ date: dateKey }))
-        : chore.scheduleOverrides,
+      scheduleOverrides: (occurrencesByChore.get(chore.id) ?? []).map((dateKey) => ({ date: dateKey })),
     })),
+    calendarRecords,
   );
 
   const countsByDate = Object.fromEntries(

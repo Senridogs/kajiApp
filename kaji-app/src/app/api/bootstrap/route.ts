@@ -69,7 +69,6 @@ export async function GET() {
             orderBy: { performedAt: "desc" },
             include: { user: { select: { id: true, name: true } } },
           },
-          scheduleOverrides: { select: { date: true } },
         },
       }),
       prisma.customIcon.findMany({
@@ -103,62 +102,37 @@ export async function GET() {
       list.push({ id: override.id, choreId: override.choreId, date: override.dateKey, createdAt: override.createdAt });
       scheduleOverridesByChore.set(override.choreId, list);
     }
-    const legacyScheduleOverridesByChore = new Map<string, Array<{ date: string }>>();
-    for (const chore of chores) {
-      if (chore.scheduleOverrides.length > 0) {
-        legacyScheduleOverridesByChore.set(chore.id, chore.scheduleOverrides);
-      }
-    }
-    const choreIds = computed.map((chore) => chore.id);
-    const [homeProgressRecords, homeRangeConsumedOccurrences] = await Promise.all([
-      choreIds.length > 0
-        ? prisma.choreRecord.findMany({
-          where: {
-            householdId: household.id,
-            choreId: { in: choreIds },
-            isInitial: false,
-            OR: [
-              { scheduledDate: { in: homeDateKeys } },
-              {
-                scheduledDate: null,
-                performedAt: { gte: yesterdayStart, lt: dayAfterTomorrowStart },
-              },
-            ],
-          },
-          orderBy: { performedAt: "desc" },
-          select: {
-            choreId: true,
-            scheduledDate: true,
-            performedAt: true,
-            isSkipped: true,
-            isInitial: true,
-          },
-        })
-        : Promise.resolve([]),
-      choreIds.length > 0
-        ? prisma.choreOccurrence.findMany({
-          where: {
-            status: "consumed",
-            choreId: { in: choreIds },
-            dateKey: { in: homeDateKeys },
-          },
-          select: { choreId: true, dateKey: true },
-        })
-        : Promise.resolve([]),
-    ]);
-    // Build a map that includes both pending and consumed occurrences within the home date range,
-    // so that scheduledTotal correctly reflects the full count even after some completions.
     const progressOverridesByChore = new Map<string, Array<{ date: string }>>(
       Array.from(scheduleOverridesByChore.entries()).map(([choreId, overrides]) => [
         choreId,
         overrides.map((o) => ({ date: o.date })),
       ]),
     );
-    for (const occ of homeRangeConsumedOccurrences) {
-      const list = progressOverridesByChore.get(occ.choreId) ?? [];
-      list.push({ date: occ.dateKey });
-      progressOverridesByChore.set(occ.choreId, list);
-    }
+    const choreIds = computed.map((chore) => chore.id);
+    const homeProgressRecords = choreIds.length > 0
+      ? await prisma.choreRecord.findMany({
+        where: {
+          householdId: household.id,
+          choreId: { in: choreIds },
+          isInitial: false,
+          OR: [
+            { scheduledDate: { in: homeDateKeys } },
+            {
+              scheduledDate: null,
+              performedAt: { gte: yesterdayStart, lt: dayAfterTomorrowStart },
+            },
+          ],
+        },
+        orderBy: { performedAt: "desc" },
+        select: {
+          choreId: true,
+          scheduledDate: true,
+          performedAt: true,
+          isSkipped: true,
+          isInitial: true,
+        },
+      })
+      : [];
     const homeOccurrenceReadModelByDate = buildOccurrenceReadModelByDate({
       dateKeys: homeDateKeys,
       chores: computed.map((chore) => ({
@@ -166,9 +140,7 @@ export async function GET() {
         intervalDays: chore.intervalDays,
         dailyTargetCount: chore.dailyTargetCount,
         dueAt: chore.dueAt ? new Date(chore.dueAt) : null,
-        scheduleOverrides: progressOverridesByChore.has(chore.id)
-          ? progressOverridesByChore.get(chore.id)!
-          : legacyScheduleOverridesByChore.get(chore.id) ?? [],
+        scheduleOverrides: progressOverridesByChore.get(chore.id) ?? [],
       })),
       records: homeProgressRecords,
     });
@@ -197,24 +169,6 @@ export async function GET() {
         ),
       ]),
     );
-    // Add sentinel entries (0 counts) for chores that are in the ChoreOccurrence system
-    // but have no occurrence scheduled for today/tomorrow. Without this, those chores
-    // would fall back to recurrence-based display in splitChoresForHomeByProgress,
-    // causing them to appear on days where they have no actual occurrence.
-    for (const dateKey of [homeDateKeyRange.today, homeDateKeyRange.tomorrow]) {
-      for (const choreId of progressOverridesByChore.keys()) {
-        if (!(choreId in homeProgressByDate[dateKey])) {
-          homeProgressByDate[dateKey][choreId] = {
-            scheduledTotal: 0,
-            pendingTotal: 0,
-            completed: 0,
-            skipped: 0,
-            pending: 0,
-            latestState: "pending",
-          };
-        }
-      }
-    }
     const homeSplit = splitChoresForHomeByProgress(computed, homeProgressByDate);
 
     return NextResponse.json({
