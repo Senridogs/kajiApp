@@ -236,24 +236,45 @@ export async function POST(request: Request) {
           toDateKey: window.toDateKey,
         });
         if (generated.length > 0) {
+          // Count existing consumed occurrences per date to avoid creating duplicates
+          const existingConsumed = await tx.choreOccurrence.groupBy({
+            by: ["dateKey"],
+            where: { choreId, status: OCCURRENCE_STATUS_CONSUMED, dateKey: { in: generated } },
+            _count: { id: true },
+          });
+          const consumedByDate = new Map(existingConsumed.map((g) => [g.dateKey, g._count.id]));
+
+          const dateKeyCounts = new Map<string, number>();
+          for (const dk of generated) {
+            dateKeyCounts.set(dk, (dateKeyCounts.get(dk) ?? 0) + 1);
+          }
+          const createData: Array<{ choreId: string; dateKey: string; status: string; sourceType: string }> = [];
+          for (const [dk, count] of dateKeyCounts) {
+            const toCreate = Math.max(0, count - (consumedByDate.get(dk) ?? 0));
+            for (let i = 0; i < toCreate; i++) {
+              createData.push({ choreId, dateKey: dk, status: OCCURRENCE_STATUS_PENDING, sourceType: OCCURRENCE_SOURCE_GENERATOR });
+            }
+          }
+          if (createData.length > 0) {
+            await tx.choreOccurrence.createMany({ data: createData });
+          }
+        }
+      } else {
+        // Count existing consumed occurrences on target date to avoid creating duplicates
+        const existingConsumedOnTarget = await tx.choreOccurrence.count({
+          where: { choreId, dateKey: date, status: OCCURRENCE_STATUS_CONSUMED },
+        });
+        const actualCreateCount = Math.max(0, movedCount - existingConsumedOnTarget);
+        if (actualCreateCount > 0) {
           await tx.choreOccurrence.createMany({
-            data: generated.map((dateKey) => ({
+            data: Array.from({ length: actualCreateCount }).map(() => ({
               choreId,
-              dateKey,
+              dateKey: date,
               status: OCCURRENCE_STATUS_PENDING,
-              sourceType: OCCURRENCE_SOURCE_GENERATOR,
+              sourceType: OCCURRENCE_SOURCE_OVERRIDE,
             })),
           });
         }
-      } else {
-        await tx.choreOccurrence.createMany({
-          data: Array.from({ length: movedCount }).map(() => ({
-            choreId,
-            dateKey: date,
-            status: OCCURRENCE_STATUS_PENDING,
-            sourceType: OCCURRENCE_SOURCE_OVERRIDE,
-          })),
-        });
       }
     }
 
