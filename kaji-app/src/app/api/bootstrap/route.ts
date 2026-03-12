@@ -146,18 +146,49 @@ export async function GET() {
         })
         : Promise.resolve([]),
     ]);
-    // Build a map that includes both pending and consumed occurrences within the home date range,
-    // so that scheduledTotal correctly reflects the full count even after some completions.
-    const progressOverridesByChore = new Map<string, Array<{ date: string }>>(
-      Array.from(scheduleOverridesByChore.entries()).map(([choreId, overrides]) => [
-        choreId,
-        overrides.map((o) => ({ date: o.date })),
-      ]),
-    );
+    // Build a map that includes both pending and consumed occurrences within the home date range.
+    // For each chore+date, use max(pendingCount, consumedCount) to avoid inflated scheduledTotal
+    // when duplicate occurrences have accumulated in the database.
+    const pendingCountMap = new Map<string, number>();
+    for (const [choreId, overrides] of scheduleOverridesByChore.entries()) {
+      for (const o of overrides) {
+        const key = `${choreId}|${o.date}`;
+        pendingCountMap.set(key, (pendingCountMap.get(key) ?? 0) + 1);
+      }
+    }
+    const consumedCountMap = new Map<string, number>();
     for (const occ of homeRangeConsumedOccurrences) {
-      const list = progressOverridesByChore.get(occ.choreId) ?? [];
-      list.push({ date: occ.dateKey });
-      progressOverridesByChore.set(occ.choreId, list);
+      const key = `${occ.choreId}|${occ.dateKey}`;
+      consumedCountMap.set(key, (consumedCountMap.get(key) ?? 0) + 1);
+    }
+    const progressOverridesByChore = new Map<string, Array<{ date: string }>>();
+    // First, add all pending entries (including those outside the home date range for sentinel logic)
+    for (const [choreId, overrides] of scheduleOverridesByChore.entries()) {
+      const list: Array<{ date: string }> = [];
+      // Group pending by date to deduplicate with consumed
+      const pendingByDate = new Map<string, number>();
+      for (const o of overrides) {
+        pendingByDate.set(o.date, (pendingByDate.get(o.date) ?? 0) + 1);
+      }
+      for (const [dateKey, pCount] of pendingByDate) {
+        const cCount = consumedCountMap.get(`${choreId}|${dateKey}`) ?? 0;
+        const slotCount = Math.max(pCount, cCount);
+        for (let i = 0; i < slotCount; i++) list.push({ date: dateKey });
+      }
+      progressOverridesByChore.set(choreId, list);
+    }
+    // Then add consumed-only entries (dates with consumed but no pending)
+    for (const occ of homeRangeConsumedOccurrences) {
+      const key = `${occ.choreId}|${occ.dateKey}`;
+      if (!pendingCountMap.has(key)) {
+        const list = progressOverridesByChore.get(occ.choreId) ?? [];
+        // Only add once per unique choreId+dateKey (use consumedCountMap for exact count)
+        if (!list.some((e) => e.date === occ.dateKey)) {
+          const cCount = consumedCountMap.get(key) ?? 1;
+          for (let i = 0; i < cCount; i++) list.push({ date: occ.dateKey });
+          progressOverridesByChore.set(occ.choreId, list);
+        }
+      }
     }
     const homeOccurrenceReadModelByDate = buildOccurrenceReadModelByDate({
       dateKeys: homeDateKeys,
