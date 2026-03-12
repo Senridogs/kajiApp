@@ -146,9 +146,9 @@ export async function GET() {
         })
         : Promise.resolve([]),
     ]);
-    // Build a map that includes both pending and consumed occurrences within the home date range.
-    // For each chore+date, use max(pendingCount, consumedCount) to avoid inflated scheduledTotal
-    // when duplicate occurrences have accumulated in the database.
+    // Build a map that combines pending and consumed occurrences within the home date range.
+    // Pending and consumed are disjoint: pending = not yet done, consumed = already done.
+    // Total slots = pending + consumed (not max) so the denominator stays stable across skips.
     const pendingCountMap = new Map<string, number>();
     for (const [choreId, overrides] of scheduleOverridesByChore.entries()) {
       for (const o of overrides) {
@@ -162,17 +162,18 @@ export async function GET() {
       consumedCountMap.set(key, (consumedCountMap.get(key) ?? 0) + 1);
     }
     const progressOverridesByChore = new Map<string, Array<{ date: string }>>();
-    // First, add all pending entries (including those outside the home date range for sentinel logic)
+    // First, add entries for dates with pending occurrences (including those outside
+    // the home date range for sentinel logic). Total = pending + consumed.
     for (const [choreId, overrides] of scheduleOverridesByChore.entries()) {
       const list: Array<{ date: string }> = [];
-      // Group pending by date to deduplicate with consumed
+      // Group pending by date
       const pendingByDate = new Map<string, number>();
       for (const o of overrides) {
         pendingByDate.set(o.date, (pendingByDate.get(o.date) ?? 0) + 1);
       }
       for (const [dateKey, pCount] of pendingByDate) {
         const cCount = consumedCountMap.get(`${choreId}|${dateKey}`) ?? 0;
-        const slotCount = Math.max(pCount, cCount);
+        const slotCount = pCount + cCount;
         for (let i = 0; i < slotCount; i++) list.push({ date: dateKey });
       }
       progressOverridesByChore.set(choreId, list);

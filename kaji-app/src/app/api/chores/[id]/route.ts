@@ -82,6 +82,11 @@ export async function GET(request: Request, { params }: RouteParams) {
   if (dateKey) {
     const targetDayStart = startOfJstDay(new Date(`${dateKey}T00:00:00+09:00`));
     const nextDayStart = addDays(targetDayStart, 1);
+    // Count consumed occurrences on the target date so the total (pending + consumed)
+    // stays stable as occurrences transition from pending to consumed during skips.
+    const consumedOnDate = await prisma.choreOccurrence.count({
+      where: { choreId: id, dateKey, status: "consumed" },
+    });
     const records = await prisma.choreRecord.findMany({
       where: {
         householdId: session.householdId,
@@ -102,19 +107,38 @@ export async function GET(request: Request, { params }: RouteParams) {
       },
     });
 
+    // Combine pending overrides with consumed occurrences for the target date
+    // so that scheduledTotal = pending + consumed (consistent with bootstrap).
+    const pendingOverrides = scheduleOverrides
+      .filter((o) => o.dateKey === dateKey)
+      .map((override) => ({
+        id: override.id,
+        choreId: override.choreId,
+        date: override.dateKey,
+        createdAt: override.createdAt.toISOString(),
+      }));
+    const consumedEntries = Array.from({ length: consumedOnDate }).map((_, i) => ({
+      id: `consumed-${i}`,
+      choreId: id,
+      date: dateKey,
+      createdAt: new Date(0).toISOString(),
+    }));
+    // For non-target dates, keep only pending entries (sentinel logic)
+    const nonTargetOverrides = scheduleOverrides
+      .filter((o) => o.dateKey !== dateKey)
+      .map((override) => ({
+        id: override.id,
+        choreId: override.choreId,
+        date: override.dateKey,
+        createdAt: override.createdAt.toISOString(),
+      }));
+    const allOverrides = [...pendingOverrides, ...consumedEntries, ...nonTargetOverrides];
+
     const progressByDate = buildHomeProgressByDate({
       chores: [computed],
       dateKeys: [dateKey],
       scheduleOverridesByChore: new Map([
-        [
-          id,
-          scheduleOverrides.map((override) => ({
-            id: override.id,
-            choreId: override.choreId,
-            date: override.dateKey,
-            createdAt: override.createdAt.toISOString(),
-          })),
-        ],
+        [id, allOverrides],
       ]),
       records,
     });

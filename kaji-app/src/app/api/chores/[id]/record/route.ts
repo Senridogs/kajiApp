@@ -166,19 +166,9 @@ export async function POST(request: Request, { params }: RouteParams) {
             sourcePendingCount = sourceScheduledCount;
           }
         }
-        if (sourcePendingCount === 0) {
-          // Fallback: if consumed occurrences exist on this date (due to duplicate accumulation),
-          // create a pending occurrence so the completion can proceed.
-          const consumedOnSource = await tx.choreOccurrence.count({
-            where: { choreId: chore.id, dateKey: sourceDate, status: "consumed" },
-          });
-          if (consumedOnSource > 0) {
-            await tx.choreOccurrence.create({
-              data: { choreId: chore.id, dateKey: sourceDate, status: "pending", sourceType: OCCURRENCE_SOURCE_OVERRIDE },
-            });
-            sourcePendingCount = 1;
-          }
-        }
+        // No fallback for consumed-only dates: if all pending occurrences are already
+        // consumed, do not create new ones. This prevents unbounded growth of consumed
+        // occurrence counts when a user repeatedly skips an already-completed chore.
         if (sourcePendingCount === 0) {
           throw new Error(SOURCE_DATE_NOT_SCHEDULED);
         }

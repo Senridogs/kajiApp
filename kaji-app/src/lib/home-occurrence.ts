@@ -204,11 +204,10 @@ export function buildHomeProgressByDate(params: {
   for (const [dateKey, byChore] of progressByDate.entries()) {
     result[dateKey] = {};
     for (const [choreId, entry] of byChore.entries()) {
-      if (entry.usesOverrideSchedule) {
-        entry.pendingTotal = entry.scheduledTotal;
-      } else {
-        entry.pendingTotal = Math.max(0, entry.scheduledTotal - entry.completed - entry.skipped);
-      }
+      // pendingTotal = remaining slots after consumed records, regardless of schedule source.
+      // Previously override schedules kept pendingTotal = scheduledTotal, which caused
+      // sanitizeEntry to inflate normalizedScheduledTotal via (pendingTotal + consumed).
+      entry.pendingTotal = Math.max(0, entry.scheduledTotal - entry.completed - entry.skipped);
       const sanitized = sanitizeEntry(entry);
       if (sanitized.scheduledTotal <= 0 && sanitized.completed <= 0 && sanitized.skipped <= 0) {
         continue;
