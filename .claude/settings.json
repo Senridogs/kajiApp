@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"var p=require('path').join(process.env.CLAUDE_PROJECT_DIR||'.','.claude','scripts','pre-block-env.mjs');try{require('child_process').execFileSync('node',[p],{stdio:'inherit'})}catch(e){process.exit(e.status===2?2:0)}\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"var p=require('path').join(process.env.CLAUDE_PROJECT_DIR||'.','.claude','scripts','pre-block-env-bash.mjs');try{require('child_process').execFileSync('node',[p],{stdio:'inherit'})}catch(e){process.exit(e.status===2?2:0)}\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/scripts/update-registry.mjs \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {}
+}

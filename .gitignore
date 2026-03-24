@@ -1,0 +1,12 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright CLI logs
+.playwright-cli/
+
+# Output artifacts
+output/
+
+# Claude Code auto-memory (local only)
+.claude/settings.local.json

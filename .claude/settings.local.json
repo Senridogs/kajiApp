@@ -9,7 +9,9 @@
       "Bash(npx tsc:*)",
       "Bash(node_modules/.bin/tsc:*)",
       "Bash(echo:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Read(//c/Users/hueym/Documents/myApp/kajiApp/$HOME/.claude/plugins/**)",
+      "Bash(cd:*)"
     ]
   }
 }

@@ -32,6 +32,16 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+!local-db.env.example
+
+# logs & output
+*.log
+output/
+
+# playwright
+/test-results/
+/playwright-report/
 
 # vercel
 .vercel
