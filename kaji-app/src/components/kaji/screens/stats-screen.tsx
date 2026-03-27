@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown } from "lucide-react";
 import type {
+  AwardItem,
   BootstrapResponse,
   HouseholdReportResponse,
   MyStatsResponse,
@@ -40,6 +41,7 @@ export function StatsScreen({ boot }: Props) {
   const [reportMonthOffset, setReportMonthOffset] = useState<(typeof REPORT_MONTH_OFFSETS)[number]>(0);
   const [reportLoading, setReportLoading] = useState(false);
   const [myReportLoading, setMyReportLoading] = useState(false);
+  const [awardsExplanationOpen, setAwardsExplanationOpen] = useState(false);
 
   const loadHouseholdReport = useCallback(async (offset: (typeof REPORT_MONTH_OFFSETS)[number]) => {
     const currentMonth = toMonthKey(new Date());
@@ -91,6 +93,27 @@ export function StatsScreen({ boot }: Props) {
   const monthDiffLabel =
     householdReportDiff > 0 ? `+${householdReportDiff}` : `${householdReportDiff}`;
 
+  // Awards filtered by selected month
+  const userMap = useMemo(() => {
+    const map = new Map<string, { name: string; color: string | null }>();
+    for (const u of boot.users) {
+      map.set(u.id, { name: u.name, color: u.color });
+    }
+    return map;
+  }, [boot.users]);
+
+  const filteredAwards = useMemo((): AwardItem[] => {
+    const currentMonth = toMonthKey(new Date());
+    const selectedKey = monthKeyWithOffset(currentMonth, reportMonthOffset);
+    const [selYear, selMonth] = selectedKey.split("-").map(Number);
+    return boot.recentAwards.filter((award) => {
+      if (award.month != null) {
+        return award.year === selYear && award.month === selMonth;
+      }
+      return award.year === selYear;
+    });
+  }, [boot.recentAwards, reportMonthOffset]);
+
   // Garden score
   const gardenScore = boot.gardenScore;
   const gardenMessage =
@@ -133,6 +156,94 @@ export function StatsScreen({ boot }: Props) {
             {REPORT_MONTH_LABELS[offset]}
           </button>
         ))}
+      </div>
+
+      {/* Awards */}
+      <div className="rounded-[16px] bg-[var(--card)] px-5 py-5">
+        <p className="text-[18px] font-bold text-[var(--foreground)]">
+          {"アワード"}
+        </p>
+        <div className="mt-3 space-y-2">
+          {filteredAwards.length === 0 ? (
+            <p className="text-[13px] font-medium text-[var(--app-text-tertiary)]">
+              {"まだアワードはありません"}
+            </p>
+          ) : (
+            filteredAwards.map((award) => {
+              const recipient = userMap.get(award.userId);
+              return (
+                <div
+                  key={award.id}
+                  className="flex items-center gap-3 rounded-[10px] bg-[var(--app-canvas)] px-3 py-2.5"
+                >
+                  <span className="text-[28px] leading-none">{award.emoji}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-bold text-[var(--foreground)]">
+                      {award.title}
+                    </p>
+                    {award.description ? (
+                      <p className="mt-0.5 truncate text-[12px] text-[var(--muted-foreground)]">
+                        {award.description}
+                      </p>
+                    ) : null}
+                  </div>
+                  {recipient ? (
+                    <span
+                      className="shrink-0 rounded-full px-2 py-0.5 text-[12px] font-bold text-white"
+                      style={{ backgroundColor: recipient.color ?? "var(--primary)" }}
+                    >
+                      {recipient.name}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Award explanation toggle */}
+        <button
+          type="button"
+          onClick={() => setAwardsExplanationOpen((prev) => !prev)}
+          className="mt-3 flex w-full items-center gap-1 text-[12px] font-medium text-[var(--muted-foreground)]"
+        >
+          <span>{"アワードとは？"}</span>
+          <ChevronDown
+            size={14}
+            className={`transition-transform duration-200 ${awardsExplanationOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+        {awardsExplanationOpen ? (
+          <div className="mt-2 space-y-3 rounded-[10px] bg-[var(--app-canvas)] px-3 py-3">
+            <p className="text-[12px] leading-relaxed text-[var(--muted-foreground)]">
+              {"毎月1日に先月の活動を集計して、自動で表彰されます。年間アワードは1月1日に発表されます。"}
+            </p>
+            <div className="space-y-1">
+              <p className="text-[11px] font-bold text-[var(--app-text-tertiary)]">
+                {"月間アワード（毎月）"}
+              </p>
+              <div className="space-y-0.5 text-[11px] leading-relaxed text-[var(--muted-foreground)]">
+                <p>{"⚡ スピードスター — 最も多く家事をこなした人"}</p>
+                <p>{"🌅 早起きマスター — 朝（5〜9時）に最も活動した人"}</p>
+                <p>{"🦉 夜ふかしマスター — 夜（21〜2時）に最も活動した人"}</p>
+                <p>{"🎨 バラエティキング — 最も多くの種類の家事をした人"}</p>
+                <p>{"🔥 ストリークマスター — 最長連続記録の人"}</p>
+                <p>{"💪 ウィークエンドウォリアー — 週末に最も活動した人"}</p>
+                <p>{"⭐ コツコツマスター — 最も均等に家事をした人"}</p>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[11px] font-bold text-[var(--app-text-tertiary)]">
+                {"年間アワード（1月）"}
+              </p>
+              <div className="space-y-0.5 text-[11px] leading-relaxed text-[var(--muted-foreground)]">
+                <p>{"🏆 年間MVP — 年間で最も多く家事をした人"}</p>
+                <p>{"📈 成長賞 — 後半に追い上げた人"}</p>
+                <p>{"🎖️ 継続賞 — 最も多くの月で活動した人"}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Household monthly total */}
@@ -213,8 +324,8 @@ export function StatsScreen({ boot }: Props) {
             ) : (
               staleTasks.map((item) => {
                 const ItemIcon = iconByName(item.icon);
-                const lastPerformed = new Date(item.lastPerformedAt);
-                const lastPerformedLabel = `${lastPerformed.getMonth() + 1}/${lastPerformed.getDate()}`;
+                const jst = new Date(new Date(item.lastPerformedAt).getTime() + 9 * 60 * 60 * 1000);
+                const lastPerformedLabel = `${jst.getUTCMonth() + 1}/${jst.getUTCDate()}`;
                 return (
                   <div
                     key={item.choreId}
@@ -233,6 +344,7 @@ export function StatsScreen({ boot }: Props) {
             )}
           </div>
         </div>
+
       </div>
     </div>
   );

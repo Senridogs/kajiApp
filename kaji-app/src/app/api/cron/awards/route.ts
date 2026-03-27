@@ -50,7 +50,7 @@ function isJanuaryJst(now: Date): boolean {
   return jst.getUTCMonth() === 0; // January = 0
 }
 
-export async function POST(request: Request) {
+async function handleAwardGeneration(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "認証エラーです。" }, { status: 401 });
   }
@@ -100,4 +100,14 @@ export async function POST(request: Request) {
     console.error("[api/cron/awards] failed", error instanceof Error ? error.message : String(error));
     return NextResponse.json({ error: "アワード生成に失敗しました。" }, { status: 500 });
   }
+}
+
+/** Vercel Cron sends GET requests */
+export async function GET(request: Request) {
+  return handleAwardGeneration(request);
+}
+
+/** Manual triggering via POST */
+export async function POST(request: Request) {
+  return handleAwardGeneration(request);
 }

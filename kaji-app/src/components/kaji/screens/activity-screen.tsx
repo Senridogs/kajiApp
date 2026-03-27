@@ -4,6 +4,7 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import type {
   BootstrapResponse,
   ChoreRecordItem,
+  ChoreRecordCommentItem,
 } from "@/lib/types";
 import { startOfJstDay, toJstDateKey, addDays } from "@/lib/time";
 import { apiFetch, iconByName } from "../helpers";
@@ -15,12 +16,12 @@ type Props = {
   onRefresh: () => Promise<void>;
 };
 
-const REACTION_CHOICES = ["\u{1F44F}", "\u2764\uFE0F", "\u2728", "\u{1F389}"] as const;
+const REACTION_CHOICES = ["👏", "❤️", "✨", "🎉"] as const;
 const REACTION_ICON_MAP: Record<(typeof REACTION_CHOICES)[number], { icon: string; color: string }> = {
-  "\u{1F44F}": { icon: "thumb_up", color: PRIMARY_COLOR },
-  "\u2764\uFE0F": { icon: "favorite", color: PRIMARY_COLOR },
-  "\u2728": { icon: "celebration", color: PRIMARY_COLOR },
-  "\u{1F389}": { icon: "star", color: PRIMARY_COLOR },
+  "👏": { icon: "thumb_up", color: PRIMARY_COLOR },
+  "❤️": { icon: "favorite", color: PRIMARY_COLOR },
+  "✨": { icon: "celebration", color: PRIMARY_COLOR },
+  "🎉": { icon: "star", color: PRIMARY_COLOR },
 };
 
 type TimelineRecordGroup = {
@@ -67,6 +68,10 @@ export function ActivityScreen({ boot, onReaction }: Props) {
   const [reactionPickerRecordId, setReactionPickerRecordId] = useState<string | null>(null);
   const [reactionUpdatingId, setReactionUpdatingId] = useState<string | null>(null);
   const [fullRecords, setFullRecords] = useState<ChoreRecordItem[] | null>(null);
+  const [commentOpenRecordId, setCommentOpenRecordId] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState("");
+  const [commentPostingId, setCommentPostingId] = useState<string | null>(null);
+  const [commentDeletingId, setCommentDeletingId] = useState<string | null>(null);
 
   const sessionUser = boot.sessionUser;
   const chores = boot.chores;
@@ -107,6 +112,70 @@ export function ActivityScreen({ boot, onReaction }: Props) {
       }
     },
     [onReaction, reactionUpdatingId, sessionUser],
+  );
+
+  const toggleCommentInput = useCallback(
+    (recordId: string) => {
+      setCommentOpenRecordId((prev) => {
+        if (prev === recordId) return null;
+        setCommentText("");
+        return recordId;
+      });
+    },
+    [],
+  );
+
+  const postComment = useCallback(
+    async (recordId: string) => {
+      const trimmed = commentText.trim();
+      if (!trimmed || !sessionUser || commentPostingId) return;
+      setCommentPostingId(recordId);
+      try {
+        const result = await apiFetch<{ comment: ChoreRecordCommentItem }>(
+          `/api/records/${recordId}/comment`,
+          { method: "POST", body: JSON.stringify({ body: trimmed }) },
+        );
+        const newComment = result.comment;
+        const updateRecords = (list: ChoreRecordItem[]) =>
+          list.map((r) =>
+            r.id === recordId
+              ? { ...r, comments: [...(r.comments ?? []), newComment] }
+              : r,
+          );
+        setFullRecords((prev) => (prev ? updateRecords(prev) : prev));
+        setCommentText("");
+      } catch {
+        // エラー時は何もしない（入力はそのまま残す）
+      } finally {
+        setCommentPostingId(null);
+      }
+    },
+    [commentText, sessionUser, commentPostingId],
+  );
+
+  const deleteComment = useCallback(
+    async (recordId: string, commentId: string) => {
+      if (commentDeletingId) return;
+      setCommentDeletingId(commentId);
+      try {
+        await apiFetch(
+          `/api/records/${recordId}/comment`,
+          { method: "DELETE", body: JSON.stringify({ commentId }) },
+        );
+        const updateRecords = (list: ChoreRecordItem[]) =>
+          list.map((r) =>
+            r.id === recordId
+              ? { ...r, comments: (r.comments ?? []).filter((c) => c.id !== commentId) }
+              : r,
+          );
+        setFullRecords((prev) => (prev ? updateRecords(prev) : prev));
+      } catch {
+        // エラー時は何もしない
+      } finally {
+        setCommentDeletingId(null);
+      }
+    },
+    [commentDeletingId],
   );
 
   const renderTimelineRecords = (
@@ -177,21 +246,38 @@ export function ActivityScreen({ boot, onReaction }: Props) {
                     </p>
                   ) : null}
                   {record.comments && record.comments.length > 0 ? (
-                    <div className="mt-1.5 space-y-1">
+                    <div className="mt-2 space-y-1.5">
                       {record.comments.map((comment) => (
                         <div
                           key={comment.id}
-                          className="flex items-start gap-1.5 text-[12px]"
+                          className="group flex items-start gap-1.5 text-[12px]"
                         >
-                          <span className="material-symbols-rounded text-[14px] text-[var(--muted-foreground)]">
+                          <span className="material-symbols-rounded mt-1 text-[14px] text-[var(--muted-foreground)]">
                             chat_bubble
                           </span>
-                          <span className="font-semibold text-[var(--muted-foreground)]">
-                            {comment.userName ?? "不明"}
-                          </span>
-                          <span className="font-medium text-[var(--foreground)]">
-                            {comment.body}
-                          </span>
+                          <div className="flex-1 rounded-2xl rounded-tl-md bg-[var(--app-surface-soft)] px-3 py-1.5">
+                            <span className="font-semibold text-[var(--muted-foreground)]">
+                              {comment.userName ?? "不明"}
+                            </span>
+                            <span className="ml-1.5 font-medium text-[var(--foreground)]">
+                              {comment.body}
+                            </span>
+                          </div>
+                          {comment.userId === sessionUser?.id ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void deleteComment(record.id, comment.id);
+                              }}
+                              disabled={commentDeletingId === comment.id}
+                              className="mt-1 flex-shrink-0 rounded-full p-0.5 text-[var(--muted-foreground)] opacity-0 transition-opacity hover:text-[var(--foreground)] group-hover:opacity-100 disabled:opacity-30 max-[768px]:opacity-60"
+                              aria-label="コメントを削除"
+                            >
+                              <span className="material-symbols-rounded text-[14px]">
+                                close
+                              </span>
+                            </button>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -242,6 +328,20 @@ export function ActivityScreen({ boot, onReaction }: Props) {
                           add_reaction
                         </span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => { toggleCommentInput(record.id); }}
+                        className={`inline-flex items-center gap-0.5 rounded-full px-2 py-1 text-[12px] font-bold ${commentOpenRecordId === record.id ? "bg-[var(--app-surface-soft)]" : "bg-transparent"} text-[var(--app-text-tertiary)]`}
+                      >
+                        <span className="material-symbols-rounded text-[16px]">
+                          chat_bubble
+                        </span>
+                        {(record.comments ?? []).length > 0 ? (
+                          <span className="text-[11px]">
+                            {(record.comments ?? []).length}
+                          </span>
+                        ) : null}
+                      </button>
                     </div>
                     {reactionPickerRecordId === record.id ? (
                       <div className="flex items-center gap-2 px-1">
@@ -268,6 +368,38 @@ export function ActivityScreen({ boot, onReaction }: Props) {
                             </button>
                           );
                         })}
+                      </div>
+                    ) : null}
+                    {commentOpenRecordId === record.id ? (
+                      <div className="flex items-center gap-1.5 px-1">
+                        <input
+                          type="text"
+                          value={commentText}
+                          onChange={(e) => {
+                            if (e.target.value.length <= 500) {
+                              setCommentText(e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                              void postComment(record.id);
+                            }
+                          }}
+                          placeholder="コメントを入力..."
+                          maxLength={500}
+                          className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 text-[13px] font-medium text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { void postComment(record.id); }}
+                          disabled={!commentText.trim() || commentPostingId === record.id}
+                          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[var(--app-surface-soft)] text-[var(--foreground)] disabled:opacity-30"
+                          aria-label="コメントを送信"
+                        >
+                          <span className="material-symbols-rounded text-[18px]">
+                            send
+                          </span>
+                        </button>
                       </div>
                     ) : null}
                   </>
