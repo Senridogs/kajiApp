@@ -18,7 +18,6 @@ export type ChoreForm = {
   id?: string;
   title: string;
   intervalDays: number;
-  dailyTargetCount: number;
   icon: string;
   iconColor: string;
   bgColor: string;
@@ -37,8 +36,6 @@ export type CustomIconOption = {
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const MIN_INTERVAL_DAYS = 1;
 const MAX_INTERVAL_DAYS = 365;
-const MIN_DAILY_TARGET_COUNT = 1;
-const MAX_DAILY_TARGET_COUNT = 5;
 const ICON_PRESETS_PER_PAGE = 6;
 const CUSTOM_ICON_TAP_WINDOW_MS = 420;
 
@@ -185,26 +182,6 @@ export function ChoreEditor({
     onChange({ ...value, intervalDays: next });
   };
 
-  const updateDailyTargetCount = (delta: number) => {
-    const next = Math.min(
-      MAX_DAILY_TARGET_COUNT,
-      Math.max(MIN_DAILY_TARGET_COUNT, value.dailyTargetCount + delta),
-    );
-    onChange({ ...value, dailyTargetCount: next });
-  };
-
-  const setDailyTargetCount = (rawValue: string) => {
-    const trimmed = rawValue.replace(/[^\d]/g, "");
-    if (!trimmed) {
-      onChange({ ...value, dailyTargetCount: MIN_DAILY_TARGET_COUNT });
-      return;
-    }
-    const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed)) return;
-    const next = Math.min(MAX_DAILY_TARGET_COUNT, Math.max(MIN_DAILY_TARGET_COUNT, parsed));
-    onChange({ ...value, dailyTargetCount: next });
-  };
-
   return (
     <div className="space-y-[10px] pb-0">
       <div>
@@ -266,36 +243,6 @@ export function ChoreEditor({
         </div>
       </div>
 
-      <div>
-        <p className="mb-1.5 text-[14.4px] font-bold text-[var(--muted-foreground)]">1日の回数</p>
-        <div className="flex items-center justify-between rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
-          <button
-            type="button"
-            onClick={() => updateDailyTargetCount(-1)}
-            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[var(--secondary)]"
-          >
-            <Minus size={16} className="text-[var(--muted-foreground)]" />
-          </button>
-          <div className="flex items-center gap-1">
-            <input
-              type="text"
-              value={String(value.dailyTargetCount)}
-              inputMode="numeric"
-              onChange={(e) => setDailyTargetCount(e.target.value)}
-              className="w-[58px] rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-center text-[16.8px] font-bold text-[var(--foreground)] outline-none"
-              aria-label="daily-target-count"
-            />
-            <span className="text-[15px] font-bold text-[var(--foreground)]">回 / 日</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => updateDailyTargetCount(1)}
-            className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[var(--primary)]"
-          >
-            <Plus size={16} className="text-white" />
-          </button>
-        </div>
-      </div>
       <div>
         <p className="mb-1.5 text-[14.4px] font-bold text-[var(--muted-foreground)]">開始日 *</p>
         <input
@@ -448,10 +395,10 @@ export function ChoreEditor({
           size="lg"
           fullWidth
           loading={isSaving}
-          loadingLabel="\u4FDD\u5B58\u4E2D..."
+          loadingLabel="保存中..."
           className={!canSave ? "border-[var(--app-text-tertiary)] bg-[var(--app-text-tertiary)] shadow-none" : undefined}
         >
-          {mode === "create" ? "\u5BB6\u4E8B\u3092\u8FFD\u52A0" : "\u5909\u66F4\u3092\u4FDD\u5B58"}
+          {mode === "create" ? "家事を追加" : "変更を保存"}
         </ActionButton>
         {mode === "edit" ? (
           <ActionButton
@@ -463,7 +410,7 @@ export function ChoreEditor({
             fullWidth
             className="border-[var(--destructive)] text-[var(--destructive)]"
           >
-            {"\u5BB6\u4E8B\u3092\u524A\u9664"}
+            家事を削除
           </ActionButton>
         ) : null}
       </div>

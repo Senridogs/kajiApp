@@ -1,7 +1,12 @@
 ﻿import { icons, type LucideIcon } from "lucide-react";
 
 import { startOfJstDay } from "@/lib/time";
-import type { ChoreWithComputed, HomeProgressEntry, HomeProgressState } from "@/lib/types";
+import type { ChoreWithComputed } from "@/lib/types";
+
+// --- Temporary stubs for deleted types (frontend full rewrite pending) ---
+type HomeProgressEntry = { pending: number; completed: number; skipped: number };
+type HomeProgressState = "pending" | "done" | "skipped";
+// --- End temporary stubs ---
 
 type ProgressStateInput = Pick<HomeProgressEntry, "pending" | "completed" | "skipped"> | null | undefined;
 
@@ -61,11 +66,13 @@ export function labelForDue(
 ) {
   const state = options.state ?? "pending";
   if (state !== "pending") return "実施済み";
-  if (chore.isOverdue) return `${chore.overdueDays}日遅れ`;
-  if (chore.isDueToday) return "今日";
-  if (chore.isDueTomorrow) return "明日";
-  if (!chore.dueAt) return "未設定";
-  return `${formatMonthDay(chore.dueAt)} 期限`;
+  // Deleted properties (isOverdue, isDueToday, isDueTomorrow, dueAt) — stub for rewrite
+  const anyChore = chore as Record<string, unknown>;
+  if (anyChore.isOverdue) return `${anyChore.overdueDays}日遅れ`;
+  if (anyChore.isDueToday) return "今日";
+  if (anyChore.isDueTomorrow) return "明日";
+  if (!anyChore.dueAt) return "未設定";
+  return `${formatMonthDay(anyChore.dueAt as string)} 期限`;
 }
 
 export function maxCount(items: Array<{ count: number }>) {
@@ -126,8 +133,10 @@ export function relativeLastPerformed(value: string | null, now = new Date()) {
 }
 
 export function dueInDaysLabel(chore: ChoreWithComputed, now = new Date()) {
-  if (!chore.dueAt) return "期限未設定";
-  const due = new Date(chore.dueAt);
+  // dueAt removed from ChoreWithComputed — stub for rewrite
+  const dueAt = (chore as Record<string, unknown>).dueAt as string | undefined;
+  if (!dueAt) return "期限未設定";
+  const due = new Date(dueAt);
   const todayStart = startOfJstDay(now);
   const dueStart = startOfJstDay(due);
   const diff = Math.floor((dueStart.getTime() - todayStart.getTime()) / (24 * 60 * 60 * 1000));

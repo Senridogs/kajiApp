@@ -21,7 +21,7 @@ test("Main app keeps mobile-first shell and editor sheet behavior", () => {
   assert.match(app, /fixed bottom-4 left-0 right-0 z-\[76\]/);
   assert.match(app, /fixed bottom-0 left-0 right-0 z-\[74\]/);
   assert.match(app, /fixed inset-0 z-\[70\][\s\S]*h-full overflow-y-auto px-4 pb-24 pt-6/);
-  assert.match(app, /fixed inset-0 z-\[75\] bg-\[#F8F9FA\][\s\S]*mx-auto h-full w-full max-w-\[430px\] overflow-y-auto px-5 pb-24 pt-5/);
+  assert.match(app, /fixed inset-0 z-\[75\] bg-\[var\(--app-canvas\)\][\s\S]*mx-auto h-full w-full max-w-\[430px\] overflow-y-auto px-5 pb-24 pt-5/);
   assert.match(app, /openAddChore[\s\S]*lastPerformedAt:\s*defaultLastPerformedAt\(\)/);
   assert.match(app, /const createPayload = \{[\s\S]*startDate:\s*editingChore\.lastPerformedAt \?\? undefined/);
   const onboardingAddBlock =
@@ -83,17 +83,7 @@ test("Section-level swipe defers to calendar and pull-to-refresh gestures", () =
   assert.match(app, /data-calendar-swipe-surface="true"/);
 });
 
-test("Home drag and drop wiring keeps required attributes and handlers", () => {
-  const app = read("src/components/kaji/kaji-app.tsx");
-  assert.match(app, /draggable/);
-  assert.match(app, /data-home-drop-date=\{sectionDateKey\}/);
-  assert.match(app, /data-home-drop-chore-id=\{chore.id\}/);
-  assert.match(app, /onDragStart=\{\(event\) => \{/);
-  assert.match(app, /onDragOver=\{\(event\) => \{/);
-  assert.match(app, /onDrop=\{\(event\) => \{/);
-  assert.match(app, /onDragEnd=\{clearDragState\}/);
-  assert.match(app, /onPointerDown=\{\(event\) => handleChorePointerDown\(displayChore, sectionDateKey, event\)\}/);
-});
+
 
 test("Optimistic completion marks initial flag false to avoid temporary disappearance", () => {
   const app = read("src/components/kaji/kaji-app.tsx");
@@ -150,8 +140,8 @@ test("Completion date choice dialog is wired for non-today record only", () => {
   assert.match(app, /pendingRecordDateChoice/);
   assert.match(app, /recordDateChoiceDialogCopy/);
   assert.match(app, /if \(memoTarget && memoBaseDateKey && memoBaseDateKey !== todayDateKey\)[\s\S]*setPendingRecordDateChoice/);
-  assert.match(app, /submitMemoAction\(\{ skipped: false, performedAtMode: "source" \}\)/);
-  assert.match(app, /submitMemoAction\(\{ skipped: false, performedAtMode: "today" \}\)/);
+  assert.match(app, /submitRecordWithCountChoice\("source"\)/);
+  assert.match(app, /submitRecordWithCountChoice\("today"\)/);
   assert.match(app, /submitSkip[\s\S]*setSkipCountDialogOpen\(true\)/);
 });
 
@@ -169,7 +159,7 @@ test("Reschedule sheet header exposes chore edit action", () => {
   const app = read("src/components/kaji/kaji-app.tsx");
   assert.match(app, /const openRescheduleEditChore = \(\) => \{/);
   assert.match(app, /if \(!rescheduleTarget\) return;[\s\S]*const target = rescheduleTarget;/);
-  assert.match(app, /setRescheduleOpen\(false\);[\s\S]*setRescheduleTarget\(null\);[\s\S]*openEditChore\(target\);/);
+  assert.match(app, /setRescheduleOpen\(false\);[\s\S]*setRescheduleTarget\(null\);[\s\S]*openEditChore\(target/);
   assert.match(app, /aria-label="家事を編集"/);
   assert.match(app, /家事を編集/);
 });

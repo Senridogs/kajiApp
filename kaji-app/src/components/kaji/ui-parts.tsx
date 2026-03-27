@@ -82,7 +82,8 @@ export function HomeTaskRow({
   const disableRecordAction = isUpdating || (!done && recordDisabled);
 
   let containerStyle: React.CSSProperties = { backgroundColor: "var(--card)", borderColor: "var(--border)" };
-  let titleColor = chore.isOverdue ? 'var(--destructive)' : 'var(--foreground)';
+  const isOverdue = chore.freshnessLevel === "stale";
+  let titleColor = isOverdue ? 'var(--destructive)' : 'var(--foreground)';
   let checkboxStyle: React.CSSProperties = {
     borderColor: 'var(--app-text-tertiary)',
     backgroundColor: "var(--card)",
@@ -121,7 +122,7 @@ export function HomeTaskRow({
           {progressLabel ? (
             <span className="shrink-0 text-[10px] font-semibold text-[var(--muted-foreground)]">{progressLabel}</span>
           ) : null}
-          {chore.isOverdue && !done ? (
+          {isOverdue && !done ? (
             <Flame size={10} className="fill-[var(--destructive)] text-[var(--destructive)]" />
           ) : null}
         </div>

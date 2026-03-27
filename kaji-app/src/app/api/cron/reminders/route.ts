@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 
+import { computeFreshness } from "@/lib/freshness";
 import { buildReminderPayload, canSendPush, sendWebPush } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
-import { addDays, startOfJstDay } from "@/lib/time";
 
 export const runtime = "nodejs";
 
@@ -51,15 +51,13 @@ export async function GET(request: Request) {
 
   const householdIds = households.map((h) => h.id);
   const now = new Date();
-  const todayStart = startOfJstDay(now);
-  const tomorrowStart = addDays(todayStart, 1);
 
   const [allChores, allSubs] = await Promise.all([
     prisma.chore.findMany({
       where: { householdId: { in: householdIds }, archived: false },
       include: {
         records: {
-          where: { performedAt: { lt: tomorrowStart } },
+          where: { isInitial: false },
           take: 1,
           orderBy: { performedAt: "desc" },
           select: { performedAt: true },
@@ -96,23 +94,15 @@ export async function GET(request: Request) {
 
     const dueChores = chores
       .map((c) => {
-        const latest = c.records[0];
-        const base = latest?.performedAt ?? c.createdAt;
-        const dueAt = addDays(base, c.intervalDays);
-        const isOverdue = dueAt < todayStart;
-        const overdueDays = isOverdue
-          ? Math.floor((todayStart.getTime() - dueAt.getTime()) / (24 * 60 * 60 * 1000))
-          : 0;
+        const lastPerformedAt = c.records[0]?.performedAt ?? null;
+        const freshness = computeFreshness(lastPerformedAt, c.intervalDays, now);
         return {
           title: c.title,
           icon: c.icon,
-          dueAt,
-          isOverdue,
-          isDueToday: dueAt >= todayStart && dueAt < tomorrowStart,
-          overdueDays,
+          freshnessRatio: freshness.ratio,
         };
       })
-      .filter((c) => c.isDueToday || c.isOverdue);
+      .filter((c) => c.freshnessRatio >= 0.85);
 
     if (!dueChores.length) continue;
 

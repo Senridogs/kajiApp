@@ -202,6 +202,23 @@
   }
 }
 
+/* Freshness colors - continuous gradient from green to orange */
+:root {
+  --freshness-fresh: #22c55e;
+  --freshness-upcoming: #a3e635;
+  --freshness-due: #eab308;
+  --freshness-stale: #f97316;
+  --freshness-bar-bg: #e5e7eb;
+}
+
+.dark {
+  --freshness-fresh: #4ade80;
+  --freshness-upcoming: #bef264;
+  --freshness-due: #facc15;
+  --freshness-stale: #fb923c;
+  --freshness-bar-bg: #374151;
+}
+
 @layer base {
   * {
     border-color: var(--border);

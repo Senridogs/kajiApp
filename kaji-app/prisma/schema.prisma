@@ -22,6 +22,7 @@ model Household {
   records              ChoreRecord[]
   subscriptions        PushSubscription[]
   customIcons          CustomIcon[]
+  awards               Award[]
 }
 
 model CustomIcon {
@@ -49,8 +50,9 @@ model User {
   records          ChoreRecord[]
   subscriptions    PushSubscription[]
   defaultForChores Chore[]               @relation("DefaultAssignee")
-  choreAssignments ChoreAssignment[]
   reactions        ChoreRecordReaction[]
+  awards           Award[]
+  comments         ChoreRecordComment[]
 }
 
 model Chore {
@@ -61,7 +63,6 @@ model Chore {
   iconColor         String                  @default("#202124")
   bgColor           String                  @default("#EAF5FF")
   intervalDays      Int
-  dailyTargetCount  Int                     @default(1)
   defaultAssigneeId String?
   archived          Boolean                 @default(false)
   createdAt         DateTime                @default(now())
@@ -69,23 +70,6 @@ model Chore {
   household         Household               @relation(fields: [householdId], references: [id], onDelete: Cascade)
   defaultAssignee   User?                   @relation("DefaultAssignee", fields: [defaultAssigneeId], references: [id], onDelete: SetNull)
   records           ChoreRecord[]
-  assignments       ChoreAssignment[]
-  scheduleOverrides ChoreScheduleOverride[]
-  occurrences       ChoreOccurrence[]
-}
-
-model ChoreAssignment {
-  id        String   @id @default(cuid())
-  choreId   String
-  userId    String
-  date      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  chore     Chore    @relation(fields: [choreId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([choreId, date])
-  @@index([choreId, date])
 }
 
 model ChoreRecord {
@@ -103,6 +87,7 @@ model ChoreRecord {
   chore         Chore                 @relation(fields: [choreId], references: [id], onDelete: Cascade)
   user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   reactions     ChoreRecordReaction[]
+  comments      ChoreRecordComment[]
 
   @@index([householdId, performedAt])
   @@index([choreId, performedAt])
@@ -122,32 +107,6 @@ model ChoreRecordReaction {
   @@index([recordId])
 }
 
-model ChoreScheduleOverride {
-  id        String   @id @default(cuid())
-  choreId   String
-  date      String
-  createdAt DateTime @default(now())
-  chore     Chore    @relation(fields: [choreId], references: [id], onDelete: Cascade)
-
-  @@unique([choreId, date])
-  @@index([choreId])
-}
-
-
-model ChoreOccurrence {
-  id         String   @id @default(cuid())
-  choreId    String
-  dateKey    String
-  status     String   @default("pending")
-  sourceType String   @default("generator")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  chore      Chore    @relation(fields: [choreId], references: [id], onDelete: Cascade)
-
-  @@index([choreId, dateKey])
-  @@index([choreId, status, dateKey])
-  @@index([choreId, dateKey, status, sourceType])
-}
 
 model PushSubscription {
   id          String    @id @default(cuid())
@@ -162,4 +121,39 @@ model PushSubscription {
   updatedAt   DateTime  @updatedAt
   household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 表彰・アワード（月次・年次）
+model Award {
+  id          String    @id @default(cuid())
+  householdId String
+  userId      String
+  type        String    // "monthly" | "yearly"
+  awardKey    String    // "speed_star" | "all_rounder" | "specialist" | "reviver" | "streak_king" | "steady_star" | "gratitude_master" | etc.
+  emoji       String    // "⚡" | "🌈" | "🎯" | "💪" | "🔥" | "🌟" | "❤️" | etc.
+  title       String    // "スピードスター" | "オールラウンダー" | etc.
+  description String?   // 詳細説明（任意）
+  month       Int?      // 1-12（monthly用）
+  year        Int       // 2026 etc.
+  metadata    Json?     // 追加データ（判定に使ったスコア等）
+  createdAt   DateTime  @default(now())
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([householdId, year, month])
+  @@index([userId])
+}
+
+// 家事実績へのコメント
+model ChoreRecordComment {
+  id        String      @id @default(cuid())
+  recordId  String
+  userId    String
+  body      String
+  createdAt DateTime    @default(now())
+  record    ChoreRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([recordId])
+  @@index([userId])
 }

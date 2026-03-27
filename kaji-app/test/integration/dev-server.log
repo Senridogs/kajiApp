@@ -1,17 +1,15 @@
 
 > kaji-app@0.1.0 start
-> next start --hostname 127.0.0.1 --port 4431
+> next start --hostname 127.0.0.1 --port 4445
 
 ▲ Next.js 16.1.6
-- Local:         http://127.0.0.1:4431
-- Network:       http://127.0.0.1:4431
+- Local:         http://127.0.0.1:4445
+- Network:       http://127.0.0.1:4445
 
 ✓ Starting...
-✓ Ready in 540ms
+✓ Ready in 631ms
 prisma:error 
-Invalid `prisma.user.findUnique()` invocation:
+Invalid `prisma.award.findMany()` invocation:
 
 
-Can't reach database server at `localhost:5432`
-
-Please make sure your database server is running at `localhost:5432`.
+The table `public.Award` does not exist in the current database.

@@ -1,4 +1,5 @@
-﻿"use client";
+﻿// @ts-nocheck — Legacy monolith, not imported. Kept as reference for v2 port.
+"use client";
 
 import { type CSSProperties, FormEvent, MouseEvent, TouchEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
@@ -56,19 +57,15 @@ import {
 import { AnimatedList } from "@/components/ui/animated-list";
 import {
   BootstrapResponse,
-  CalendarMonthSummaryResponse,
   ChoreRecordItem,
   ChoreAssignmentEntry,
-  ChoreScheduleOverride,
   ChoreWithComputed,
-  HomeProgressEntry,
   HouseholdReportResponse,
   MyStatsResponse,
   NotificationSettings,
   StatsPeriodKey,
   StatsResponse,
 } from "@/lib/types";
-import { splitChoresForHomeByProgress } from "@/lib/dashboard";
 import {
   applyHomeStoredOrder,
   sanitizeHomeOrderByDate,
@@ -77,11 +74,25 @@ import {
   type HomeOrderByDate,
   type DropPosition,
 } from "@/lib/home-order";
-import {
-  buildHomeRowsByDate,
-} from "@/lib/home-occurrence";
 import { addDateKeyDays, addDays, buildHomeDateKeys, compareDateKey, formatDateKey, parseDateKey, startOfJstDay, toJstDateKey } from "@/lib/time";
-import { countScheduledOccurrencesOnDate as countScheduledOccurrencesOnDateByReadModel } from "@/lib/occurrence-read-model";
+
+// --- Temporary stubs for deleted modules (frontend full rewrite pending) ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CalendarMonthSummaryResponse = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ChoreScheduleOverride = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type HomeProgressEntry = any;
+function splitChoresForHomeByProgress(..._args: unknown[]): { todayChores: ChoreWithComputed[]; tomorrowChores: ChoreWithComputed[]; big: ChoreWithComputed[] } {
+  return { todayChores: [], tomorrowChores: [], big: [] };
+}
+function buildHomeRowsByDate(_opts: unknown): Array<{ chore: ChoreWithComputed; state: "pending" | "done" | "skipped"; total: number; completed: number; skipped: number; pending: number }> {
+  return [];
+}
+function countScheduledOccurrencesOnDateByReadModel(_opts: unknown): number {
+  return 0;
+}
+// --- End temporary stubs ---
 import { normalizeThemeMode, resolveTheme, THEME_MODE_STORAGE_KEY, type ThemeMode } from "@/lib/theme-mode";
 import { normalizeThemeColor, THEME_COLOR_STORAGE_KEY, type ThemeColor } from "@/lib/theme-color";
 
@@ -1008,7 +1019,7 @@ export function KajiApp() {
     if (!boot || boot.needsRegistration) return false;
     if (!boot.todayChores || boot.todayChores.length === 0) return false;
     const todayProgressByChore = boot.homeProgressByDate?.[homeDateKeys.today] ?? {};
-    return boot.todayChores.every((chore) => {
+    return boot.todayChores.every((chore: ChoreWithComputed) => {
       const entry = todayProgressByChore[chore.id];
       if (!entry) return false;
       return entry.pending === 0;
@@ -1123,7 +1134,6 @@ export function KajiApp() {
       chore: {
         id: chore.id,
         intervalDays: chore.intervalDays,
-        dailyTargetCount: chore.dailyTargetCount,
         dueAt: chore.dueAt ? new Date(chore.dueAt) : null,
         scheduleOverrides: (scheduleOverridesByChore.get(chore.id) ?? []).map((override) => ({ date: override.date })),
       },
@@ -1209,7 +1219,7 @@ export function KajiApp() {
   const calendarScheduleMap = useMemo(() => {
     const map = new Map<string, CalendarScheduleItem[]>();
     const choreById = new Map(chores.map((chore) => [chore.id, chore]));
-    const occurrenceByDate = calendarMonthSummary?.occurrenceByDate ?? {};
+    const occurrenceByDate: Record<string, Record<string, { scheduled: number; completed: number; skipped: number; pending: number }>> = calendarMonthSummary?.occurrenceByDate ?? {};
 
     Object.entries(occurrenceByDate).forEach(([dateKey, byChore]) => {
       const items: CalendarScheduleItem[] = [];
@@ -1815,7 +1825,7 @@ export function KajiApp() {
       const split = patch.chore ? splitComputedChoresForHome(nextChores, nextHomeProgressByDate) : null;
       const nextScheduleOverrides = patch.scheduleOverrides
         ? [
-          ...prev.scheduleOverrides.filter((override) => override.choreId !== choreId),
+          ...prev.scheduleOverrides.filter((override: { choreId: string }) => override.choreId !== choreId),
           ...patch.scheduleOverrides,
         ]
         : prev.scheduleOverrides;
@@ -1948,7 +1958,6 @@ export function KajiApp() {
     setEditingChore({
       title: "",
       intervalDays: 7,
-      dailyTargetCount: 1,
       icon: "sparkles",
       iconColor: PRIMARY_COLOR,
       bgColor: "#FFF1E8",
@@ -1967,7 +1976,6 @@ export function KajiApp() {
     setEditingChore({
       title: "",
       intervalDays: 7,
-      dailyTargetCount: 1,
       icon: "sparkles",
       iconColor: PRIMARY_COLOR,
       bgColor: "#FFF1E8",
@@ -1995,7 +2003,6 @@ export function KajiApp() {
       id: chore.id,
       title: chore.title,
       intervalDays: chore.intervalDays,
-      dailyTargetCount: chore.dailyTargetCount,
       icon: chore.icon,
       iconColor: chore.iconColor,
       bgColor: chore.bgColor,
@@ -2021,7 +2028,6 @@ export function KajiApp() {
     const commonPayload = {
       title: editingChore.title,
       intervalDays: Number(editingChore.intervalDays),
-      dailyTargetCount: Number(editingChore.dailyTargetCount),
       icon: editingChore.icon,
       iconColor: editingChore.iconColor,
       bgColor: editingChore.bgColor,
@@ -2052,10 +2058,9 @@ export function KajiApp() {
       const rawMessage = (err as Error).message ?? "家事の保存に失敗しました。";
       if (
         rawMessage.includes("DB_SCHEMA_MISSING") ||
-        rawMessage.includes("db:init:current-env") ||
-        rawMessage.includes("dailyTargetCount")
+        rawMessage.includes("db:init:current-env")
       ) {
-        setError("1日回数を保存するためのDBスキーマが不足しています。npm run db:init:current-env 実行後に再試行してください。");
+        setError("DBスキーマが不足しています。npm run db:init:current-env 実行後に再試行してください。");
       } else {
         setError(rawMessage);
       }

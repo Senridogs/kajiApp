@@ -11,7 +11,14 @@
       "Bash(echo:*)",
       "Bash(node:*)",
       "Read(//c/Users/hueym/Documents/myApp/kajiApp/$HOME/.claude/plugins/**)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(taskkill //F //IM prisma.exe)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit --pretty)",
+      "Bash(grep -n \"flex-1\\\\|pb-24\\\\|pb-14\\\\|max-w-\" /c/Users/hueym/Documents/myApp/kajiApp/kaji-app/src/components/kaji/screens/*.tsx)",
+      "Bash(grep -A5 -B5 \"dailyTargetCount\" /c/Users/hueym/Documents/myApp/kajiApp/kaji-app/src/app/api/chores/[id]/route.ts)",
+      "Bash(xargs grep:*)"
     ]
   }
 }

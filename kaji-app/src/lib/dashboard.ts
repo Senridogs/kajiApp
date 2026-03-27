@@ -1,39 +1,46 @@
-import type { Chore, ChoreRecord, User } from "@prisma/client";
+import { computeFreshness, plantStage } from "@/lib/freshness";
+import { addDays, startOfJstDay } from "@/lib/time";
+import type { ChoreWithComputed, StatsPeriodKey } from "@/lib/types";
 
-import { addDays, buildHomeDateKeys, diffDaysFloor, startOfJstDay } from "@/lib/time";
-import type { ChoreWithComputed, HomeProgressEntry, StatsPeriodKey } from "@/lib/types";
+export function computeChore(
+  chore: {
+    id: string;
+    title: string;
+    icon: string;
+    iconColor: string;
+    bgColor: string;
+    intervalDays: number;
+    archived: boolean;
+    defaultAssigneeId: string | null;
+    createdAt: Date;
+  },
+  latestRecord: {
+    id: string;
+    performedAt: Date;
+    isInitial: boolean;
+    isSkipped: boolean;
+    userId: string;
+  } | null,
+  users: Array<{ id: string; name: string }>,
+  now: Date = new Date()
+): ChoreWithComputed {
+  // isInitialレコードは最終実施日から除外（現行踏襲）
+  const effectiveRecord =
+    latestRecord && !latestRecord.isInitial ? latestRecord : null;
 
-type ChoreWithLatest = Chore & {
-  records: (ChoreRecord & { user: Pick<User, "id" | "name"> })[];
-};
+  const lastPerformedAt = effectiveRecord?.performedAt ?? null;
+  const daysSinceLast = lastPerformedAt
+    ? Math.floor(
+        (now.getTime() - lastPerformedAt.getTime()) / (1000 * 60 * 60 * 24)
+      )
+    : null;
 
-type ChoreRecordWithOptionalSkip = ChoreRecord & {
-  isSkipped?: boolean | null;
-};
+  const freshness = computeFreshness(lastPerformedAt, chore.intervalDays, now);
+  const stage = plantStage(freshness.ratio);
 
-export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWithComputed {
-  const todayStart = startOfJstDay(now);
-  const tomorrowStart = addDays(todayStart, 1);
-  const dayAfterTomorrow = addDays(todayStart, 2);
-  const latestRecord = chore.records[0];
-  // Future completion records are treated as pending to keep metrics/schedule consistent.
-  const latest =
-    latestRecord && latestRecord.performedAt < tomorrowStart
-      ? latestRecord
-      : undefined;
-  const lastPerformedAt = latest?.performedAt ?? null;
-  const dueBase = lastPerformedAt ?? chore.createdAt;
-  const dueAt = addDays(dueBase, chore.intervalDays);
-
-  const isDueToday = !!dueAt && dueAt >= todayStart && dueAt < tomorrowStart;
-  const isDueTomorrow = !!dueAt && dueAt >= tomorrowStart && dueAt < dayAfterTomorrow;
-  const isOverdue = !!dueAt && dueAt < todayStart;
-  const overdueDays = isOverdue && dueAt ? diffDaysFloor(dueAt, todayStart) : 0;
-  const daysSinceLast = lastPerformedAt ? diffDaysFloor(lastPerformedAt, now) : null;
-  const isInitial = latest?.isInitial ?? false;
-
-  const latestWithOptionalSkip = latest as ChoreRecordWithOptionalSkip | undefined;
-  const isSkipped = latestWithOptionalSkip?.isSkipped ?? false;
+  const performer = effectiveRecord
+    ? users.find((u) => u.id === effectiveRecord.userId)
+    : null;
 
   return {
     id: chore.id,
@@ -42,60 +49,26 @@ export function computeChore(chore: ChoreWithLatest, now = new Date()): ChoreWit
     iconColor: chore.iconColor,
     bgColor: chore.bgColor,
     intervalDays: chore.intervalDays,
-    dailyTargetCount: chore.dailyTargetCount,
     archived: chore.archived,
-    defaultAssigneeId: null,
-    defaultAssigneeName: null,
-    lastPerformedAt: lastPerformedAt ? lastPerformedAt.toISOString() : null,
-    lastPerformerName: isSkipped ? "スキップ" : (latest?.user.name ?? null),
-    lastPerformerId: latest?.user.id ?? null,
-    lastRecordId: latest?.id ?? null,
-    lastRecordIsInitial: isInitial,
-    lastRecordSkipped: isSkipped,
-    dueAt: dueAt ? dueAt.toISOString() : null,
-    isDueToday,
-    isDueTomorrow,
-    isOverdue,
-    overdueDays,
+    defaultAssigneeId: chore.defaultAssigneeId,
+    defaultAssigneeName:
+      chore.defaultAssigneeId
+        ? (users.find((u) => u.id === chore.defaultAssigneeId)?.name ?? null)
+        : null,
     daysSinceLast,
+    lastPerformedAt: lastPerformedAt?.toISOString() ?? null,
+    lastPerformerName: effectiveRecord?.isSkipped
+      ? "スキップ"
+      : (performer?.name ?? null),
+    lastPerformerId: effectiveRecord?.userId ?? null,
+    lastRecordId: effectiveRecord?.id ?? null,
+    lastRecordIsInitial: latestRecord?.isInitial ?? false,
+    lastRecordSkipped: effectiveRecord?.isSkipped ?? false,
+    freshnessRatio: freshness.ratio,
+    freshnessLevel: freshness.level,
+    freshnessLabel: freshness.label,
+    plantStage: stage,
   };
-}
-
-export function splitChoresForHome(chores: ChoreWithComputed[], now = new Date()) {
-  return splitChoresForHomeByProgress(chores, {}, now);
-}
-
-export function splitChoresForHomeByProgress(
-  chores: ChoreWithComputed[],
-  homeProgressByDate: Record<string, Record<string, Pick<HomeProgressEntry, "completed" | "pending" | "skipped">>>,
-  now = new Date(),
-) {
-  const { today: todayDateKey, tomorrow: tomorrowDateKey } = buildHomeDateKeys(now);
-  const todayProgressByChore = homeProgressByDate[todayDateKey] ?? {};
-  const tomorrowProgressByChore = homeProgressByDate[tomorrowDateKey] ?? {};
-  const hasAnyOccurrence = (
-    progressByChore: Record<string, Pick<HomeProgressEntry, "completed" | "pending" | "skipped">>,
-    choreId: string,
-  ) => {
-    const entry = progressByChore[choreId];
-    if (!entry) return false;
-    return (entry.pending ?? 0) > 0 || (entry.completed ?? 0) > 0 || (entry.skipped ?? 0) > 0;
-  };
-
-  // Per-chore check: if the chore has an entry in homeProgressByDate (either a real
-  // occurrence or a sentinel added for occurrence-system chores), use hasAnyOccurrence.
-  // Otherwise fall back to recurrence-based fields (isDueToday/isOverdue/isDueTomorrow).
-  // This prevents occurrence-system chores from appearing via recurrence on days where
-  // they have no actual ChoreOccurrence scheduled.
-  const todayChores = chores.filter((c) => {
-    if (c.id in todayProgressByChore) return hasAnyOccurrence(todayProgressByChore, c.id);
-    return c.isDueToday || c.isOverdue;
-  });
-  const tomorrowChores = chores.filter((c) => {
-    if (c.id in tomorrowProgressByChore) return hasAnyOccurrence(tomorrowProgressByChore, c.id);
-    return c.isDueTomorrow;
-  });
-  return { todayChores, tomorrowChores };
 }
 
 export function getStatsRange(

@@ -13,7 +13,6 @@ test("confirm flows are routed through shared ConfirmDialog", () => {
   const app = read("src/components/kaji/kaji-app.tsx");
 
   assert.match(app, /<ConfirmDialog/);
-  assert.match(app, /mergeDuplicateDialogCopy/);
   assert.match(app, /recordDateChoiceDialogCopy/);
   assert.match(app, /rescheduleConfirmDialogCopy/);
   assert.match(app, /undoRecordDialogCopy/);

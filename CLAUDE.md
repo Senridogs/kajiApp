@@ -126,7 +126,7 @@ npx prisma db push       # スキーマ直接反映（開発用）
 **PostgreSQL + Prisma:**
 - `Household`: id, inviteCode, reminderTimes[], 通知設定フラグ群 → users[], chores[], records[]
 - `User`: id, householdId, name(unique), passwordHash, color → household, records[], reactions[]
-- `Chore`: id, householdId, title, icon, intervalDays, dailyTargetCount, defaultAssigneeId, archived → records[], assignments[], occurrences[]
+- `Chore`: id, householdId, title, icon, intervalDays, defaultAssigneeId, archived → records[], assignments[], occurrences[]
 - `ChoreRecord`: id, householdId, choreId, userId, memo, scheduledDate, isSkipped, performedAt → reactions[]
 - `ChoreRecordReaction`: id, recordId, userId, emoji
 - `ChoreAssignment`: id, choreId, userId, date

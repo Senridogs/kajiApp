@@ -18,6 +18,12 @@ type PushPayload =
       title: string;
       body: string;
       url?: string;
+    }
+  | {
+      type: "comment";
+      title: string;
+      body: string;
+      url?: string;
     };
 
 let isConfigured = false;
@@ -102,6 +108,27 @@ export function buildReactionPayload(params: {
     type: "reaction",
     title: `${params.reactorName}がリアクション`,
     body: `${params.choreTitle} にリアクションしました`,
+    url: "/",
+  };
+}
+
+const COMMENT_BODY_TRUNCATE_LENGTH = 80;
+
+export function buildCommentPayload(params: {
+  commenterName: string;
+  commentBody: string;
+  choreTitle: string;
+  choreIcon?: string | null;
+}): PushPayload {
+  const truncatedBody =
+    params.commentBody.length > COMMENT_BODY_TRUNCATE_LENGTH
+      ? `${params.commentBody.slice(0, COMMENT_BODY_TRUNCATE_LENGTH)}…`
+      : params.commentBody;
+
+  return {
+    type: "comment",
+    title: `${params.commenterName}からコメント`,
+    body: `${params.choreTitle}: ${truncatedBody}`,
     url: "/",
   };
 }

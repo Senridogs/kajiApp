@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
 
 import { computeChore, getStatsRange } from "../../src/lib/dashboard.js";
@@ -14,36 +14,25 @@ test("computeChore handles skipped status correctly", () => {
         iconColor: "#fff",
         bgColor: "#000",
         intervalDays: 1,
-        dailyTargetCount: 1,
-        defaultAssigneeId: null,
-        defaultAssigneeName: null,
         archived: false,
+        defaultAssigneeId: null,
         createdAt: new Date("2026-02-01"),
-        updatedAt: new Date("2026-02-01"),
-        householdId: "h1",
-        records: [
-            {
-                id: "r-skip",
-                householdId: "h1",
-                choreId: "chore-skip",
-                userId: "u1",
-                memo: null,
-                isInitial: false,
-                isSkipped: true, // SKIPPED
-                performedAt,
-                createdAt: performedAt,
-                user: { id: "u1", name: "A" },
-            },
-        ],
     };
 
-    const computed = computeChore(chore, now);
+    const latestRecord = {
+        id: "r-skip",
+        performedAt,
+        isInitial: false,
+        isSkipped: true,
+        userId: "u1",
+    };
+
+    const users = [{ id: "u1", name: "A" }];
+
+    const computed = computeChore(chore, latestRecord, users, now);
 
     assert.equal(computed.lastRecordSkipped, true);
     assert.equal(computed.lastPerformerName, "\u30b9\u30ad\u30c3\u30d7");
-      assert.equal(computed.isDueToday, false);
-    assert.equal(computed.isDueTomorrow, true);
-    assert.equal(computed.isOverdue, false);
 });
 
 test("getStatsRange handles ALL period", () => {
@@ -57,7 +46,3 @@ test("getStatsRange handles ALL period", () => {
     assert.ok(range.end.getTime() >= now.getTime());
     assert.equal(range.label, "\u5168\u671f\u9593");
 });
-
-
-
-

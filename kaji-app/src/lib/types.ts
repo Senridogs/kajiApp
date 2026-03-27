@@ -21,6 +21,7 @@ export type ChoreRecordItem = {
   isInitial?: boolean;
   isSkipped?: boolean;
   reactions?: RecordReaction[];
+  comments?: ChoreRecordCommentItem[];
 };
 
 export type ChoreWithComputed = {
@@ -30,7 +31,6 @@ export type ChoreWithComputed = {
   iconColor: string;
   bgColor: string;
   intervalDays: number;
-  dailyTargetCount: number;
   archived: boolean;
   defaultAssigneeId: string | null;
   defaultAssigneeName: string | null;
@@ -40,23 +40,11 @@ export type ChoreWithComputed = {
   lastRecordId: string | null;
   lastRecordIsInitial: boolean;
   lastRecordSkipped: boolean;
-  dueAt: string | null;
-  isDueToday: boolean;
-  isDueTomorrow: boolean;
-  isOverdue: boolean;
-  overdueDays: number;
   daysSinceLast: number | null;
-};
-
-export type HomeProgressState = "done" | "skipped" | "pending";
-
-export type HomeProgressEntry = {
-  scheduledTotal: number;
-  pendingTotal: number;
-  completed: number;
-  skipped: number;
-  pending: number;
-  latestState: HomeProgressState;
+  freshnessRatio: number;
+  freshnessLevel: "fresh" | "upcoming" | "due" | "stale";
+  freshnessLabel: string;
+  plantStage: "sprout" | "growing" | "budding" | "bloom" | "wilting" | "withered";
 };
 
 export type ChoreAssignmentEntry = {
@@ -132,31 +120,41 @@ export type MyStatsResponse = {
   }>;
 };
 
-export type ChoreScheduleOverride = {
-  id: string;
-  choreId: string;
-  date: string;
-  createdAt: string;
-};
-
 export type BootstrapResponse = {
   sessionUser: AppUser | null;
   householdInviteCode: string | null;
   users: AppUser[];
   chores: ChoreWithComputed[];
-  todayChores: ChoreWithComputed[];
-  tomorrowChores: ChoreWithComputed[];
-  assignments: ChoreAssignmentEntry[];
   notificationSettings: NotificationSettings | null;
   customIcons: Array<{ id: string; label: string; icon: string; iconColor: string; bgColor: string }>;
-  scheduleOverrides: ChoreScheduleOverride[];
-  homeProgressByDate: Record<string, Record<string, HomeProgressEntry>>;
   needsRegistration: boolean;
+  gardenScore: number;
+  householdStreak: number;
+  homeMessage: { welcome: string | null; message: string };
+  recentRecords: ChoreRecordItem[];
+  recentAwards: AwardItem[];
 };
 
-export type CalendarMonthSummaryResponse = {
-  month: string;
-  countsByDate: Record<string, number>;
-  occurrenceByDate: Record<string, Record<string, { scheduled: number; completed: number; skipped: number; pending: number }>>;
-  generatedAt: string;
+export type AwardItem = {
+  id: string;
+  userId: string;
+  type: string;
+  awardKey: string;
+  title: string;
+  emoji: string;
+  description: string | null;
+  month: number | null;
+  year: number;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
 };
+
+export type ChoreRecordCommentItem = {
+  id: string;
+  recordId: string;
+  userId: string;
+  userName?: string;
+  body: string;
+  createdAt: string;
+};
+

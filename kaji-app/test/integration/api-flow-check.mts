@@ -419,7 +419,6 @@ async function main() {
     body: JSON.stringify({
       title: "daily-target-count",
       intervalDays: 1,
-      dailyTargetCount: 3,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
@@ -429,22 +428,12 @@ async function main() {
   assert.equal(createDailyTargetChoreRes.status, 200);
   const createDailyTargetChoreBody = await createDailyTargetChoreRes.json();
   const dailyTargetChoreId: string = createDailyTargetChoreBody.chore.id;
-  assert.equal(createDailyTargetChoreBody.chore.dailyTargetCount, 3);
-
-  const patchDailyTargetChoreRes = await request(`/api/chores/${dailyTargetChoreId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ dailyTargetCount: 5 }),
-  });
-  assert.equal(patchDailyTargetChoreRes.status, 200);
-  const patchDailyTargetChoreBody = await patchDailyTargetChoreRes.json();
-  assert.equal(patchDailyTargetChoreBody.chore.dailyTargetCount, 5);
 
   const createFixedDenominatorChoreRes = await request("/api/chores", {
     method: "POST",
     body: JSON.stringify({
       title: "fixed-denominator-daily-target",
       intervalDays: 1,
-      dailyTargetCount: 4,
       icon: "sparkles",
       iconColor: "#202124",
       bgColor: "#EAF5FF",
